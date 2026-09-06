@@ -32,6 +32,7 @@
                         {{ record.url }}
                     </p>
 
+
                     {% for change in record.changed %}
 
                         <div class="change-section">
@@ -78,6 +79,7 @@
 
                             <p>
                                 {{ item.text }}
+
                                 <span class="added-label">
                                     — Added
                                 </span>
@@ -98,6 +100,7 @@
 
                             <p>
                                 {{ item.text }}
+
                                 <span class="removed-label">
                                     — Removed
                                 </span>
@@ -112,13 +115,13 @@
 
                         <div class="change-section">
 
-                            <h2>Links and documents</h2>
+                            <h2>Links</h2>
 
                             {% for link in record.links_added %}
 
                                 <p>
                                     <a href="{{ link }}" target="_blank">
-                                        {{ link.split('/')[-1] or link }}
+                                        {{ link }}
                                     </a>
 
                                     <span class="added-label">
@@ -133,7 +136,47 @@
 
                                 <p>
                                     <a href="{{ link }}" target="_blank">
-                                        {{ link.split('/')[-1] or link }}
+                                        {{ link }}
+                                    </a>
+
+                                    <span class="removed-label">
+                                        — Removed
+                                    </span>
+                                </p>
+
+                            {% endfor %}
+
+                        </div>
+
+                    {% endif %}
+
+
+                    {% if record.documents_added or record.documents_removed %}
+
+                        <div class="change-section">
+
+                            <h2>Documents</h2>
+
+                            {% for document in record.documents_added %}
+
+                                <p>
+                                    <a href="{{ document }}" target="_blank">
+                                        {{ document.split('/')[-1] }}
+                                    </a>
+
+                                    <span class="added-label">
+                                        — Added
+                                    </span>
+                                </p>
+
+                            {% endfor %}
+
+
+                            {% for document in record.documents_removed %}
+
+                                <p>
+                                    <a href="{{ document }}" target="_blank">
+                                        {{ document.split('/')[-1] }}
                                     </a>
 
                                     <span class="removed-label">
