@@ -23,8 +23,8 @@ from app.core.config import config
 from app.db import repository
 from app.db.core import SessionLocal
 from app.db.schema import DBWebsite
+from app.db.services.notification_service import NotificationService
 from app.email_sender import notifier
-from app.services.notification_service import NotificationService
 
 log = logging.getLogger(__name__)
 

@@ -1,16 +1,18 @@
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
-from app.api import routers
 from app.core.config import config
 from app.core.logging import setup_logging
 from app.db.core import Base, engine
 from app.db.errors import IntegrityError, NotFoundError
+from app.frontend.api import routers
 
 setup_logging()
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title=config.app_name)
+app.mount("/static", StaticFiles(directory="app/frontend/static"), name="static")
 
 
 @app.exception_handler(NotFoundError)
@@ -49,18 +51,8 @@ async def integrity_error_handler(request: Request, exc: IntegrityError):
     )
 
 
-@app.get("/", response_model=str)
-def get_root() -> str:
-    """
-    Root endpoint to check if the server is running.
-
-    Returns:
-        A message indicating the server is running.
-    """
-    return "Server is Running."
-
-
 # Register routes
+app.include_router(routers.ROOT_ROUTER)
 app.include_router(routers.WEBSITE_ROUTER)
 app.include_router(routers.CRITICAL_PAGE_ROUTER)
 app.include_router(routers.INTERNAL_LINK_ROUTER)

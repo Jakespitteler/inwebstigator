@@ -11,7 +11,7 @@ from sqlalchemy.orm.interfaces import ORMOption
 from app.db.core import Base
 from app.db.errors import IntegrityError, NotFoundError
 
-logger = logging.getLogger(__name__)
+logger: logging.Logger = logging.getLogger(__name__)
 
 
 def get[DBTable: Base](

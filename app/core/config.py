@@ -59,11 +59,11 @@ class Config(BaseSettings):
         return [address.strip() for address in self.client_to.split(",") if address.strip()]
 
     @property
-    def db_url(self):
+    def db_url(self) -> str:
         return f"sqlite:///./{self.db_name}"
 
     @property
-    def test_db_url(self):
+    def test_db_url(self) -> str:
         return "sqlite:///:memory:"
 
 
