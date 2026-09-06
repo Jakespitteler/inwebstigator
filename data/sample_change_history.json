@@ -7,9 +7,20 @@
             {
                 "old_section": "Approach to public reporting",
                 "new_section": "Approach to public reporting",
+                "old_type": "paragraph",
+                "new_type": "paragraph",
                 "old": "The information on the National, will add Register identifies whether a decision has resulted in any changes to the information listed.",
                 "new": "The information on the National Register identifies whether a decision has resulted in any changes to the information listed.",
                 "similarity": 0.988
+            },
+            {
+                "old_section": "Purpose of public reports",
+                "new_section": "Purpose of public reports",
+                "old_type": "list_item",
+                "new_type": "list_item",
+                "old": "protect and enhance Australia's reputation for quality higher education",
+                "new": "protect and strengthen Australia's reputation for quality higher education",
+                "similarity": 0.92
             }
         ],
 
@@ -28,12 +39,18 @@
         ],
 
         "links_added": [
-            "https://www.teqsa.gov.au/guides-resources/resources/guidance-notes",
-            "https://www.teqsa.gov.au/resources/new-guidance.pdf"
+            "https://www.teqsa.gov.au/guides-resources/resources/guidance-notes"
         ],
 
         "links_removed": [
-            "https://www.teqsa.gov.au/old-resource",
+            "https://www.teqsa.gov.au/old-resource"
+        ],
+
+        "documents_added": [
+            "https://www.teqsa.gov.au/resources/new-guidance.pdf"
+        ],
+
+        "documents_removed": [
             "https://www.teqsa.gov.au/resources/old-policy.pdf"
         ]
     }
