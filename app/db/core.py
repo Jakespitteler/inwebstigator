@@ -1,5 +1,6 @@
 import uuid
 from collections.abc import Generator
+from contextlib import contextmanager
 from datetime import datetime
 
 from sqlalchemy import UUID as PG_UUID
@@ -12,6 +13,7 @@ engine: Engine = create_engine(url=config.db_url, connect_args={"check_same_thre
 SessionLocal: sessionmaker[Session] = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
+@contextmanager
 def get_db_session() -> Generator[Session]:
     """
     Unit of Work Dependency:

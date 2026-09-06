@@ -9,23 +9,27 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
-from app.api import routers
 from app.core.config import config
 from app.core.logging import setup_logging
 from app.db.core import Base, engine
 from app.db.errors import IntegrityError, NotFoundError
+from app.frontend.api import routers
+
 
 setup_logging()
 
 Base.metadata.create_all(bind=engine)
+
 app = FastAPI(title=config.app_name)
-templates = Jinja2Templates(directory="app/templates")
 
 app.mount(
     "/static",
-    StaticFiles(directory="app/static"),
+    StaticFiles(directory="app/frontend/static"),
     name="static",
 )
+
+templates = Jinja2Templates(directory="app/templates")
+
 
 def build_word_diff(old_text: str, new_text: str) -> tuple[Markup, Markup]:
     old_words = old_text.split()
@@ -42,7 +46,6 @@ def build_word_diff(old_text: str, new_text: str) -> tuple[Markup, Markup]:
     new_parts = []
 
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-
         if tag == "equal":
             old_parts.extend(escape(word) for word in old_words[i1:i2])
             new_parts.extend(escape(word) for word in new_words[j1:j2])
@@ -75,18 +78,12 @@ def build_word_diff(old_text: str, new_text: str) -> tuple[Markup, Markup]:
         Markup(" ").join(new_parts),
     )
 
+
 @app.exception_handler(NotFoundError)
-async def not_found_exception_handler(request: Request, exc: NotFoundError):
-    """
-    Handles NotFoundError exceptions by returning a 404 status.
-
-    Args:
-        request: The incoming request.
-        exc: The NotFoundError exception.
-
-    Returns:
-        A JSONResponse with a 404 status.
-    """
+async def not_found_exception_handler(
+    request: Request,
+    exc: NotFoundError,
+):
     return JSONResponse(
         status_code=status.HTTP_404_NOT_FOUND,
         content={"detail": str(exc)},
@@ -94,32 +91,15 @@ async def not_found_exception_handler(request: Request, exc: NotFoundError):
 
 
 @app.exception_handler(IntegrityError)
-async def integrity_error_handler(request: Request, exc: IntegrityError):
-    """
-    Handles IntegrityError exceptions by returning a 400 status.
-
-    Args:
-        request: The incoming request.
-        exc: The IntegrityError exception.
-
-    Returns:
-        A JSONResponse with a 400 status.
-    """
+async def integrity_error_handler(
+    request: Request,
+    exc: IntegrityError,
+):
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
         content={"detail": str(exc)},
     )
 
-
-@app.get("/", response_model=str)
-def get_root() -> str:
-    """
-    Root endpoint to check if the server is running.
-
-    Returns:
-        A message indicating the server is running.
-    """
-    return "Server is Running."
 
 @app.get("/dashboard")
 def get_dashboard(request: Request):
@@ -136,7 +116,7 @@ def get_dashboard(request: Request):
     for record in records:
         detected_at = datetime.fromisoformat(record["detected_at"])
 
-        if detected_at.date() >= week_start.date():
+        if week_start.date() <= detected_at.date() <= today.date():
             for change in record.get("changed", []):
                 old_html, new_html = build_word_diff(
                     change["old"],
@@ -158,7 +138,9 @@ def get_dashboard(request: Request):
         },
     )
 
+
 # Register routes
+app.include_router(routers.ROOT_ROUTER)
 app.include_router(routers.WEBSITE_ROUTER)
 app.include_router(routers.CRITICAL_PAGE_ROUTER)
 app.include_router(routers.INTERNAL_LINK_ROUTER)

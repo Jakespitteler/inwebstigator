@@ -15,11 +15,11 @@ class Config(BaseSettings):
     db_name: str = "digital_horizon.db"
 
     @property
-    def db_url(self):
+    def db_url(self) -> str:
         return f"sqlite:///./{self.db_name}"
 
     @property
-    def test_db_url(self):
+    def test_db_url(self) -> str:
         return "sqlite:///:memory:"
 
 

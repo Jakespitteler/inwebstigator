@@ -22,10 +22,10 @@ class NotFoundError(DomainError):
         attributes: dict[str, Any] | None = None,
     ) -> None:
         if id:
-            self.id = id
+            self.id: uuid.UUID = id
             super().__init__(f"{id=} not found.")
         elif attributes:
-            self.attributes = attributes
+            self.attributes: dict[str, Any] = attributes
             super().__init__(f"{attributes=} not found.")
         else:
             super().__init__("not found.")

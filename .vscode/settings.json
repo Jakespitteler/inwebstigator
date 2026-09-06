@@ -7,11 +7,19 @@
     "cSpell.words": [
         "autoflush",
         "autouse",
+        "dtick",
         "getfixturevalue",
+        "KHTML",
         "ondelete",
         "onupdate",
+        "parametrize",
         "poolclass",
         "selectinload",
-        "sessionmaker"
+        "sessionmaker",
+        "showlegend",
+        "ticktext",
+        "tickvals",
+        "xaxes",
+        "yaxes"
     ]
 }

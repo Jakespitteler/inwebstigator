@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>{{ heading }}</h1>
+        <p>{{ message }}</p>
+    </div>
+    <h2>Crawler Control Panel</h2>
+    
+    <form action="/crawl" method="post">
+        <div>
+            <label for="url">Target URL:</label><br>
+            <input type="text" id="url" name="url" value="{{ url | default('https://www.teqsa.gov.au/') }}" required>
+            <label for="max_pages">Max Pages:</label><br>
+            <input type="text" id="max_pages" name="max_pages" value="{{ max_pages | default('5000') }}" required>
+            <label for="max_concurrent">Max Concurrent:</label><br>
+            <input type="text" id="max_concurrent" name="max_concurrent" value="{{ max_concurrent | default('30') }}" required>
+            <label for="delay">Delay:</label><br>
+            <input type="text" id="delay" name="delay" value="{{ delay | default('0.5') }}" required>
+        </div>
+        <button type="submit">Run Crawler</button>
+    </form>
+
+    <hr>
+
+    {% if links is not none %}
+    <div>
+        <h3>Discovered Links (Total: {{ links | length }})</h3>
+        
+        {% if links | length > 0 %}
+        <ul>
+            {% for link in links %}
+            <li><a href="{{ link }}" target="_blank">{{ link }}</a></li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p>No links found or crawler returned an empty set.</p>
+        {% endif %}
+    </div>
+    {% endif %}
+</body>
+</html>
