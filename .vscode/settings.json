@@ -9,6 +9,7 @@
         "autouse",
         "dtick",
         "getfixturevalue",
+        "inwebstigator",
         "KHTML",
         "ondelete",
         "onupdate",

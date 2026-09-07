@@ -1,4 +1,3 @@
-import asyncio
 import logging
 
 from httpx2 import AsyncClient
@@ -52,17 +51,16 @@ async def scan_website(
     # Scan website
     try:
         website_state: WebsiteState = await get_website_state(client, website, max_pages, delay, concurrent)
-
-    except TrafficError as e:  # TODO Make sure we are actually catching all of the errors and reacting accordingly
-        logger.error(f"Too many requests for website, waiting and reducing speed then trying again. {e}")
-        WebsiteService(session).throttle_crawler(id=website.id)
-        await asyncio.sleep(1 * 60)  # TODO  maybe test a fetch and wait till open
-        return await scan_website(client, session, website, recipient_email, max_pages)
-
+    except TrafficError as e:
+        logger.error(f"Temporary ban or severe rate limit detected for {website.url}: {e}")
+        if delay or concurrent:
+            return "Scan aborted, try increasing delay or reducing concurrent (may be banned)"
+        WebsiteService(session).throttle_and_cooldown(id=website.id, hours=24)
+        return "Scan aborted due to traffic issues and website placed on cooldown."
     except WebConnectionError as e:
-        logger.error(f"Lost connection, waiting and trying again. {e}")
-        await asyncio.sleep(1 * 60)  # TODO  maybe test a fetch and wait till open
-        return await scan_website(client, session, website, recipient_email, max_pages, delay, concurrent)
+        logger.error(f"Site unreachable: {e}")
+        WebsiteService(session).set_cooldown(id=website.id, hours=2)
+        return "Scan aborted due to connection issues and website placed on cooldown."
 
     # Format notification
     scan_report_body: str = generate_scan_report_body(website_state)

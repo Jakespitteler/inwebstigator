@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -21,6 +22,7 @@ class WebsiteRead(BaseModel):
     url: URLString
     recommended_delay: float
     recommended_concurrent: int
+    next_scan_at: datetime | None = None
     critical_pages: list[CriticalPageRead]
     internal_links: list[InternalLinkRead]
 
@@ -29,6 +31,7 @@ class WebsiteUpdate(BaseModel):
     url: URLString | None = None
     recommended_delay: float | None = None
     recommended_concurrent: int | None = None
+    next_scan_at: datetime | None = None
 
 
 class WebsiteState(BaseModel):

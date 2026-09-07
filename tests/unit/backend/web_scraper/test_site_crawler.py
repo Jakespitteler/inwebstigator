@@ -5,7 +5,7 @@ import httpx2
 import pytest
 
 from app.backend.errors import TrafficError, WebConnectionError
-from app.backend.web_scraper.site_crawler import crawl_site, fetch_internal_links_from_url
+from app.backend.web_scraper.site_crawler import CrawlFetchResult, crawl_site, fetch_internal_links_from_url
 from tests.conftest import RequestHandler
 
 # ========================
@@ -22,12 +22,12 @@ async def test_fetch_internal_links_from_url_success(
     """Tests that fetch_internal_links_from_url successfully retrieves content and extracts internal links."""
 
     async with mock_client_factory(website_handler) as client:
-        url, links, status_code = await fetch_internal_links_from_url(client, test_url, asyncio.Semaphore(2))
+        result: CrawlFetchResult = await fetch_internal_links_from_url(client, test_url, asyncio.Semaphore(2))
 
-    assert url == test_url
-    assert len(links) == 4
-    assert any("page1.html" in link for link in links)
-    assert status_code == 200
+    assert result.url == test_url
+    assert len(result.internal_links) == 4
+    assert any("page1.html" in link for link in result.internal_links)
+    assert result.status_code == 200
 
 
 @pytest.mark.anyio
@@ -65,10 +65,10 @@ async def test_fetch_internal_links_from_url_non_fatal_errors(
 ):
     """Tests that non-fatal errors handle gracefully, returning empty links."""
     async with mock_client_factory(handler) as client:
-        url, links, _ = await fetch_internal_links_from_url(client, test_url, asyncio.Semaphore(2))
+        result: CrawlFetchResult = await fetch_internal_links_from_url(client, test_url, asyncio.Semaphore(2))
 
-    assert url == test_url
-    assert links == []
+    assert result.url == test_url
+    assert result.internal_links == []
 
 
 # ========================

@@ -1,24 +1,28 @@
+import logging
 from collections.abc import Sequence
+from datetime import datetime
 
 from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from httpx2 import AsyncClient
 
+from app.backend.web_scraper.engine import get_critical_page_state, get_website_state
 from app.db.errors import NotFoundError
 from app.db.models import critical_page_models, internal_link_models, website_models
 from app.db.services import critical_page_service, internal_link_service, website_service
 from app.frontend.api.crud_router_factory import create_crud_router
 from app.frontend.api.dependencies import SessionDep
-from app.scanner import run_website_scanner, scan_critical_page, scan_website
+from app.scanner import scan_website
 
 templates = Jinja2Templates(directory="app/frontend/templates")
 
+logger = logging.getLogger(__name__)
 
 ROOT_ROUTER = APIRouter()
 
 
-@ROOT_ROUTER.get("/", response_model=str)
+@ROOT_ROUTER.get("/")
 def get_root(session: SessionDep, request: Request) -> HTMLResponse:
     """
     Root endpoint to check if the server is running.
@@ -42,13 +46,12 @@ SCANNER_ROUTER = APIRouter(prefix="/scanner")
 @SCANNER_ROUTER.post("/run", response_class=HTMLResponse)
 async def run_scanner_on_website(
     session: SessionDep,
-    request: Request,
     recipient_email: str = Form(...),
     url: str = Form(...),
     max_pages: int | None = Form(...),
     delay: float | None = Form(...),
     concurrent: int | None = Form(...),
-):
+) -> str:
     """Triggers the app from the UI form submission."""
     try:
         website: website_models.WebsiteRead = website_service.WebsiteService(session).get_by_url(url)
@@ -58,36 +61,26 @@ async def run_scanner_on_website(
         )
 
     async with AsyncClient() as client:
-        result_text: str = await run_website_scanner(
-            client,
-            session,
-            website,
-            recipient_email,
-            max_pages,
-            delay,
-            concurrent,
-        )
+        result_text: str = await scan_website(client, session, website, recipient_email, max_pages, delay, concurrent)
 
-    context: dict[str, str] = {"result": result_text}
-    # TODO Result is not displayed
-    return templates.TemplateResponse(request=request, name="index.html", context=context)
+    return result_text
 
 
 @SCANNER_ROUTER.post("/run_all", response_class=HTMLResponse)
-async def run_scanner(
-    session: SessionDep,
-    request: Request,
-    recipient_email: str = Form(...),
-):
+async def run_scanner(session: SessionDep, recipient_email: str = Form(...)):
     """Triggers the app from the UI form submission."""
+    all_websites: Sequence[website_models.WebsiteRead] = website_service.WebsiteService(session).get_all()
+
+    result_text: list[str] = []
     async with AsyncClient() as client:
-        result_text: list[str] = [
-            await run_website_scanner(client, session, website=website, recipient_email=recipient_email)
-            for website in website_service.WebsiteService(session).get_all()
-        ]
-    context: dict[str, str | list[str]] = {"result": result_text}
-    # TODO Result is not displayed
-    return templates.TemplateResponse(request=request, name="index.html", context=context)
+        for website in all_websites:
+            if website.next_scan_at and website.next_scan_at > datetime.now():
+                result_text.append(f"Skipped {website.url}: Cooldown active until {website.next_scan_at}.")
+                continue
+            result_text.append(await scan_website(client, session, website=website, recipient_email=recipient_email))
+
+    html_content = f"<ul>{''.join(result_text)}</ul>"
+    return HTMLResponse(content=html_content)
 
 
 # ======================
@@ -103,16 +96,13 @@ CRITICAL_PAGE_ROUTER: APIRouter = create_crud_router(
 )
 
 
-@CRITICAL_PAGE_ROUTER.post("/get_state", response_class=HTMLResponse)
-async def get_critical_page_state(
-    session: SessionDep,
-    url: str = Form(...),
-):
+@CRITICAL_PAGE_ROUTER.post("/get_state", response_model=critical_page_models.CriticalPageState)
+async def get_page_state(session: SessionDep, url: str = Form(...)) -> critical_page_models.CriticalPageState:
     stored_page: critical_page_models.CriticalPageRead = critical_page_service.CriticalPageService(session).get_by_url(
-        url=url
+        url
     )
     async with AsyncClient() as client:
-        return await scan_critical_page(client, stored_page)
+        return await get_critical_page_state(client, stored_page)
 
 
 WEBSITE_ROUTER: APIRouter = create_crud_router(
@@ -123,17 +113,17 @@ WEBSITE_ROUTER: APIRouter = create_crud_router(
 )
 
 
-@WEBSITE_ROUTER.post("/get_state", response_class=HTMLResponse)
-async def get_website_state(
+@WEBSITE_ROUTER.post("/get_state", response_model=website_models.WebsiteState)
+async def get_site_state(
     session: SessionDep,
     url: str = Form(...),
     max_pages: int | None = Form(...),
     delay: float | None = Form(...),
     concurrent: int | None = Form(...),
-):
+) -> website_models.WebsiteState:
     stored_website: website_models.WebsiteRead = website_service.WebsiteService(session).get_by_url(url=url)
     async with AsyncClient() as client:
-        return await scan_website(client, stored_website, max_pages, delay, concurrent)
+        return await get_website_state(client, stored_website, max_pages, delay, concurrent)
 
 
 INTERNAL_LINK_ROUTER: APIRouter = create_crud_router(

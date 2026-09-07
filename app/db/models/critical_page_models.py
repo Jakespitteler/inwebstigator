@@ -13,7 +13,7 @@ class CriticalPageBase(BaseModel):
 
 
 class CriticalPageCreate(CriticalPageBase):
-    website_id: uuid.UUID
+    website_id: uuid.UUID | None = None
 
 
 class CriticalPageRead(BaseModel):
@@ -23,7 +23,7 @@ class CriticalPageRead(BaseModel):
     links: list[URLString] | None
     documents: list[URLString] | None
     text_body: str | None
-    website_id: uuid.UUID
+    website_id: uuid.UUID | None
 
 
 class CriticalPageUpdate(BaseModel):
