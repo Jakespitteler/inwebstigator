@@ -6,13 +6,13 @@ load_dotenv()
 
 
 class Config(BaseSettings):
-    app_name: str = "DigitalHorizonScan"
+    app_name: str = "inwebstigator"
     debug: bool = False
     email: str = ""
     email_password: SecretStr = SecretStr("")
     db_user: str = ""
     db_password: SecretStr = SecretStr("")
-    db_name: str = "digital_horizon.db"
+    db_name: str = "inwebstigator.db"
 
     @property
     def db_url(self) -> str:
