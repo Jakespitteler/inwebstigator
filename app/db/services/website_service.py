@@ -153,3 +153,15 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         """
         repository.get(self._db, table=DBWebsite, id=id)  # Check if the record exists
         repository.delete(self._db, table=DBWebsite, id=id)
+
+    def throttle_crawler(self, id: uuid.UUID) -> WebsiteRead:  # TODO: ==== INCOMPLETE ====
+        website: WebsiteRead = WebsiteService(self._db).get(id)
+        return WebsiteService(self._db).update(
+            id=website.id,
+            model_update=WebsiteUpdate(  # TODO Probably not the best method
+                recommended_delay=website.recommended_delay + 0.5,
+                recommended_concurrent=website.recommended_concurrent // 2
+                if website.recommended_concurrent > 1
+                else website.recommended_concurrent,
+            ),
+        )

@@ -13,6 +13,8 @@ class Config(BaseSettings):
     db_user: str = ""
     db_password: SecretStr = SecretStr("")
     db_name: str = "inwebstigator.db"
+    web_crawler_max_pages: int = 5000
+    web_crawler_batch_402_threshold_seconds = 20
 
     @property
     def db_url(self) -> str:

@@ -4,7 +4,7 @@ from collections.abc import Callable
 import httpx2
 import pytest
 
-from app.backend.web_scraper.errors import TrafficError, WebConnectionError
+from app.backend.errors import TrafficError, WebConnectionError
 from app.backend.web_scraper.site_crawler import crawl_site, fetch_internal_links_from_url
 from tests.conftest import RequestHandler
 
