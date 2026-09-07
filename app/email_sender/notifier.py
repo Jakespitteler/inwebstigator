@@ -5,34 +5,25 @@ Email notifications for the site scraper.
   nothing for 7 days -> "no changes detected" note
   otherwise          -> silence
 
-Pure functions apart from send_message(), the only part that touches the
-network. State between runs lives in app/services/notification_service.py.
+All pure functions:
 
-Demo without a scraper or mail server: python -m app.email_sender.demo
+  - the envelope and the actual sending are in build_message.py
+  - state between runs is in app/db/services/notification_service.py
+
+Demo without a scraper or mail server:
+    python -m tests.integration.integration_test_email_sender
 """
-
-from __future__ import annotations
 
 import difflib
 import re
-import smtplib
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
-from email.message import EmailMessage
-from email.utils import formatdate, make_msgid, parseaddr
 from html import escape, unescape
-from typing import Any, Literal, get_args
+from typing import Any, Literal, Self, get_args
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.core.config import config
-
-# From the shared Config. Module constants so a caller can override one.
-SITE_NAME = config.site_name
-CLIENT_TO = config.client_to_addresses
-FROM_ADDR = config.from_addr
-
-# Opt in, so a fresh checkout can't mail the placeholder address.
-DRY_RUN = config.dry_run
+from app.email_sender.build_message import build_message, send_email
 
 # Client's timezone, not UTC.
 REPORT_TIMEZONE = config.report_timezone
@@ -54,15 +45,11 @@ def _local(when: datetime) -> datetime:
     """Same instant in the report timezone. Display only, arithmetic stays UTC."""
     return when.astimezone(_REPORT_TZ)
 
+
 HEARTBEAT_DAYS = 7
 # The daily job never fires at the same second, so a strict 7 days slips to 8.
 HEARTBEAT_SLACK_HOURS = 12
 HEARTBEAT_DUE = timedelta(days=HEARTBEAT_DAYS, hours=-HEARTBEAT_SLACK_HOURS)
-
-SMTP_HOST = config.smtp_host
-SMTP_PORT = config.smtp_port
-SMTP_USER = config.email
-SMTP_PASS = config.email_password.get_secret_value()
 
 
 # what the diff finder hands over
@@ -125,7 +112,7 @@ class Change:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Change:
+    def from_dict(cls, data: dict[str, Any]) -> Self:
         """Rebuild a parked change. Unknown keys are dropped so a deploy doesn't
         strand the retry queue."""
         fields = {"type", "url", "label", "old_text", "new_text"}
@@ -247,13 +234,12 @@ def _strip_tags(html_fragment: str) -> str:
     return unescape(text)
 
 
-def render_digest(changes: list[Change], now: datetime, site_name: str | None = None) -> tuple[str, str]:
+def render_digest(changes: list[Change], now: datetime, site_name: str) -> tuple[str, str]:
     """(subject, body) for the "what changed" email.
 
     Buckets by type and prints in SECTIONS order. No db and no network, so call
     it directly when fiddling with wording.
     """
-    site_name = site_name or SITE_NAME
     n = len(changes)
     noun = "change" if n == 1 else "changes"
     local = _local(now)
@@ -334,9 +320,8 @@ def _diff_table(change: Change) -> str:
     )
 
 
-def render_digest_html(changes: list[Change], now: datetime, site_name: str | None = None) -> str:
+def render_digest_html(changes: list[Change], now: datetime, site_name: str) -> str:
     """The HTML half of the digest. Sent alongside the text, never instead."""
-    site_name = site_name or SITE_NAME
     n = len(changes)
     noun = "change" if n == 1 else "changes"
 
@@ -372,12 +357,11 @@ def render_digest_html(changes: list[Change], now: datetime, site_name: str | No
     return "".join(out)
 
 
-def render_all_clear(now: datetime, since: datetime, site_name: str | None = None) -> tuple[str, str]:
+def render_all_clear(now: datetime, since: datetime, site_name: str) -> tuple[str, str]:
     """(subject, body) for the weekly "nothing changed" note.
 
     `since` is when we last emailed, so the body can name the window.
     """
-    site_name = site_name or SITE_NAME
     local = _local(now)
     since_local = _local(since)
     subject = f"[{site_name}] No changes detected - week to {local:%d %b %Y}"
@@ -396,74 +380,12 @@ def render_all_clear(now: datetime, since: datetime, site_name: str | None = Non
     return subject, body
 
 
-def _sender_domain() -> str | None:
-    """Domain of FROM_ADDR, for the Message-ID."""
-    _, address = parseaddr(FROM_ADDR)
-    _, _, domain = address.partition("@")
-    return domain or None
-
-
-def build_message(
-    subject: str,
-    body: str,
-    html_body: str | None = None,
-    now: datetime | None = None,
-    recipients: list[str] | None = None,
-) -> EmailMessage:
-    """Wrap finished text in an email envelope. No sending.
-
-    With `html_body` the result is multipart/alternative, falling back to
-    `body`. `recipients` defaults to CLIENT_TO.
-    """
-    now = now or datetime.now(UTC)
-    msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = FROM_ADDR
-    msg["To"] = ", ".join(recipients or CLIENT_TO)
-    # Marks us as a bot, so no out-of-office replies come back.
-    msg["Auto-Submitted"] = "auto-generated"
-    # Neither is added for us, and without them spam filters read this as a bulk
-    # sender. Message-ID domain matches the sender for the same reason.
-    msg["Date"] = formatdate(now.timestamp())
-    msg["Message-ID"] = make_msgid(domain=_sender_domain())
-    msg.set_content(body)
-    if html_body:
-        msg.add_alternative(html_body, subtype="html")
-    return msg
-
-
-#  sending
-
-
-def send_message(msg: EmailMessage, dry_run: bool | None = None) -> bool:
-    """Hand one message to the mail server. Returns whether it went out.
-
-    dry_run=True just prints it, and is what DRY_RUN defaults to. Returns False
-    rather than raising, so a dead mail server can't take the daily run down.
-    """
-    if DRY_RUN if dry_run is None else dry_run:
-        print("=" * 60)
-        print(msg)
-        return True
-
-    try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=30) as smtp:
-            smtp.starttls()
-            if SMTP_USER:
-                smtp.login(SMTP_USER, SMTP_PASS)
-            smtp.send_message(msg)
-    except Exception as exc:
-        print(f"  send failed: {exc}")
-        return False
-    return True
-
-
 def notify(
     changes: list[Change],
+    site_name: str,
     now: datetime | None = None,
     last_email_at: datetime | None = None,
     dry_run: bool | None = None,
-    site_name: str | None = None,
     recipients: list[str] | None = None,
 ) -> str:
     """Package a run's changes into an email and send it. The way in.
@@ -491,4 +413,4 @@ def notify(
         return "nothing"
 
     message = build_message(subject, body, html_body, now=now, recipients=recipients)
-    return action if send_message(message, dry_run=dry_run) else "failed"
+    return action if send_email(message, dry_run=dry_run) else "failed"

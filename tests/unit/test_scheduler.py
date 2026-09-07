@@ -13,13 +13,8 @@ from app.core.config import Config
 from app.db.schema import DBWebsite
 from app.email_sender import notifier
 from app.scheduler import background_scheduler
-from app.scheduler.background_scheduler import (
-    check_notifications,
-    last_slot_at,
-    next_slot_at,
-    run_loop,
-    run_notifications,
-)
+from app.scheduler.background_scheduler import check_notifications, run_notifications
+from app.scheduler.utils import last_slot_at, next_slot_at, run_loop
 
 PERTH = ZoneInfo("Australia/Perth")
 
@@ -49,13 +44,18 @@ def test_config_rejects_an_impossible_run_hour():
 def test_client_to_is_split_into_addresses():
     config = Config(client_to="a@example.com, b@example.com")
 
-    assert config.client_to_addresses == ["a@example.com", "b@example.com"]
+    assert config.client_to == ["a@example.com", "b@example.com"]
 
 
 def test_client_to_ignores_blank_entries():
     config = Config(client_to="a@example.com,,  ,b@example.com")
 
-    assert config.client_to_addresses == ["a@example.com", "b@example.com"]
+    assert config.client_to == ["a@example.com", "b@example.com"]
+
+
+def test_client_to_accepts_a_list_unchanged():
+    # Only .env is comma separated. A list passed in shouldn't be re-split.
+    assert Config(client_to=["a@example.com"]).client_to == ["a@example.com"]
 
 
 #  wall clock scheduling
@@ -185,7 +185,7 @@ def test_run_loop_subtracts_the_task_duration_from_the_wait():
 
 
 def test_run_notifications_reports_each_website(session: Session, test_website: DBWebsite, monkeypatch):
-    monkeypatch.setattr(notifier, "send_message", lambda msg, dry_run=None: True)
+    monkeypatch.setattr(notifier, "send_email", lambda msg, dry_run=None: True)
 
     tally = run_notifications(session, now=datetime(2026, 8, 27, 6, 0, tzinfo=UTC))
 
@@ -195,7 +195,7 @@ def test_run_notifications_reports_each_website(session: Session, test_website: 
 
 def test_a_website_is_not_reported_twice_in_one_day(session: Session, test_website: DBWebsite, monkeypatch):
     # A restart part-way through the day must not fire a second report.
-    monkeypatch.setattr(notifier, "send_message", lambda msg, dry_run=None: True)
+    monkeypatch.setattr(notifier, "send_email", lambda msg, dry_run=None: True)
     now = datetime(2026, 8, 27, 9, 0, tzinfo=UTC)
 
     run_notifications(session, now=now)
@@ -205,7 +205,7 @@ def test_a_website_is_not_reported_twice_in_one_day(session: Session, test_websi
 
 
 def test_a_new_day_is_reported_again(session: Session, test_website: DBWebsite, monkeypatch):
-    monkeypatch.setattr(notifier, "send_message", lambda msg, dry_run=None: True)
+    monkeypatch.setattr(notifier, "send_email", lambda msg, dry_run=None: True)
 
     run_notifications(session, now=datetime(2026, 8, 27, 9, 0, tzinfo=UTC))
     next_day = run_notifications(session, now=datetime(2026, 8, 28, 9, 0, tzinfo=UTC))
@@ -222,7 +222,7 @@ def test_check_notifications_keeps_the_blocking_work_off_the_event_loop(monkeypa
         "run_notifications",
         lambda session, now=None: (time.sleep(0.2), {"digest": 1})[1],
     )
-    monkeypatch.setattr(background_scheduler, "SessionLocal", lambda: _NullSession())
+    monkeypatch.setattr(background_scheduler, "get_db_session", _null_session)
 
     ticks = []
 
@@ -243,7 +243,7 @@ def test_check_notifications_keeps_the_blocking_work_off_the_event_loop(monkeypa
 def test_a_failed_send_is_logged_as_an_error(session: Session, test_website: DBWebsite, monkeypatch, caplog):
     # notify() returns "failed" precisely so the caller can notice. If nobody
     # looks at it, a dropped report is invisible.
-    monkeypatch.setattr(notifier, "send_message", lambda msg, dry_run=None: False)
+    monkeypatch.setattr(notifier, "send_email", lambda msg, dry_run=None: False)
     monkeypatch.setattr(
         background_scheduler,
         "collect_changes",
@@ -258,9 +258,10 @@ def test_a_failed_send_is_logged_as_an_error(session: Session, test_website: DBW
     assert "parked" in caplog.text
 
 
-class _NullSession:
-    """Stand-in for a database session, for the off-the-loop timing test."""
+@contextlib.contextmanager
+def _null_session():
+    """Stand-in for get_db_session(), for the off-the-loop timing test.
 
-    def commit(self) -> None: ...
-    def rollback(self) -> None: ...
-    def close(self) -> None: ...
+    Nothing to commit, and run_notifications is stubbed out anyway.
+    """
+    yield None

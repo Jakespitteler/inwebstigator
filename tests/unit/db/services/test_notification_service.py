@@ -21,13 +21,13 @@ def service(session: Session) -> NotificationService:
 def sent(monkeypatch) -> list:
     """Capture messages instead of sending them, and report success."""
     captured = []
-    monkeypatch.setattr(notifier, "send_message", lambda msg, dry_run=None: (captured.append(msg), True)[1])
+    monkeypatch.setattr(notifier, "send_email", lambda msg, dry_run=None: (captured.append(msg), True)[1])
     return captured
 
 
 @pytest.fixture()
 def dead_mail_server(monkeypatch) -> None:
-    monkeypatch.setattr(notifier, "send_message", lambda msg, dry_run=None: False)
+    monkeypatch.setattr(notifier, "send_email", lambda msg, dry_run=None: False)
 
 
 def a_change(url: str = "https://example.edu.au/enrolment") -> notifier.Change:
@@ -162,11 +162,11 @@ def test_a_parked_report_is_not_retried_before_it_is_due(
 def test_a_parked_report_is_retried_once_it_is_due(
     service: NotificationService, test_website: DBWebsite, monkeypatch
 ):
-    monkeypatch.setattr(notifier, "send_message", lambda msg, dry_run=None: False)
+    monkeypatch.setattr(notifier, "send_email", lambda msg, dry_run=None: False)
     service.run_for_website(test_website, [a_change()], now=NOW)
 
     later = NOW + timedelta(seconds=config.retry_base_delay_seconds + 1)
-    monkeypatch.setattr(notifier, "send_message", lambda msg, dry_run=None: True)
+    monkeypatch.setattr(notifier, "send_email", lambda msg, dry_run=None: True)
     sent, queued = service.retry_pending(now=later)
 
     assert (sent, queued) == (1, 0)
@@ -176,11 +176,11 @@ def test_a_parked_report_is_retried_once_it_is_due(
 def test_a_successful_retry_records_the_email(
     service: NotificationService, test_website: DBWebsite, monkeypatch
 ):
-    monkeypatch.setattr(notifier, "send_message", lambda msg, dry_run=None: False)
+    monkeypatch.setattr(notifier, "send_email", lambda msg, dry_run=None: False)
     service.run_for_website(test_website, [a_change()], now=NOW)
 
     later = NOW + timedelta(seconds=config.retry_base_delay_seconds + 1)
-    monkeypatch.setattr(notifier, "send_message", lambda msg, dry_run=None: True)
+    monkeypatch.setattr(notifier, "send_email", lambda msg, dry_run=None: True)
     service.retry_pending(now=later)
 
     assert service.last_email_at(test_website.id) == later

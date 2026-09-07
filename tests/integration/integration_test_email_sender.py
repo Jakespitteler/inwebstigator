@@ -6,7 +6,8 @@ Doubles as a worked example of what has to sit around the notifier: the
 notifier is handed a list of changes and told when we last emailed, so this
 file plays the part of the caller and remembers `last_email_at` between runs.
 
-Run it from the repo root:  python -m app.email_sender.demo
+Run it from the repo root:
+    python -m tests.integration.integration_test_email_sender
 """
 
 from datetime import UTC, datetime, timedelta
@@ -27,6 +28,9 @@ FINDINGS = {
 }
 
 
+SITE_NAME = "example.edu.au"
+
+
 def main():
     start = datetime(2026, 8, 3, 6, 0, tzinfo=UTC)
 
@@ -45,6 +49,7 @@ def main():
 
         action = notifier.notify(
             changes,
+            site_name=SITE_NAME,
             now=when,
             last_email_at=last_email_at,
             dry_run=True,

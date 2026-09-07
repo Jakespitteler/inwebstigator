@@ -13,102 +13,20 @@ for a day already covered.
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
 from app.core.config import config
 from app.db import repository
-from app.db.core import SessionLocal
+from app.db.core import get_db_session
 from app.db.schema import DBWebsite
 from app.db.services.notification_service import NotificationService
-from app.email_sender import notifier
+from app.email_sender import build_message, notifier
+from app.scheduler.utils import last_slot_at, run_daily_at
 
 log = logging.getLogger(__name__)
-
-
-# ----------------------------------------------------------------------
-# Scheduling helpers
-# ----------------------------------------------------------------------
-
-
-def _slot_on(day: datetime, hour: int, minute: int) -> datetime:
-    """The scheduled instant on `day`, which must already be in the report tz."""
-    return day.replace(hour=hour, minute=minute, second=0, microsecond=0)
-
-
-def last_slot_at(now: datetime, hour: int, minute: int, tz: ZoneInfo) -> datetime:
-    """The most recent scheduled time at or before `now`, in UTC.
-
-    The run guard compares against this: a website whose last run is at or after
-    it has already been covered.
-    """
-    local: datetime = now.astimezone(tz)
-    slot: datetime = _slot_on(local, hour, minute)
-    if slot > local:
-        slot = _slot_on(local - timedelta(days=1), hour, minute)
-    return slot.astimezone(UTC)
-
-
-def next_slot_at(now: datetime, hour: int, minute: int, tz: ZoneInfo) -> datetime:
-    """The next scheduled time strictly after `now`, in UTC.
-
-    Read off the wall clock each time, so nothing drifts and a daylight saving
-    change shifts the run once rather than permanently.
-    """
-    local: datetime = now.astimezone(tz)
-    slot: datetime = _slot_on(local, hour, minute)
-    if slot <= local:
-        slot = _slot_on(local + timedelta(days=1), hour, minute)
-    return slot.astimezone(UTC)
-
-
-async def _run_guarded(task_function: Callable[[], Awaitable[None]]) -> None:
-    """Run a task, logging what it raises instead of letting it escape.
-
-    Otherwise one bad morning ends monitoring for good and says nothing. Only
-    Exception is caught, so cancellation and Ctrl-C still work.
-    """
-    name: str = getattr(task_function, "__name__", repr(task_function))
-    try:
-        await task_function()
-    except Exception:
-        log.exception("scheduled task %s failed; carrying on", name)
-
-
-async def run_loop(interval_seconds: int, task_function: Callable[[], Awaitable[None]]) -> None:
-    """Run task_function forever, one go every interval_seconds.
-
-    The task's own duration comes off the wait, so the period stays put. Used
-    for the scrape loop; notifications use run_daily_at() instead.
-    """
-    while True:
-        started: float = asyncio.get_running_loop().time()
-        await _run_guarded(task_function)
-        elapsed: float = asyncio.get_running_loop().time() - started
-        await asyncio.sleep(max(0.0, interval_seconds - elapsed))
-
-
-async def run_daily_at(
-    hour: int,
-    minute: int,
-    tz: ZoneInfo,
-    task_function: Callable[[], Awaitable[None]],
-) -> None:
-    """Run task_function once a day at a wall clock time.
-
-    Fires once on entry so a process started after the day's slot still covers
-    that day. The per-website guard makes that a no-op if it already ran.
-    """
-    await _run_guarded(task_function)
-    while True:
-        now: datetime = datetime.now(UTC)
-        target: datetime = next_slot_at(now, hour, minute, tz)
-        log.info("next notification run at %s", target.astimezone(tz))
-        await asyncio.sleep((target - now).total_seconds())
-        await _run_guarded(task_function)
 
 
 # ----------------------------------------------------------------------
@@ -168,16 +86,9 @@ async def check_notifications() -> None:
     """
 
     def _work() -> dict[str, int]:
-        session: Session = SessionLocal()
-        try:
-            tally: dict[str, int] = run_notifications(session)
-            session.commit()
-            return tally
-        except Exception:
-            session.rollback()
-            raise
-        finally:
-            session.close()
+        # get_db_session commits at the end, rolls back if it raises.
+        with get_db_session() as session:
+            return run_notifications(session)
 
     tally: dict[str, int] = await asyncio.to_thread(_work)
     if tally:
@@ -205,7 +116,7 @@ async def main() -> None:
         config.daily_run_hour,
         config.daily_run_minute,
         tz,
-        notifier.DRY_RUN,
+        build_message.DRY_RUN,
     )
 
     await run_daily_at(

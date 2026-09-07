@@ -1,6 +1,8 @@
+from typing import Annotated
+
 from dotenv import load_dotenv
-from pydantic import Field, SecretStr
-from pydantic_settings import BaseSettings
+from pydantic import Field, SecretStr, field_validator
+from pydantic_settings import BaseSettings, NoDecode
 
 load_dotenv()
 
@@ -8,55 +10,47 @@ load_dotenv()
 class Config(BaseSettings):
     app_name: str = "DigitalHorizonScan"
     debug: bool = False
+    # Also the From address. We send from whatever account we log in as.
     email: str = ""
     email_password: SecretStr = SecretStr("")
     db_user: str = ""
     db_password: SecretStr = SecretStr("")
     db_name: str = "digital_horizon.db"
 
-    # ------------------------------------------------------------------
-    # Notifier
-    #
-    # Everything defaults to an example.com placeholder so a fresh checkout
-    # runs the demo with no .env at all. Real sending is opt in: dry_run stays
-    # True until someone deliberately sets DRY_RUN=false.
-    # ------------------------------------------------------------------
+    # notifier
+    # - addresses and mail server start blank, filled in from .env
+    # - blank is obvious, a fake one just mails nobody
+    # - dry_run stays on until someone sets DRY_RUN=false
     dry_run: bool = True
-    site_name: str = "example.edu.au"
-    # Comma separated in the environment. Read it through client_to_addresses,
-    # which does the splitting -- a bare list[str] field would make
-    # pydantic-settings try to JSON-decode the value.
-    client_to: str = "client@example.com"
-    from_addr: str = "sitewatch@example.com"
-    smtp_host: str = "smtp.example.com"
+    # Comma separated in .env, a list everywhere else.
+    # NoDecode stops pydantic trying to read it as JSON first.
+    client_to: Annotated[list[str], NoDecode] = []
+    smtp_host: str = ""
     smtp_port: int = 587
-    # Times in the report are shown in the client's timezone, not the server's.
-    # The daily run at 06:00 UTC is 14:00 in Perth, and a report headed
-    # "checked 06:00" when the client reads it over lunch invites a support
-    # email. Any IANA name works; an unknown one falls back to UTC.
+    # Times in the report use the client's timezone, not the server's.
+    # Any IANA name works, a bad one falls back to UTC.
     report_timezone: str = "Australia/Perth"
 
-    # ------------------------------------------------------------------
-    # Scheduler
-    # ------------------------------------------------------------------
-    # Wall clock time of the daily notification run, in report_timezone. A bad
-    # value here means the client's report never goes out at a sane hour, so it
-    # fails at startup rather than being quietly clamped.
+    # scheduler
+    # What time the daily run goes out, in report_timezone.
+    # A bad value fails at startup instead of being quietly fixed up.
     daily_run_hour: int = Field(default=6, ge=0, le=23)
     daily_run_minute: int = Field(default=0, ge=0, le=59)
-    # The scrape loop still runs on a plain interval; it is not the thing the
-    # client reads a timestamp off.
+    # The scrape loop just runs on an interval. Nobody reads a time off it.
     scrape_interval_seconds: int = Field(default=3600, gt=0)
-    # A parked send is retried with exponential backoff starting here, capped
-    # at retry_max_delay_seconds, and given up on after retry_max_attempts.
+    # Failed sends get retried. Backoff starts here, caps at
+    # retry_max_delay_seconds, gives up after retry_max_attempts.
     retry_base_delay_seconds: int = Field(default=900, gt=0)
     retry_max_delay_seconds: int = Field(default=86400, gt=0)
     retry_max_attempts: int = Field(default=5, gt=0)
 
-    @property
-    def client_to_addresses(self) -> list[str]:
-        """CLIENT_TO split into individual recipients, blanks dropped."""
-        return [address.strip() for address in self.client_to.split(",") if address.strip()]
+    @field_validator("client_to", mode="before")
+    @classmethod
+    def _split_recipients(cls, value: object) -> object:
+        """Split CLIENT_TO on commas and drop blanks. A list comes through as is."""
+        if isinstance(value, str):
+            return [address.strip() for address in value.split(",") if address.strip()]
+        return value
 
     @property
     def db_url(self) -> str:

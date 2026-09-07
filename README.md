@@ -17,10 +17,10 @@ not read or write a database. What it sends:
 - nothing for 7 days → a "no changes detected" note
 - otherwise → nothing
 
-Everything in it is a plain function of its arguments except `send_message()`,
-which is the only part that touches the network. That means the wording can be
-tested without a mail server, and a mail server being down can't affect any
-stage upstream.
+Everything in it is a plain function of its arguments. The envelope and the
+one call that touches the network live in `app/email_sender/build_message.py`
+(`build_message()` and `send_email()`), so the wording can be tested without a
+mail server, and a mail server being down can't affect any stage upstream.
 
 The weekly "no changes" note needs to know when we last emailed, which is not
 something any earlier stage knows. So `notify()` takes `last_email_at` as an
@@ -30,7 +30,7 @@ caller owns the remembering. Pass `None` and the note simply never fires.
 ### run demo
 
 ```bash
-uv run python -m app.email_sender.demo
+uv run python -m tests.integration.integration_test_email_sender
 ```
 
 Simulates three weeks of daily runs, emails are printed rather than sent. It
@@ -126,18 +126,20 @@ cp .env.example .env      # then fill it in
 `app/core/config.py` reads `.env` for the whole project on import, so there is
 nothing to `source`. Anything already exported wins over the file, so you can
 still override a setting for one run
-(`SITE_NAME=x uv run python -m app.email_sender.demo`).
+(`REPORT_TIMEZONE=UTC uv run python -m tests.integration.integration_test_email_sender`).
 `.env` is gitignored — never commit real values.
 
-Everything defaults to `example.com` placeholders, so the demo runs with no
-setup at all.
+The addresses and the mail server default to blank rather than to a plausible
+looking placeholder, so a half-filled `.env` fails loudly instead of mailing
+somewhere nobody reads. The demo prints rather than sends, so it still runs
+with no setup at all.
 
 ### Sending real test email
 
 Nothing leaves the machine until you ask it to: `DRY_RUN` defaults to `true`,
 which prints emails instead of sending them. That default is deliberate — a
 fresh checkout can't mail anyone, and forgetting to configure `.env` fails
-loudly rather than quietly mailing `client@example.com`.
+loudly rather than quietly mailing an address nobody reads.
 
 To send yourself a real sample report with a Gmail account:
 
@@ -154,14 +156,15 @@ To send yourself a real sample report with a Gmail account:
    SMTP_HOST=smtp.gmail.com
    SMTP_PORT=587
    CLIENT_TO=you@gmail.com             # your own address while testing
-   FROM_ADDR=you@gmail.com             # Gmail rewrites this to EMAIL anyway
-   SITE_NAME=uwa.edu.au
    ```
+
+   `EMAIL` doubles as the From address — we send as the account we
+   authenticate as, and Gmail rewrites a mismatched From anyway.
 
 4. Send one sample report:
 
    ```bash
-   uv run python -m app.email_sender.send_test
+   uv run python -m tests.integration.integration_test_email_delivery
    ```
 
 It checks the settings first and tells you exactly what's missing rather than
@@ -207,8 +210,9 @@ and next week's note says the same thing.
 The database models many websites, so each one gets its own report stamped with
 its own URL, and its own weekly all-clear window. `notify()` takes `site_name`
 and `recipients` as arguments for the same reason it takes `last_email_at`: the
-notifier has no business looking any of that up. `SITE_NAME` and `CLIENT_TO` in
-`.env` are the fallbacks used by the demo and the send test.
+notifier has no business looking any of that up. `site_name` is required — the
+two scripts in `tests/integration/` pass their own, and `NotificationService`
+passes the site's URL. `CLIENT_TO` in `.env` is still the fallback recipient.
 
 Per-site recipients are not wired up — every report currently goes to
 `CLIENT_TO`. That needs a client/subscriber table, which is a question for the
