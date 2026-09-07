@@ -1,131 +1,92 @@
 {
     "headings": [
-        "Public reporting",
-        "Purpose of public reports",
-        "Approach to public reporting",
+        "Australian Qualifications Framework",
+        "What is the Australian Qualifications Framework (AQF)",
+        "TEQSA’s responsibilities under the AQF",
+        "Higher education AQF levels",
+        "Undergraduate Certificates",
         "More information",
         "Last updated:"
     ],
     "paragraph_details": [
         {
-            "section": "Purpose of public reports",
+            "section": "What is the Australian Qualifications Framework (AQF)",
             "type": "paragraph",
-            "text": "Our public reporting aligns with the objectives of the TEQSA Act, which call for us to:"
+            "text": "The AQF is the national policy for regulated qualifications in Australian education and training. Delivered through the Australian Government Department of Education in consultation with the states and territories, it incorporates the qualifications from each education and training sector (schools, vocational and higher education) into a single comprehensive national qualifications framework."
         },
         {
-            "section": "Purpose of public reports",
-            "type": "list_item",
-            "text": "protect and enhance Australia’s reputation for quality higher education and training services"
-        },
-        {
-            "section": "Purpose of public reports",
-            "type": "list_item",
-            "text": "protect and enhance Australia’s international competitiveness in the higher education sector"
-        },
-        {
-            "section": "Purpose of public reports",
-            "type": "list_item",
-            "text": "protect and enhance Australia’s excellence, diversity and innovation in higher education in Australia"
-        },
-        {
-            "section": "Purpose of public reports",
-            "type": "list_item",
-            "text": "protect students undertaking, or proposing to undertake, higher education in Australia by requiring the provision of quality higher education"
-        },
-        {
-            "section": "Purpose of public reports",
-            "type": "list_item",
-            "text": "ensure students undertaking, or proposing to undertake, higher education, have access to information relating to higher education in Australia."
-        },
-        {
-            "section": "Purpose of public reports",
+            "section": "What is the Australian Qualifications Framework (AQF)",
             "type": "paragraph",
-            "text": "In accordance with these objectives, we make our regulatory decisions and actions publicly available. Reports provide information about the applicant, the decision and the main reasons for our decision."
+            "text": "One of the key objectives of the AQF is to facilitate pathways to, and through, formal qualifications. It also complements national regulatory and quality assurance arrangements for education and training."
         },
         {
-            "section": "Purpose of public reports",
+            "section": "What is the Australian Qualifications Framework (AQF)",
             "type": "paragraph",
-            "text": "Under the TEQSA Act, we may disclose to the public, higher education information that relates to actions under the Act. The Act also allows us to ‘collect, analyse, interpret and disseminate information’ relating to higher education providers, higher education awards, quality assurance practice and quality improvement in higher education and the Higher Education Standards Framework."
+            "text": "The AQF is split into 10 levels, ranging from certificate 1, all the way through to Doctoral degree, with higher education awards including levels 5-10. For more information on the individual AQF levels, visit the AQF’s levels webpage ."
         },
         {
-            "section": "Approach to public reporting",
+            "section": "TEQSA’s responsibilities under the AQF",
             "type": "paragraph",
-            "text": "TEQSA uses the National Register of Higher Education Providers to share information with the public about registered providers. The National Register includes key information, such as:"
+            "text": "TEQSA’s role is to register all higher education providers and to ensure their courses meet, and continue to meet, the Higher Education Standards Framework (Threshold Standards) 2021 (Threshold Standards). The Threshold Standards include the requirement that the learning outcomes of all higher education qualifications (Levels 5-10 of the AQF) must be consistent with the level of the course. To assess whether the expected learning outcomes for a course meet the AQF level, we will compare the expected course learning outcomes with the specified learning outcomes for the relevant AQF level and assess whether the design of all components of the course support achievement of the course’s learning outcomes as a whole."
         },
         {
-            "section": "Approach to public reporting",
-            "type": "list_item",
-            "text": "legal entity name"
-        },
-        {
-            "section": "Approach to public reporting",
-            "type": "list_item",
-            "text": "trading name/s used for the provider’s higher education operations"
-        },
-        {
-            "section": "Approach to public reporting",
-            "type": "list_item",
-            "text": "Australian Business Number"
-        },
-        {
-            "section": "Approach to public reporting",
-            "type": "list_item",
-            "text": "provider category"
-        },
-        {
-            "section": "Approach to public reporting",
-            "type": "list_item",
-            "text": "registration renewal date and period of registration"
-        },
-        {
-            "section": "Approach to public reporting",
-            "type": "list_item",
-            "text": "head office address"
-        },
-        {
-            "section": "Approach to public reporting",
-            "type": "list_item",
-            "text": "website for higher education operations"
-        },
-        {
-            "section": "Approach to public reporting",
-            "type": "list_item",
-            "text": "self-accrediting authority status"
-        },
-        {
-            "section": "Approach to public reporting",
-            "type": "list_item",
-            "text": "the names of each higher education course of study accredited by TEQSA, as well as the accreditation renewal date of course of study accredited and period of accreditation."
-        },
-        {
-            "section": "Approach to public reporting",
+            "section": "TEQSA’s responsibilities under the AQF",
             "type": "paragraph",
-            "text": "The information on the National Register identifies whether a decision has resulted in any changes to the information listed, for example, by amending a provider’s course accreditation or registration period, or by listing a new accredited higher education course of study. Conditions imposed are also noted on the National Register and are removed when they have been met by the provider, or if they are revoked."
+            "text": "For more information, visit TEQSA and the Australian Qualifications Framework: Questions and answers ."
+        },
+        {
+            "section": "Higher education AQF levels",
+            "type": "paragraph",
+            "text": "Higher education AQF levels span levels 5-10 and include:"
+        },
+        {
+            "section": "Higher education AQF levels",
+            "type": "list_item",
+            "text": "* = Higher degrees, also known as postgraduate degrees/qualifications."
+        },
+        {
+            "section": "Higher education AQF levels",
+            "type": "list_item",
+            "text": "^ = Higher degrees by research"
+        },
+        {
+            "section": "Higher education AQF levels",
+            "type": "paragraph",
+            "text": "For a breakdown of each AQF level, visit the AQF levels webpage ."
+        },
+        {
+            "section": "Higher education AQF levels",
+            "type": "paragraph",
+            "text": "Each AQF level comprises of a set of learning outcomes, the requirements for the application of the AQF level in the accreditation and development of the qualification and a set of policy requirements. For more information on these policies, visit the AQF policies webpage ."
+        },
+        {
+            "section": "Undergraduate Certificates",
+            "type": "paragraph",
+            "text": "The Undergraduate Certificate was developed in response to community and industry need based on the AQF review and as a result of the COVID-19 pandemic. Undergraduate Certificate qualifications are not located at a particular level in the AQF, however they cover AQF levels 5, 6 or 7."
+        },
+        {
+            "section": "Undergraduate Certificates",
+            "type": "paragraph",
+            "text": "For more information, visit the AQF website ."
         },
         {
             "section": "More information",
             "type": "paragraph",
-            "text": "More information relating to our public reporting can be found at:"
-        },
-        {
-            "section": "More information",
-            "type": "list_item",
-            "text": "Policy on public statements on TEQSA’s regulatory decisions and processes"
-        },
-        {
-            "section": "More information",
-            "type": "list_item",
-            "text": "National Register Guidelines"
+            "text": "For more information, visit TEQSA and the Australian Qualifications Framework: Questions and answers ."
         },
         {
             "section": "Last updated:",
             "type": "last_updated",
-            "text": "13 Oct 2022"
+            "text": "6 Mar 2026"
         }
     ],
     "links": [
-        "/national-register",
-        "/guides-resources/resources/corporate-publications/policy-public-statements-teqsas-regulatory-decisions-and-processes",
-        "https://www.legislation.gov.au/Series/F2017L01599"
+        "https://www.aqf.edu.au/framework/aqf-levels",
+        "https://www.legislation.gov.au/Series/F2021L00488",
+        "https://www.teqsa.gov.au/guides-resources/resources/guidance-notes/teqsa-and-australian-qualifications-framework-questions-and-answers",
+        "https://www.aqf.edu.au/framework/aqf-levels",
+        "https://www.aqf.edu.au/framework/aqf-policies",
+        "https://www.aqf.edu.au/help-qualifications/undergraduate-certificate",
+        "/guides-resources/resources/guidance-notes/teqsa-and-australian-qualifications-framework-questions-and-answers"
     ]
 }

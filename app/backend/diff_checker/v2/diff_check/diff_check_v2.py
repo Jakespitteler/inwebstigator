@@ -126,7 +126,7 @@ def save_previous_snapshot(content):
         json.dump(content, file, indent=4, ensure_ascii=False)
 
 
-def save_change_history(results):
+def save_change_history(results, url):
 
     # If nothing changed, don't add anything
     if not results["changed"] and not results["added"] and not results["removed"]:
@@ -142,10 +142,10 @@ def save_change_history(results):
 
     change_record = {
         "detected_at": datetime.now().astimezone().isoformat(timespec="seconds"),
-        "url": URL,
+        "url": url,
         "changed": results["changed"],
         "added": results["added"],
-        "removed": results["removed"],
+        "removed": results["removed"]
     }
 
     history.append(change_record)
@@ -264,7 +264,7 @@ def compare_paragraphs(old_content, new_content):
 # 4. TEST
 # =========================================================
 
-URL = "https://www.teqsa.gov.au/how-we-regulate/public-reporting"
+
 
 SNAPSHOT_FILE = Path(__file__).parent / "snapshot.json"
 PREVIOUS_SNAPSHOT_FILE = Path(__file__).parent / "previous_snapshot.json"
@@ -374,7 +374,7 @@ async def diff_check(client, url):
     # If there was a change:
     if has_changes:
         # Keep a permanent record of the change
-        save_change_history(results)
+        save_change_history(results,url)
 
         # Keep a copy of the OLD website
         save_previous_snapshot(old_snapshot)
@@ -386,7 +386,7 @@ async def diff_check(client, url):
 
 async def main():
 
-    test_url = "https://www.teqsa.gov.au/how-we-regulate/public-reporting"
+    test_url = "https://www.teqsa.gov.au/how-we-regulate/acts-and-standards/australian-qualifications-framework"
     async with httpx2.AsyncClient(headers=HEADERS, timeout=SECONDS_TIMEOUT) as client:
         await diff_check(client, test_url)
 
