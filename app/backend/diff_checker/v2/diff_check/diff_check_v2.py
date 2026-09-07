@@ -47,7 +47,7 @@ def extract_content(html):
 
     current_section = "No heading"
 
-    for element in main_content.find_all(["h1", "h2", "h3", "h4", "h5", "h6", "p", "li"]):
+    for element in main_content.find_all(["h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "tr"]):
         # Ignore navigation and sidebar content
         if element.find_parent(["nav", "aside"]):
             continue
@@ -70,8 +70,26 @@ def extract_content(html):
         # save both its text and its section
         elif element.name == "p":
             content["paragraph_details"].append({"section": current_section, "type": "paragraph", "text": text})
+
         elif element.name == "li":
             content["paragraph_details"].append({"section": current_section, "type": "list_item", "text": text})
+
+        elif element.name == "tr":
+
+            cells = element.find_all(["th", "td"])
+
+            row_text = " | ".join(
+                cell.get_text(" ", strip=True)
+                for cell in cells
+            )
+
+            if row_text:
+                content["paragraph_details"].append({
+                    "section": current_section,
+                    "type": "table_row",
+                    "text": row_text
+                })
+        
 
     # Capture Last updated date
     last_updated_heading = main_content.find(
@@ -386,7 +404,7 @@ async def diff_check(client, url):
 
 async def main():
 
-    test_url = "https://www.teqsa.gov.au/how-we-regulate/acts-and-standards/australian-qualifications-framework"
+    test_url = "https://www.teqsa.gov.au/national-register"
     async with httpx2.AsyncClient(headers=HEADERS, timeout=SECONDS_TIMEOUT) as client:
         await diff_check(client, test_url)
 

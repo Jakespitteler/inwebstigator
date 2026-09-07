@@ -1489,5 +1489,230 @@
                 "text": "See a list of unregistered entities"
             }
         ]
+    },
+    {
+        "detected_at": "2026-09-07T20:21:34+08:00",
+        "url": "https://www.teqsa.gov.au/how-we-regulate/acts-and-standards/australian-qualifications-framework",
+        "changed": [],
+        "added": [
+            {
+                "section": "Higher education AQF levels",
+                "text": "AQF level | Qualification | Degree level | Regulatory responsibility"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "10 | Higher Doctoral Degree * ^ | Postgraduate | TEQSA"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "10 | Doctoral Degree * ^ | Postgraduate | TEQSA"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "9 | Masters Degree (Research) * ^ | Postgraduate | TEQSA"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "9 | Masters Degree (Coursework) * | Postgraduate | TEQSA"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "9 | Masters Degree (Extended) * | Postgraduate | TEQSA"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "8 | Graduate Diploma * | Postgraduate | TEQSA"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "8 | Graduate Certificate * | Postgraduate | TEQSA"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "8 | Bachelor Honours Degree | Undergraduate | TEQSA"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "7 | Bachelor Degree | Undergraduate | TEQSA"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "6 | Associate Degree | Undergraduate | TEQSA/ASQA"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "6 | Advanced Diploma | Undergraduate | TEQSA/ASQA"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "5 | Diploma | Undergraduate | TEQSA/ASQA"
+            }
+        ],
+        "removed": []
+    },
+    {
+        "detected_at": "2026-09-07T20:25:46+08:00",
+        "url": "https://www.teqsa.gov.au/national-register",
+        "changed": [],
+        "added": [
+            {
+                "section": "National Register",
+                "text": "The National Register is the authoritative source of information on the status of registered higher education providers in Australia."
+            },
+            {
+                "section": "National Register",
+                "text": "Find out about our National Register"
+            },
+            {
+                "section": "National Register summary table",
+                "text": "The National Register is the authoritative source of information on the status of registered higher education providers in Australia. You can search by provider or course."
+            },
+            {
+                "section": "National Register summary table",
+                "text": "Provider category | SAA* | Non-SAA | Total"
+            },
+            {
+                "section": "National Register summary table",
+                "text": "Australian University | 44 | 0 | 44"
+            },
+            {
+                "section": "National Register summary table",
+                "text": "Institute of Higher Education | 23 | 144 | 167"
+            },
+            {
+                "section": "National Register summary table",
+                "text": "University College | 8 | 0 | 8"
+            },
+            {
+                "section": "National Register summary table",
+                "text": "Total providers | 75 | 144 | 219"
+            },
+            {
+                "section": "National Register summary table",
+                "text": "*SAA = Self-accrediting Authority (a provider can self-accredit some or all of its courses)"
+            },
+            {
+                "section": "About the National Register",
+                "text": "Find out about our National Register"
+            },
+            {
+                "section": "Unsuccessful applications",
+                "text": "Unsuccessful applications for registration"
+            },
+            {
+                "section": "Entities that are not registered higher education providers",
+                "text": "See a list of unregistered entities"
+            }
+        ],
+        "removed": [
+            {
+                "section": "What is the Australian Qualifications Framework (AQF)",
+                "text": "The AQF is the national policy for regulated qualifications in Australian education and training. Delivered through the Australian Government Department of Education in consultation with the states and territories, it incorporates the qualifications from each education and training sector (schools, vocational and higher education) into a single comprehensive national qualifications framework."
+            },
+            {
+                "section": "What is the Australian Qualifications Framework (AQF)",
+                "text": "One of the key objectives of the AQF is to facilitate pathways to, and through, formal qualifications. It also complements national regulatory and quality assurance arrangements for education and training."
+            },
+            {
+                "section": "What is the Australian Qualifications Framework (AQF)",
+                "text": "The AQF is split into 10 levels, ranging from certificate 1, all the way through to Doctoral degree, with higher education awards including levels 5-10. For more information on the individual AQF levels, visit the AQF’s levels webpage ."
+            },
+            {
+                "section": "TEQSA’s responsibilities under the AQF",
+                "text": "TEQSA’s role is to register all higher education providers and to ensure their courses meet, and continue to meet, the Higher Education Standards Framework (Threshold Standards) 2021 (Threshold Standards). The Threshold Standards include the requirement that the learning outcomes of all higher education qualifications (Levels 5-10 of the AQF) must be consistent with the level of the course. To assess whether the expected learning outcomes for a course meet the AQF level, we will compare the expected course learning outcomes with the specified learning outcomes for the relevant AQF level and assess whether the design of all components of the course support achievement of the course’s learning outcomes as a whole."
+            },
+            {
+                "section": "TEQSA’s responsibilities under the AQF",
+                "text": "For more information, visit TEQSA and the Australian Qualifications Framework: Questions and answers ."
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "Higher education AQF levels span levels 5-10 and include:"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "AQF level | Qualification | Degree level | Regulatory responsibility"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "10 | Higher Doctoral Degree * ^ | Postgraduate | TEQSA"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "10 | Doctoral Degree * ^ | Postgraduate | TEQSA"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "9 | Masters Degree (Research) * ^ | Postgraduate | TEQSA"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "9 | Masters Degree (Coursework) * | Postgraduate | TEQSA"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "9 | Masters Degree (Extended) * | Postgraduate | TEQSA"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "8 | Graduate Diploma * | Postgraduate | TEQSA"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "8 | Graduate Certificate * | Postgraduate | TEQSA"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "8 | Bachelor Honours Degree | Undergraduate | TEQSA"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "7 | Bachelor Degree | Undergraduate | TEQSA"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "6 | Associate Degree | Undergraduate | TEQSA/ASQA"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "6 | Advanced Diploma | Undergraduate | TEQSA/ASQA"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "5 | Diploma | Undergraduate | TEQSA/ASQA"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "* = Higher degrees, also known as postgraduate degrees/qualifications."
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "^ = Higher degrees by research"
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "For a breakdown of each AQF level, visit the AQF levels webpage ."
+            },
+            {
+                "section": "Higher education AQF levels",
+                "text": "Each AQF level comprises of a set of learning outcomes, the requirements for the application of the AQF level in the accreditation and development of the qualification and a set of policy requirements. For more information on these policies, visit the AQF policies webpage ."
+            },
+            {
+                "section": "Undergraduate Certificates",
+                "text": "The Undergraduate Certificate was developed in response to community and industry need based on the AQF review and as a result of the COVID-19 pandemic. Undergraduate Certificate qualifications are not located at a particular level in the AQF, however they cover AQF levels 5, 6 or 7."
+            },
+            {
+                "section": "Undergraduate Certificates",
+                "text": "For more information, visit the AQF website ."
+            },
+            {
+                "section": "More information",
+                "text": "For more information, visit TEQSA and the Australian Qualifications Framework: Questions and answers ."
+            },
+            {
+                "section": "Last updated:",
+                "text": "6 Mar 2026"
+            }
+        ]
     }
 ]
