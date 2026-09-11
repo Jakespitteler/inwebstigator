@@ -479,7 +479,7 @@ async def diff_check(client, url):
 
 async def main():
 
-    test_urls = ["https://www.teqsa.gov.au/national-register","https://www.teqsa.gov.au/how-we-regulate/public-reporting"]
+    test_urls = ["https://www.teqsa.gov.au/national-register","https://www.teqsa.gov.au/how-we-regulate/public-reporting","https://www.teqsa.gov.au/"]
 
     async with httpx2.AsyncClient(headers=HEADERS, timeout=SECONDS_TIMEOUT) as client:
 
