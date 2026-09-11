@@ -364,12 +364,6 @@ def compare_paragraphs(old_content, new_content):
 # =========================================================
 
 
-
-SNAPSHOT_FILE = Path(__file__).parent / "snapshot.json"
-PREVIOUS_SNAPSHOT_FILE = Path(__file__).parent / "previous_snapshot.json"
-
-
-
 async def diff_check(client, url):
 
     print("Scraping website...")
@@ -380,7 +374,6 @@ async def diff_check(client, url):
 
     old_snapshot = load_snapshot(url)
 
-    # rest of your code...
 
     # First ever run
     if old_snapshot is None:
@@ -400,7 +393,7 @@ async def diff_check(client, url):
     print("WEBSITE CHANGES")
     print("==========================")
 
-    # Nothing changed
+    # if nothing change this will run
     if not results["changed"] and not results["added"] and not results["removed"]:
         print("\nNo paragraph changes detected.")
 
