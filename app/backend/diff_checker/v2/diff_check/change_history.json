@@ -1714,5 +1714,31 @@
                 "text": "6 Mar 2026"
             }
         ]
+    },
+    {
+        "detected_at": "2026-09-11T18:08:26+08:00",
+        "url": "https://www.teqsa.gov.au/national-register",
+        "changed": [
+            {
+                "old_section": "National Register summary table",
+                "new_section": "National Register summary table",
+                "old_type": "table_row",
+                "new_type": "table_row",
+                "old": "Institute of Higher Education | 23 | 144 | 167",
+                "new": "Institute of Higher Education | 23 | 145 | 168",
+                "similarity": 0.9565217391304348
+            },
+            {
+                "old_section": "National Register summary table",
+                "new_section": "National Register summary table",
+                "old_type": "table_row",
+                "new_type": "table_row",
+                "old": "Total providers | 75 | 144 | 219",
+                "new": "Total providers | 75 | 145 | 220",
+                "similarity": 0.90625
+            }
+        ],
+        "added": [],
+        "removed": []
     }
 ]

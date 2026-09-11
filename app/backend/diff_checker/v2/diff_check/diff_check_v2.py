@@ -3,6 +3,7 @@ import json
 import re
 from datetime import datetime
 from difflib import SequenceMatcher
+from urllib.parse import urlparse
 from pathlib import Path
 
 import httpx2
@@ -123,36 +124,116 @@ def extract_content(html):
 
     return content
 
+def make_snapshot_name(url):
 
-def save_snapshot(content):
-    with open(SNAPSHOT_FILE, "w", encoding="utf-8") as file:
-        json.dump(content, file, indent=4, ensure_ascii=False)
+    parsed = urlparse(url)
 
-    print(f"Snapshot saved to: {SNAPSHOT_FILE}")
+    name = parsed.netloc + parsed.path
+
+    name = re.sub(
+        r"[^a-zA-Z0-9_-]",
+        "_",
+        name
+    )
+
+    return name + ".json"
 
 
-def load_snapshot():
-    if not SNAPSHOT_FILE.exists():
+def get_snapshot_file(url):
+
+    snapshot_dir = Path(__file__).parent / "snapshots"
+
+    snapshot_dir.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    return snapshot_dir / make_snapshot_name(url)
+
+def get_previous_snapshot_file(url):
+
+    previous_dir = Path(__file__).parent / "previous_snapshots"
+
+    previous_dir.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    return previous_dir / make_snapshot_name(url)
+
+def save_snapshot(content, url):
+
+    snapshot_file = get_snapshot_file(url)
+
+    with open(
+        snapshot_file,
+        "w",
+        encoding="utf-8"
+    ) as file:
+        json.dump(
+            content,
+            file,
+            indent=4,
+            ensure_ascii=False
+        )
+
+    print(f"Snapshot saved to: {snapshot_file}")
+
+
+def load_snapshot(url):
+
+    snapshot_file = get_snapshot_file(url)
+
+    if not snapshot_file.exists():
         return None
 
-    with open(SNAPSHOT_FILE, encoding="utf-8") as file:
+    with open(
+        snapshot_file,
+        "r",
+        encoding="utf-8"
+    ) as file:
         return json.load(file)
 
 
-def save_previous_snapshot(content):
-    with open(PREVIOUS_SNAPSHOT_FILE, "w", encoding="utf-8") as file:
-        json.dump(content, file, indent=4, ensure_ascii=False)
+def save_previous_snapshot(content, url):
 
+    previous_snapshot_file = get_previous_snapshot_file(url)
+
+    with open(
+        previous_snapshot_file,
+        "w",
+        encoding="utf-8"
+    ) as file:
+
+        json.dump(
+            content,
+            file,
+            indent=4,
+            ensure_ascii=False
+        )
+
+def get_change_history_file(url):
+
+    history_dir = Path(__file__).parent / "change_history"
+
+    history_dir.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    return history_dir / make_snapshot_name(url)
 
 def save_change_history(results, url):
-
+    
     # If nothing changed, don't add anything
     if not results["changed"] and not results["added"] and not results["removed"]:
         return
 
+    change_history_file = get_change_history_file(url)
+
     # Load existing history if there is one
-    if CHANGE_HISTORY_FILE.exists():
-        with open(CHANGE_HISTORY_FILE, encoding="utf-8") as file:
+    if change_history_file.exists():
+        with open(change_history_file, encoding="utf-8") as file:
             history = json.load(file)
 
     else:
@@ -168,10 +249,10 @@ def save_change_history(results, url):
 
     history.append(change_record)
 
-    with open(CHANGE_HISTORY_FILE, "w", encoding="utf-8") as file:
+    with open(change_history_file, "w", encoding="utf-8") as file:
         json.dump(history, file, indent=4, ensure_ascii=False)
 
-    print(f"Change history saved to: {CHANGE_HISTORY_FILE}")
+    print(f"Change history saved to: {change_history_file}")
 
 
 def get_paragraph_details(content):
@@ -286,7 +367,7 @@ def compare_paragraphs(old_content, new_content):
 
 SNAPSHOT_FILE = Path(__file__).parent / "snapshot.json"
 PREVIOUS_SNAPSHOT_FILE = Path(__file__).parent / "previous_snapshot.json"
-CHANGE_HISTORY_FILE = Path(__file__).parent / "change_history.json"
+
 
 
 async def diff_check(client, url):
@@ -297,7 +378,7 @@ async def diff_check(client, url):
 
     new_content = extract_content(html)
 
-    old_snapshot = load_snapshot()
+    old_snapshot = load_snapshot(url)
 
     # rest of your code...
 
@@ -306,7 +387,7 @@ async def diff_check(client, url):
         print("No previous snapshot found.")
         print("Creating first snapshot...")
 
-        save_snapshot(new_content)
+        save_snapshot(new_content, url)
 
         return
 
@@ -365,7 +446,7 @@ async def diff_check(client, url):
     # Added paragraphs
     for paragraph in results["added"]:
         print("\n--------------------------")
-        print("ADDED PARAGRAPH")
+        print("ADDED CONTENT")
         print("--------------------------")
 
         print("\nSECTION:")
@@ -395,18 +476,23 @@ async def diff_check(client, url):
         save_change_history(results,url)
 
         # Keep a copy of the OLD website
-        save_previous_snapshot(old_snapshot)
+        save_previous_snapshot(old_snapshot, url)
 
     # Whether there was a change or not,
     # save the newest website as the current snapshot
-    save_snapshot(new_content)
+    save_snapshot(new_content, url)
+
 
 
 async def main():
 
-    test_url = "https://www.teqsa.gov.au/national-register"
+    test_urls = ["https://www.teqsa.gov.au/national-register","https://www.teqsa.gov.au/how-we-regulate/public-reporting"]
+
     async with httpx2.AsyncClient(headers=HEADERS, timeout=SECONDS_TIMEOUT) as client:
-        await diff_check(client, test_url)
+
+        for url in test_urls:
+            print("\nChecking:", url)
+            await diff_check(client, url)
 
 
 if __name__ == "__main__":
