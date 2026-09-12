@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import sys
 import tempfile
 from pathlib import Path
 from time import perf_counter
@@ -9,11 +8,7 @@ from time import perf_counter
 import httpx2
 from plot_site_crawler import plot_runs
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-from app.backend.web_scraper.site_crawler import crawl_site  # noqa: E402
+from app.backend.web_scraper.site_crawler import crawl_site
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s - %(message)s")
 logger: logging.Logger = logging.getLogger(__name__)

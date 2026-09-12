@@ -3,7 +3,7 @@ from collections.abc import Callable
 import httpx2
 import pytest
 
-from app.backend.utils.html import extract_links_from_html, fetch_content_from_url
+from app.backend.utils.html_extractor import extract_links_from_html, fetch_content_from_url
 from tests.conftest import RequestHandler
 
 # =============================

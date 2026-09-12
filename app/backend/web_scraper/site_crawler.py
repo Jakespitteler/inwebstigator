@@ -7,7 +7,7 @@ import httpx2
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.backend.errors import TrafficError, WebConnectionError
-from app.backend.utils.html import (
+from app.backend.utils.html_extractor import (
     extract_links_from_html,
     fetch_content_from_url,
     is_internal_web_page,
