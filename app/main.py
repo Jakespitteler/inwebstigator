@@ -15,7 +15,6 @@ from app.db.core import Base, engine
 from app.db.errors import IntegrityError, NotFoundError
 from app.frontend.api import routers
 
-
 setup_logging()
 
 Base.metadata.create_all(bind=engine)
@@ -103,36 +102,94 @@ async def integrity_error_handler(
 
 @app.get("/dashboard")
 def get_dashboard(request: Request):
-    data_file = Path("data/sample_change_history.json")
+    history_dir = Path(
+        "app/backend/diff_checker/v2/diff_check/change_history"
+    )
 
-    with data_file.open("r", encoding="utf-8") as file:
-        records = json.load(file)
+    records = []
+    if history_dir.exists():
+        for history_file in history_dir.glob("*.json"):
+            with history_file.open("r", encoding="utf-8") as file:
+                file_records = json.load(file)
+                
+                if isinstance(file_records, list):
+                    records.extend(file_records)
+    
+    else:
+        sample_file = Path("data/sample_change_history.json")
+        
+        if sample_file.exists():
+            with sample_file.open("r", encoding="utf-8") as file:
+                records = json.load(file)
 
     today = datetime.now().astimezone()
     week_start = today - timedelta(days=6)
 
+    daily_records = []
     weekly_records = []
 
+    latest_date = None
+
+    if records:
+        latest_date = max(
+            datetime.fromisoformat(record["detected_at"]).date()
+            for record in records
+            if "detected_at" in record
+        )
+
     for record in records:
-        detected_at = datetime.fromisoformat(record["detected_at"])
+        detected_at_raw = record.get("detected_at")
 
+        if not detected_at_raw:
+            continue
+
+        detected_at = datetime.fromisoformat(detected_at_raw)
+
+        # Daily = latest available scan/change date
+        if latest_date and detected_at.date() == latest_date:
+            daily_records.append(record)
+
+        # Weekly = last 7 days
         if week_start.date() <= detected_at.date() <= today.date():
-            for change in record.get("changed", []):
-                old_html, new_html = build_word_diff(
-                    change["old"],
-                    change["new"],
-                )
-
-                change["old_html"] = old_html
-                change["new_html"] = new_html
-
             weekly_records.append(record)
+
+        # Build word-level highlighting for changed text
+        for change in record.get("changed", []):
+            old_text = change.get("old")
+            new_text = change.get("new")
+
+            if old_text is None or new_text is None:
+                continue
+
+            old_html, new_html = build_word_diff(
+                old_text,
+                new_text,
+            )
+
+            change["old_html"] = old_html
+            change["new_html"] = new_html
+
+    daily_records.sort(
+        key=lambda record: record.get("detected_at", ""),
+        reverse=True,
+    )
+
+    weekly_records.sort(
+        key=lambda record: record.get("detected_at", ""),
+        reverse=True,
+    )
 
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
         context={
-            "records": weekly_records,
+            "daily_records": daily_records,
+            "weekly_records": weekly_records,
+            "daily_date": (
+                latest_date.strftime("%d %b %Y")
+                if latest_date
+                else None
+            ),
             "week_start": week_start.strftime("%d %b %Y"),
             "week_end": today.strftime("%d %b %Y"),
         },

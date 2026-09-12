@@ -1,8 +1,49 @@
 [
     {
         "detected_at": "2026-08-31T13:00:00+08:00",
+        "url": "https://www.teqsa.gov.au/old-test-page",
+        "changed": [],
+        "added": [
+            {
+                "section": "Older change",
+                "text": "This record is outside the current seven-day reporting period."
+            }
+        ],
+        "removed": [],
+        "links_added": [],
+        "links_removed": [],
+        "documents_added": [],
+        "documents_removed": []
+    },
+    {
+        "detected_at": "2026-09-08T13:00:00+08:00",
+        "url": "https://www.teqsa.gov.au/guides-resources",
+        "changed": [
+            {
+                "old_section": "Guidance and resources",
+                "new_section": "Guidance and resources",
+                "old_type": "paragraph",
+                "new_type": "paragraph",
+                "old": "TEQSA provides guidance to support higher education providers.",
+                "new": "TEQSA provides guidance and resources to support higher education providers.",
+                "similarity": 0.91
+            }
+        ],
+        "added": [
+            {
+                "section": "Provider resources",
+                "text": "New guidance material is now available for higher education providers."
+            }
+        ],
+        "removed": [],
+        "links_added": [],
+        "links_removed": [],
+        "documents_added": [],
+        "documents_removed": []
+    },
+    {
+        "detected_at": "2026-09-12T13:00:00+08:00",
         "url": "https://www.teqsa.gov.au/how-we-regulate/public-reporting",
-
         "changed": [
             {
                 "old_section": "Approach to public reporting",
@@ -23,33 +64,27 @@
                 "similarity": 0.92
             }
         ],
-
         "added": [
             {
                 "section": "Purpose of public reports",
-                "text": "This is an example of newly added information."
+                "text": "Information about regulatory decisions is now available in the public reporting section."
             }
         ],
-
         "removed": [
             {
                 "section": "Higher education good practice hub",
-                "text": "This is an example of information that was removed."
+                "text": "Previous guidance relating to public reporting requirements."
             }
         ],
-
         "links_added": [
             "https://www.teqsa.gov.au/guides-resources/resources/guidance-notes"
         ],
-
         "links_removed": [
             "https://www.teqsa.gov.au/old-resource"
         ],
-
         "documents_added": [
             "https://www.teqsa.gov.au/resources/new-guidance.pdf"
         ],
-
         "documents_removed": [
             "https://www.teqsa.gov.au/resources/old-policy.pdf"
         ]
