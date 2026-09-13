@@ -20,11 +20,3 @@ class ChangedBlock(BaseModel):
     old_block: ContentBlock
     new_block: ContentBlock
     similarity: float
-
-
-class ContentDiff(BaseModel):
-    """The final record containing the results of the comparison."""
-
-    added: list[ContentBlock] = Field(default_factory=list[ContentBlock])
-    removed: list[ContentBlock] = Field(default_factory=list[ContentBlock])
-    changed: list[ChangedBlock] = Field(default_factory=list[ChangedBlock])

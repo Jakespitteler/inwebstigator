@@ -1,6 +1,6 @@
 from difflib import SequenceMatcher
 
-from app.backend.utils.models import ChangedBlock, ContentBlock, ContentDiff, PageContent
+from app.backend.utils.models import ChangedBlock, ContentBlock, PageContent
 
 
 def _evaluate_replacements(
@@ -40,11 +40,10 @@ def _evaluate_replacements(
 
 
 def compare_content(
-    old_content: PageContent, new_content: PageContent, similarity_threshold: float = 0.60
-) -> ContentDiff:
-    """
-    Orchestrates the comparison of two content snapshots.
-    """
+    old_content: PageContent,
+    new_content: PageContent,
+    similarity_threshold: float = 0.60,
+) -> tuple[list[ContentBlock], list[ContentBlock], list[ChangedBlock]]:
 
     old_sequence: list[tuple[str, str, str]] = [(b.parent_heading, b.block_type, b.text) for b in old_content.blocks]
     new_sequence: list[tuple[str, str, str]] = [(b.parent_heading, b.block_type, b.text) for b in new_content.blocks]
@@ -75,4 +74,4 @@ def compare_content(
             removed.extend(rep_removed)
             changed.extend(rep_changed)
 
-    return ContentDiff(added=added, removed=removed, changed=changed)
+    return added, removed, changed

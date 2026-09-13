@@ -4,6 +4,7 @@ from httpx2 import AsyncClient
 
 from app.backend.page_inspector.compare_content import compare_content
 from app.backend.utils.html_extractor import extract_links_from_html, fetch_content_from_url
+from app.backend.utils.html_parser import extract_content
 from app.backend.utils.links import find_link_difference, separate_document_links
 from app.backend.web_scraper.site_crawler import crawl_site
 from app.core.config import config
@@ -43,15 +44,13 @@ async def get_critical_page_state(client: AsyncClient, stored_page: CriticalPage
     else:
         state.links_added = state.updates.links
 
-    if stored_page.text_body:
-        state.text_added, state.text_removed = compare_content(
-            previous_state=stored_page.text_body,
-            current_state=state.updates.text_body,
-        )
-        logger.info(f"{state.text_added=}")
-        logger.info(f"{state.text_removed=}")
-    else:
-        state.text_added = [state.updates.text_body]
+    state.text_added, state.text_removed, state.text_changed = compare_content(
+        old_content=extract_content(html=stored_page.text_body or ""),
+        new_content=extract_content(html=state.updates.text_body),
+    )
+    logger.info(f"{state.text_added=}")
+    logger.info(f"{state.text_removed=}")
+    logger.info(f"{state.text_changed=}")
 
     return state
 

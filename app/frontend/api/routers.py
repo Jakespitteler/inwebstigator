@@ -63,7 +63,7 @@ async def run_scanner_on_website(
     async with AsyncClient() as client:
         result_text: str = await scan_website(client, session, website, recipient_email, max_pages, delay, concurrent)
 
-    return result_text
+    return result_text or ""  # Remove when format body is created
 
 
 @SCANNER_ROUTER.post("/run_all", response_class=HTMLResponse)

@@ -2,6 +2,7 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.backend.utils.models import ChangedBlock, ContentBlock
 from app.db.utils.field_types import URLString
 
 
@@ -41,5 +42,6 @@ class CriticalPageState(BaseModel):
     links_removed: list[str] | None = None
     documents_added: list[str] | None = None
     documents_removed: list[str] | None = None
-    text_added: list[str] | None = None
-    text_removed: list[str] | None = None
+    text_added: list[ContentBlock] | None = None
+    text_removed: list[ContentBlock] | None = None
+    text_changed: list[ChangedBlock] | None = None
