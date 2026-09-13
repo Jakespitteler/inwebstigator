@@ -1,112 +1,142 @@
+import html
+from datetime import UTC, datetime
+
 from pydantic import SecretStr
 
 from app.db.models.website_models import WebsiteState
 
 
-def generate_scan_report_body(website_state: WebsiteState) -> str:
-    html_parts = [
-        f"""<div class="website-scan-report">
-            <h2>Scan Report for <a href="{website_state.url}" target="_blank">{website_state.url}</a></h2>
-            <p class="report-id"><strong>Website ID:</strong> {website_state.id}</p>"""
+def _safe(text: str) -> str:
+    """Safely escape scraped text for HTML insertion."""
+    return html.escape(text, quote=True)
+
+
+def _link(url: str) -> str:
+    """Creates a hyperlink with semantic classes."""
+    safe_url = _safe(url)
+    if url.lower().startswith(("http://", "https://")):
+        return f'<a href="{safe_url}" class="link-active">{safe_url}</a>'
+    return f'<span class="link-inactive">{safe_url}</span>'
+
+
+def generate_scan_report_html(website_state: WebsiteState) -> str:
+    """
+    Formats the website state into a clean HTML structure with CSS classes.
+    """
+    now = datetime.now(UTC)
+
+    out = [
+        '<div class="email-container">',
+        f'<h2 class="header-title">Website monitoring report for {_safe(website_state.url)}</h2>',
+        f'<p class="header-meta">Checked {now:%d %b %Y, %H:%M UTC}</p>',
     ]
 
-    # Global Website Links Changes
-    if website_state.added_internal_links or website_state.removed_internal_links:
-        html_parts.append('<div class="global-link-changes"><h3>Global Internal Link Changes</h3><ul>')
-        if website_state.added_internal_links:
-            for link in website_state.added_internal_links:
-                html_parts.append(
-                    f'<li class="link-added">Added Link: <a href="{link}" target="_blank">{link}</a></li>'
-                )
-        if website_state.removed_internal_links:
-            for link in website_state.removed_internal_links:
-                html_parts.append(f'<li class="link-removed">Removed Link: <span class="strike">{link}</span></li>')
-        html_parts.append("</ul></div>")
+    has_changes = False
 
-    # Critical Page States
+    # --- 1. Site-wide Internal Links ---
+    if website_state.added_internal_links:
+        has_changes = True
+        out.append(f'<h3 class="section-title">New Internal Links ({len(website_state.added_internal_links)})</h3>')
+        out.append('<ul class="change-list">')
+        for link in website_state.added_internal_links:
+            out.append(f'<li><span class="badge added">+ {_safe(link)}</span></li>')
+        out.append("</ul>")
+
+    if website_state.removed_internal_links:
+        has_changes = True
+        out.append(
+            f'<h3 class="section-title">Removed Internal Links ({len(website_state.removed_internal_links)})</h3>'
+        )
+        out.append('<ul class="change-list">')
+        for link in website_state.removed_internal_links:
+            out.append(f'<li><span class="badge removed">- {_safe(link)}</span></li>')
+        out.append("</ul>")
+
+    # --- 2. Critical Pages ---
     if website_state.critical_page_states:
-        html_parts.append('<div class="critical-pages-section"><h3>Critical Page Updates</h3>')
-
-        for page in website_state.critical_page_states:
-            html_parts.append(
-                f"""<div class="critical-page-card" style="border: 1px solid #ccc; margin-bottom: 15px; padding: 15px; border-radius: 6px;">
-                    <h4>Page: <a href="{page.url}" target="_blank">{page.url}</a></h4>
-                    <small>ID: {page.id}</small>
-                """
+        changed_pages = [
+            cp
+            for cp in website_state.critical_page_states
+            if any(
+                [
+                    cp.links_added,
+                    cp.links_removed,
+                    cp.documents_added,
+                    cp.documents_removed,
+                    cp.text_added,
+                    cp.text_removed,
+                    cp.text_changed,
+                ]
             )
+        ]
 
-            # Links added/removed on page
-            if page.links_added or page.links_removed:
-                html_parts.append('<div class="page-links"><h5>Link Adjustments</h5><ul>')
-                if page.links_added:
-                    for l in page.links_added:
-                        html_parts.append(f'<li class="added">+ Added: <a href="{l}" target="_blank">{l}</a></li>')
-                if page.links_removed:
-                    for l in page.links_removed:
-                        html_parts.append(f'<li class="removed">- Removed: <span class="strike">{l}</span></li>')
-                html_parts.append("</ul></div>")
+        if changed_pages:
+            has_changes = True
+            out.append(f'<h3 class="section-title">Watched Pages Changed ({len(changed_pages)})</h3>')
 
-            # Documents added/removed
-            if page.documents_added or page.documents_removed:
-                html_parts.append('<div class="page-documents"><h5>Document Adjustments</h5><ul>')
-                if page.documents_added:
-                    for doc in page.documents_added:
-                        html_parts.append(f'<li class="added">+ Document Added: {doc}</li>')
-                if page.documents_removed:
-                    for doc in page.documents_removed:
-                        html_parts.append(f'<li class="removed">- Document Removed: {doc}</li>')
-                html_parts.append("</ul></div>")
+            for cp in changed_pages:
+                out.append(f'<p class="page-title"><strong>{_safe(cp.url)}</strong><br>{_link(cp.url)}</p>')
+                out.append('<div class="page-changes-container">')
 
-            # Text Added
-            if page.text_added:
-                html_parts.append('<div class="text-added"><h5>Added Content</h5>')
-                for block in page.text_added:
-                    html_parts.append(
-                        f"""<div class="content-block added-block" style="background-color: #e6ffed; padding: 8px; margin: 4px 0;">
-                            <strong>Parent Heading:</strong> {block.parent_heading} <br>
-                            <strong>Type:</strong> {block.block_type}
-                            <p>{block.text}</p>
-                        </div>"""
-                    )
-                html_parts.append("</div>")
+                # Links & Documents
+                for label, items, badge_class, symbol in [
+                    ("Links Added", cp.links_added, "added", "+"),
+                    ("Links Removed", cp.links_removed, "removed", "-"),
+                    ("Documents Added", cp.documents_added, "added", "+"),
+                    ("Documents Removed", cp.documents_removed, "removed", "-"),
+                ]:
+                    if items:
+                        out.append(f'<p class="change-label">{label}:</p><ul class="change-list">')
+                        for item in items:
+                            out.append(f'<li><span class="badge {badge_class}">{symbol} {_safe(item)}</span></li>')
+                        out.append("</ul>")
 
-            # Text Removed
-            if page.text_removed:
-                html_parts.append('<div class="text-removed"><h5>Removed Content</h5>')
-                for block in page.text_removed:
-                    html_parts.append(
-                        f"""<div class="content-block removed-block" style="background-color: #ffeef0; padding: 8px; margin: 4px 0;">
-                            <strong>Parent Heading:</strong> {block.parent_heading} <br>
-                            <strong>Type:</strong> {block.block_type}
-                            <p>{block.text}</p>
-                        </div>"""
-                    )
-                html_parts.append("</div>")
+                # Text Added / Removed
+                for label, blocks, badge_class, symbol in [
+                    ("Text Added", cp.text_added, "added", "+"),
+                    ("Text Removed", cp.text_removed, "removed", "-"),
+                ]:
+                    if blocks:
+                        out.append(f'<p class="change-label">{label}:</p><ul class="change-list">')
+                        for block in blocks:
+                            heading = f"[{_safe(block.parent_heading)}] " if block.parent_heading else ""
+                            out.append(
+                                f'<li><div class="text-block {badge_class}"><strong>{heading}</strong>{_safe(block.text)}</div></li>'
+                            )
+                        out.append("</ul>")
 
-            # Text Changed / Edited Blocks
-            if page.text_changed:
-                html_parts.append('<div class="text-changed"><h5>Edited Content</h5>')
-                for change in page.text_changed:
-                    sim_pct = round(change.similarity * 100, 1)
-                    html_parts.append(
-                        f"""<div class="changed-block" style="border: 1px dashed #f0ad4e; padding: 8px; margin: 4px 0;">
-                            <span class="similarity-badge">Similarity: {sim_pct}%</span>
-                            <div class="old-version" style="background-color: #f9f2f4; margin-top: 5px; padding: 5px;">
-                                <strong>Old ({change.old_block.parent_heading}):</strong> {change.old_block.text}
-                            </div>
-                            <div class="new-version" style="background-color: #fcf8e3; margin-top: 5px; padding: 5px;">
-                                <strong>New ({change.new_block.parent_heading}):</strong> {change.new_block.text}
-                            </div>
-                        </div>"""
-                    )
-                html_parts.append("</div>")
+                # Text Changed (Side-by-Side Table)
+                if cp.text_changed:
+                    out.append('<p class="change-label">Text Changed:</p>')
+                    out.append('<table class="diff-table" role="presentation" cellspacing="0" cellpadding="0">')
+                    out.append('<tr class="diff-header"><th>Before</th><th>After</th></tr>')
 
-            html_parts.append("</div>")  # Close critical-page-card
+                    for change in cp.text_changed:
+                        heading = (
+                            f"[{_safe(change.new_block.parent_heading)}] " if change.new_block.parent_heading else ""
+                        )
+                        if heading:
+                            out.append(f'<tr><td colspan="2" class="diff-heading-row">{heading}</td></tr>')
 
-        html_parts.append("</div>")  # Close critical-pages-section
+                        out.append("<tr>")
+                        out.append(f'<td class="diff-cell removed">- {_safe(change.old_block.text)}</td>')
+                        out.append(f'<td class="diff-cell added">+ {_safe(change.new_block.text)}</td>')
+                        out.append("</tr>")
 
-    html_parts.append("</div>")  # Close website-scan-report
-    return "".join(html_parts)
+                    out.append("</table>")
+
+                out.append("</div>")  # Close page container
+
+    # --- 3. Handle No Changes ---
+    if not has_changes:
+        out[2] = (
+            f'<p class="header-meta">Checked {now:%d %b %Y, %H:%M UTC} &middot; No changes detected since the last scan.</p>'
+        )
+
+    out.append('<p class="footer-text">This is an automated message.</p>')
+    out.append("</div>")
+
+    return "".join(out)
 
 
 def send_email(email: str, app_password: SecretStr, recipient_email: str, subject: str, body: str) -> None: ...

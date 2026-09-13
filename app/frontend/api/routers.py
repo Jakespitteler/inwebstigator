@@ -40,6 +40,24 @@ def get_root(session: SessionDep, request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request=request, name="index.html", context=context)
 
 
+@ROOT_ROUTER.get("/dashboard")
+def get_dashboard(request: Request, session: SessionDep):
+    """
+    Fetches all monitored websites and their current state (pages, links)
+    from the database to display on the dashboard.
+    """
+
+    websites: Sequence[website_models.WebsiteRead] = website_service.WebsiteService(session).get_all()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="dashboard.html",
+        context={
+            "websites": websites,
+        },
+    )
+
+
 SCANNER_ROUTER = APIRouter(prefix="/scanner")
 
 

@@ -5,7 +5,7 @@ from pydantic import SecretStr
 from sqlalchemy.orm import Session
 
 from app.backend.errors import TrafficError, WebConnectionError
-from app.backend.notifications.email_service import generate_scan_report_body, send_email
+from app.backend.notifications.email_service import generate_scan_report_html, send_email
 from app.backend.web_scraper.engine import get_website_state
 from app.core.config import config
 from app.db.models.internal_link_models import InternalLinkCreateBatch, InternalLinkRead
@@ -64,7 +64,7 @@ async def scan_website(
     # TODO add a try catch for the functions below (make sure database changes are still rolled back
     # when the exception is caught)
     # Format notification
-    scan_report_body: str = generate_scan_report_body(website_state)
+    scan_report_body: str = generate_scan_report_html(website_state)
 
     # Update database
     _update_database_website_state(session, website_state)

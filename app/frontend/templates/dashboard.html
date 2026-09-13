@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Monitored Websites</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+</head>
+<body>
+
+    <!-- Top Navigation -->
+    <nav class="top-nav">
+        <a href="/">Scanner Setup</a>
+        <a href="/dashboard" class="current-nav">Dashboard</a>
+    </nav>
+
+    <main class="container">
+        <h1 class="header-title">System Dashboard</h1>
+        <p class="header-meta">Current state of tracked websites in the database</p>
+
+        <hr>
+
+        {% if websites %}
+            {% for website in websites %}
+                <div class="dashboard-card">
+                    
+                    <h2 class="dashboard-site-title">
+                        <a href="{{ website.url }}" class="dashboard-site-link" target="_blank" rel="noopener noreferrer">
+                            {{ website.url }}
+                        </a>
+                    </h2>
+
+                    <ul class="dashboard-meta-list">
+                        <li>
+                            <span class="change-label">Next Scan:</span> 
+                            <span class="badge dashboard-badge">
+                                {% if website.next_scan_at %}
+                                    {{ website.next_scan_at.strftime('%Y-%m-%d %H:%M UTC') }}
+                                {% else %}
+                                    Not scheduled
+                                {% endif %}
+                            </span>
+                        </li>
+                        <li>
+                            <span class="change-label">Config:</span>
+                            <span class="text-muted text-small">
+                                Delay: {{ website.recommended_delay }}s | Concurrent: {{ website.recommended_concurrent }}
+                            </span>
+                        </li>
+                    </ul>
+
+                    <!-- Critical Pages Section -->
+                    <h3 class="change-label">Critical Pages ({{ website.critical_pages|length }})</h3>
+                    {% if website.critical_pages %}
+                        <div class="data-list-container">
+                            <ul class="inner-data-list">
+                                {% for page in website.critical_pages %}
+                                    <li class="list-item-spaced">
+                                        <a href="{{ page.url }}" class="link-active" target="_blank">{{ page.url }}</a>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    {% else %}
+                        <p class="header-meta">No critical pages are currently being tracked for this site.</p>
+                    {% endif %}
+
+                    <!-- Internal Links Section -->
+                    <h3 class="change-label">Internal Links ({{ website.internal_links|length }})</h3>
+                    {% if website.internal_links %}
+                        <!-- Scrollable box for internal links -->
+                        <div class="data-list-container scrollable-container">
+                            <ul class="inner-data-list">
+                                {% for link in website.internal_links %}
+                                    <li class="list-item-compact">
+                                        <a href="{{ link.url }}" class="link-inactive" target="_blank">{{ link.url }}</a>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    {% else %}
+                        <p class="header-meta">No internal links are currently being tracked for this site.</p>
+                    {% endif %}
+
+                </div>
+            {% endfor %}
+        {% else %}
+            <div class="empty-state">
+                <p class="header-meta empty-state-text">No websites are currently in the database.</p>
+                <a href="/" class="empty-state-link">
+                    <button type="button" id="submit-btn" class="empty-state-btn">Go setup a scan</button>
+                </a>
+            </div>
+        {% endif %}
+
+    </main>
+
+</body>
+</html>

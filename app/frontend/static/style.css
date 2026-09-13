@@ -1,82 +1,213 @@
+/* ==========================================================================
+   CSS Variables (Theme)
+   ========================================================================== */
+:root {
+    --bg-color: #f6f8fa;
+    --container-bg: #ffffff;
+    
+    --text-main: #1f2328;
+    --text-muted: #57606a;
+    
+    --primary-color: #0969da;
+    --primary-hover: #0550ae;
+    --secondary-color: #6c757d;
+    --secondary-hover: #5a6268;
+    
+    --border-color: #d0d7de;
+    --input-focus-ring: rgba(9, 105, 218, 0.3);
+    
+    --diff-added-bg: #eaffee;
+    --diff-removed-bg: #ffeceb;
+}
+
+/* ==========================================================================
+   Global & Layout
+   ========================================================================== */
 body {
-    font-family: Arial, sans-serif;
-    line-height: 1.6;
-    color: #333;
-    background-color: #f8f9fa;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-main);
+    line-height: 1.5;
     margin: 0;
     padding: 20px;
 }
 
 .container {
-    max-width: 900px;
+    max-width: 800px;
     margin: 0 auto;
-    background: #fff;
-    padding: 30px;
+    background-color: var(--container-bg);
+    padding: 30px 40px;
     border-radius: 8px;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--border-color);
 }
 
-.form-group {
-    margin-bottom: 15px;
+h1 { margin-top: 0; font-size: 24px; color: var(--text-main); }
+h2 { font-size: 20px; margin-bottom: 15px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; }
+hr { border: 0; height: 1px; background: var(--border-color); margin: 25px 0; }
+
+.section-divider { margin: 30px 0; }
+.hidden { display: none !important; }
+
+/* ==========================================================================
+   Navigation & Tabs 
+   ========================================================================== */
+.top-nav {
+    max-width: 800px;
+    margin: 0 auto 20px auto;
+    display: flex;
+    gap: 20px;
+    padding: 0 10px;
+}
+.top-nav a {
+    text-decoration: none;
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 15px;
+}
+.top-nav a:hover { color: var(--text-main); }
+.top-nav a.current-nav {
+    color: var(--primary-color);
+    border-bottom: 2px solid var(--primary-color);
+    padding-bottom: 4px;
 }
 
-label {
-    display: block;
-    margin-bottom: 5px;
-    font-weight: bold;
-}
+/* ==========================================================================
+   Forms & Inputs (Scanner UI)
+   ========================================================================== */
+.form-group { margin-bottom: 16px; }
+label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 14px; color: var(--text-main); }
 
-input[type="text"], 
-input[type="email"], 
-input[type="number"] {
+input[type="text"], input[type="email"], input[type="number"] {
     width: 100%;
-    padding: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
     box-sizing: border-box;
-    border: 1px solid #ced4da;
-    border-radius: 4px;
+    font-family: inherit;
+    font-size: 14px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    background-color: #f6f8fa;
+}
+input[type="text"]:focus, input[type="email"]:focus, input[type="number"]:focus {
+    border-color: var(--primary-color);
+    outline: none;
+    background-color: #ffffff;
+    box-shadow: 0 0 0 3px var(--input-focus-ring);
 }
 
 button {
-    background-color: #007BFF;
-    color: white;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     padding: 10px 20px;
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
     cursor: pointer;
-    font-size: 1rem;
+    transition: background-color 0.2s, opacity 0.2s;
+}
+#submit-btn { background-color: var(--primary-color); color: white; }
+#submit-btn:hover:not(:disabled) { background-color: var(--primary-hover); }
+#submit-all-btn { background-color: var(--secondary-color); color: white; }
+#submit-all-btn:hover:not(:disabled) { background-color: var(--secondary-hover); }
+button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* ==========================================================================
+   Utility Classes & Text
+   ========================================================================== */
+.header-title { margin: 0 0 4px; font-size: 18px; border: none; }
+.header-meta { margin: 0 0 16px; color: var(--text-muted); font-size: 13px; }
+.text-muted { color: var(--text-muted); }
+.text-small { font-size: 13px; }
+.change-label { margin: 8px 0 4px; font-weight: 600; color: var(--text-muted); }
+
+.link-active { color: var(--primary-color); text-decoration: none; font-size: 12px; }
+.link-active:hover { text-decoration: underline; }
+.link-inactive { color: var(--text-muted); font-size: 12px; }
+
+/* Block-level Badges */
+.badge { 
+    padding: 2px 6px; 
+    border-radius: 4px; 
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
 }
 
-button:hover {
-    background-color: #0056b3;
+/* ==========================================================================
+   Dashboard Specific Elements
+   ========================================================================== */
+.dashboard-card { margin-bottom: 40px; }
+.dashboard-site-title { border-bottom: 2px solid var(--border-color); padding-bottom: 8px; margin-bottom: 15px; }
+.dashboard-site-link { font-size: 18px; color: var(--primary-color); text-decoration: none; }
+.dashboard-site-link:hover { text-decoration: underline; }
+
+.dashboard-meta-list { list-style-type: none; padding-left: 0; margin: 0 0 20px 0; }
+.dashboard-meta-list li { margin-bottom: 8px; }
+.dashboard-badge { background-color: var(--bg-color); border: 1px solid var(--border-color); color: var(--text-main); }
+
+.data-list-container { background-color: var(--bg-color); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; margin-bottom: 20px; }
+.scrollable-container { max-height: 200px; overflow-y: auto; }
+.inner-data-list { margin: 0; padding-left: 20px; }
+.list-item-spaced { margin-bottom: 6px; }
+.list-item-compact { margin-bottom: 4px; }
+
+/* Dashboard Empty State */
+.empty-state { text-align: center; padding: 40px 0; }
+.empty-state-text { font-size: 15px; margin-bottom: 15px; }
+.empty-state-link { text-decoration: none; }
+.empty-state-btn { margin-top: 10px; }
+
+
+/* ==========================================================================
+   Scanner Setup Specifics (JS Injected elements & Statuses)
+   ========================================================================== */
+.result-container { 
+    margin-top: 30px; 
+    padding-top: 20px; 
+    border-top: 2px dashed var(--border-color); 
 }
 
-button:disabled {
-    background-color: #6c757d;
-    cursor: not-allowed;
+.status-msg {
+    font-style: italic;
+    font-weight: 500;
+    margin: 10px 0;
 }
 
-/* Scan Report Generated Styles */
-.website-scan-report {
-    margin-top: 20px;
+.status-primary { color: var(--primary-color); }
+.status-secondary { color: var(--secondary-color); }
+.status-error { 
+    color: #cf222e; /* Standard error red */
+    font-weight: bold; 
+    font-style: normal; 
 }
 
-.strike {
-    text-decoration: line-through;
-    color: #dc3545;
+.loading {
+    animation: pulse 1.5s infinite ease-in-out;
 }
 
-.added-block {
-    background-color: #e6ffed !important;
-    border-left: 4px solid #28a745;
+@keyframes pulse {
+    0% { opacity: 0.5; }
+    50% { opacity: 1; }
+    100% { opacity: 0.5; }
 }
 
-.removed-block {
-    background-color: #ffeef0 !important;
-    border-left: 4px solid #dc3545;
+/* Reused from Diff UI for injected scanner reports */
+.text-block { 
+    padding: 6px 8px; 
+    border-radius: 4px; 
+    display: inline-block; 
+    margin-bottom: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+    border: 1px solid rgba(0,0,0,0.05);
 }
-
-.critical-page-card {
-    background: #fff;
-    border: 1px solid #e1e4e8;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.02);
-}
+.added { background-color: var(--diff-added-bg); color: var(--text-main); }
+.removed { background-color: var(--diff-removed-bg); color: var(--text-main); }
+.diff-table { width: 100%; border-collapse: collapse; border: 1px solid var(--border-color); margin: 4px 0 16px; border-radius: 6px; overflow: hidden; }
+.diff-header th { background-color: var(--bg-color); padding: 8px; text-align: left; font-weight: 600; font-size: 12px; color: var(--text-muted); width: 50%; border-bottom: 1px solid var(--border-color); }
+.diff-header th:first-child { border-right: 1px solid var(--border-color); }
+.diff-heading-row td { background-color: var(--bg-color); padding: 6px 8px; font-size: 12px; color: var(--text-muted); border-bottom: 1px solid var(--border-color); }
+.diff-cell { padding: 8px; vertical-align: top; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.45; }
+.diff-cell:first-child { border-right: 1px solid var(--border-color); }

@@ -3,20 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ title }}</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <title>Scanner Setup - Website Monitoring</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
 </head>
 <body>
-    <div class="container">
-        <h1>{{ heading }}</h1>
-        <p>{{ message }}</p>
+
+    <!-- Top Navigation -->
+    <nav class="top-nav">
+        <a href="/" class="current-nav">Scanner Setup</a>
+        <a href="/dashboard">Dashboard</a>
+    </nav>
+
+    <main class="container">
+        <h1 class="header-title">Run Website Scanner</h1>
+        <p class="header-meta">Manually trigger website tracking and diff generation</p>
 
         <hr>
 
         <section class="scanner-section">
-            <h2>Run Website Scanner</h2>
+            <h2 class="section-title" style="border:none; margin-bottom: 0;">Single Website Scan</h2>
             
-            <!-- Single Website Scan Form -->
             <form id="scanner-form">
                 <div class="form-group">
                     <label for="url">Website URL:</label>
@@ -46,32 +52,34 @@
                 <button type="submit" id="submit-btn">Run Scan</button>
             </form>
 
-            <hr style="margin: 20px 0;">
+            <hr class="section-divider">
 
-            <!-- Run All Websites Scan Form -->
+            <h2 class="section-title" style="border:none; margin-bottom: 0;">Run All Websites Scan</h2>
+            
             <form id="scanner-all-form">
                 <div class="form-group">
                     <label for="all_recipient_email">Recipient Email (for Run All):</label>
                     <input type="email" id="all_recipient_email" name="recipient_email" placeholder="user@example.com" required>
                 </div>
-                <button type="submit" id="submit-all-btn" style="background-color: #6c757d;">Run All Eligible Scans</button>
+                <button type="submit" id="submit-all-btn">Run All Eligible Scans</button>
             </form>
         </section>
 
         <!-- Container where HTML results from backend will be injected -->
-        <div id="result-container" style="margin-top: 30px;"></div>
-    </div>
+        <div id="result-container" class="result-container hidden"></div>
+    </main>
 
     <!-- JavaScript to handle submissions asynchronously via Fetch API -->
     <script>
-        // Handle Single Website Scan (/scanner/run)
+        // Handle Single Website Scan
         document.getElementById('scanner-form').addEventListener('submit', async function(e) {
             e.preventDefault();
             const formData = new FormData(this);
             const container = document.getElementById('result-container');
             const submitBtn = document.getElementById('submit-btn');
 
-            container.innerHTML = '<p class="loading" style="color: #007BFF; font-style: italic;">Scanning website, please wait (this may take a minute)...</p>';
+            container.classList.remove('hidden');
+            container.innerHTML = '<p class="status-msg status-primary loading">Scanning website, please wait (this may take a minute)...</p>';
             submitBtn.disabled = true;
 
             try {
@@ -88,20 +96,21 @@
                 const htmlResult = await response.text();
                 container.innerHTML = htmlResult;
             } catch (err) {
-                container.innerHTML = `<p style="color: red; font-weight: bold;">Error: ${err.message}</p>`;
+                container.innerHTML = `<p class="status-msg status-error">Error: ${err.message}</p>`;
             } finally {
                 submitBtn.disabled = false;
             }
         });
 
-        // Handle Run All Scans (/scanner/run_all)
+        // Handle Run All Scans
         document.getElementById('scanner-all-form').addEventListener('submit', async function(e) {
             e.preventDefault();
             const formData = new FormData(this);
             const container = document.getElementById('result-container');
             const submitAllBtn = document.getElementById('submit-all-btn');
 
-            container.innerHTML = '<p class="loading" style="color: #6c757d; font-style: italic;">Running all scans, please wait...</p>';
+            container.classList.remove('hidden');
+            container.innerHTML = '<p class="status-msg status-secondary loading">Running all scans, please wait...</p>';
             submitAllBtn.disabled = true;
 
             try {
@@ -117,7 +126,7 @@
                 const htmlResult = await response.text();
                 container.innerHTML = htmlResult;
             } catch (err) {
-                container.innerHTML = `<p style="color: red; font-weight: bold;">Error: ${err.message}</p>`;
+                container.innerHTML = `<p class="status-msg status-error">Error: ${err.message}</p>`;
             } finally {
                 submitAllBtn.disabled = false;
             }
