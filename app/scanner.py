@@ -1,11 +1,13 @@
 import logging
+from email.message import EmailMessage
 
 from httpx2 import AsyncClient
 from pydantic import SecretStr
 from sqlalchemy.orm import Session
 
 from app.backend.errors import TrafficError, WebConnectionError
-from app.backend.notifications.email_service import generate_scan_report_html, send_email
+from app.backend.notifications.email_service import build_message, send_email
+from app.backend.notifications.format_message import generate_scan_report_html
 from app.backend.web_scraper.engine import get_website_state
 from app.core.config import config
 from app.db.models.internal_link_models import InternalLinkCreateBatch, InternalLinkRead
@@ -70,11 +72,10 @@ async def scan_website(
     _update_database_website_state(session, website_state)
 
     # Send notification
-    send_email(
-        email=EMAIL,
-        app_password=APP_PASSWORD,
-        recipient_email=recipient_email,
+    msg: EmailMessage = build_message(
         subject="Website Update",
-        body=scan_report_body,
+        recipients=[recipient_email],
+        html_body=scan_report_body,
     )
+    send_email(msg)
     return scan_report_body

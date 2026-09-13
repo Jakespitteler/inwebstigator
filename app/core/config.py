@@ -23,6 +23,9 @@ class Config(BaseSettings):
     fetch_site_retry_max_wait_seconds: int = 15
     fetch_site_retry_multiplier: int = 1
 
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 465
+
     @property
     def db_url(self) -> str:
         return f"sqlite:///./{self.db_name}"
