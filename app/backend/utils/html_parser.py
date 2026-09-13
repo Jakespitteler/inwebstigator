@@ -3,8 +3,8 @@ from collections.abc import Callable
 
 from bs4 import BeautifulSoup, Comment, Tag
 
-from app.backend.utils.models import ContentBlock, PageContent
 from app.backend.utils.text import parse_standard_text, parse_table_row
+from app.db.models.critical_page_models import ContentBlock, PageContent
 
 # Maps HTML tags to their internal block type and the function required to parse them.
 BLOCK_PARSERS: dict[str, tuple[str, Callable[[Tag], str]]] = {
@@ -79,7 +79,7 @@ def extract_sequential_blocks(container: Tag, ignore_parents: frozenset[str]) ->
     return headings, blocks
 
 
-def extract_content(html: str) -> PageContent:
+def parse_html(html: str) -> PageContent:
     cleaned_soup: BeautifulSoup = clean_html(BeautifulSoup(html, "html.parser"))
 
     main_container: Tag | BeautifulSoup = cleaned_soup.find("main") or cleaned_soup.find("body") or cleaned_soup

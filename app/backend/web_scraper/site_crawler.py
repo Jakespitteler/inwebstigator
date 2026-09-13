@@ -110,7 +110,7 @@ async def crawl_site(
     delay: float = 0,
     batch_403_threshold: int = 20,
 ) -> set[str]:
-    """Crawls a website asynchronously starting from url up to max_pages.
+    """Crawls a website asynchronously starting from url up to max_pages. Inherently can't find orphan pages.
 
     Args:
         client (httpx2.httpx2.AsyncClient): The web client

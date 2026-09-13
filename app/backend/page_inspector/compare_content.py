@@ -1,6 +1,6 @@
 from difflib import SequenceMatcher
 
-from app.backend.utils.models import ChangedBlock, ContentBlock, PageContent
+from app.db.models.critical_page_models import ChangedBlock, ContentBlock, PageContent
 
 
 def _evaluate_replacements(

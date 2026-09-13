@@ -51,7 +51,7 @@ async def run_scanner_on_website(
     max_pages: int | None = Form(...),
     delay: float | None = Form(...),
     concurrent: int | None = Form(...),
-) -> str:
+) -> HTMLResponse:
     """Triggers the app from the UI form submission."""
     try:
         website: website_models.WebsiteRead = website_service.WebsiteService(session).get_by_url(url)
@@ -63,7 +63,7 @@ async def run_scanner_on_website(
     async with AsyncClient() as client:
         result_text: str = await scan_website(client, session, website, recipient_email, max_pages, delay, concurrent)
 
-    return result_text
+    return HTMLResponse(content=result_text)
 
 
 @SCANNER_ROUTER.post("/run_all", response_class=HTMLResponse)

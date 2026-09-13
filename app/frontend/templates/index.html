@@ -10,7 +10,118 @@
     <div class="container">
         <h1>{{ heading }}</h1>
         <p>{{ message }}</p>
+
+        <hr>
+
+        <section class="scanner-section">
+            <h2>Run Website Scanner</h2>
+            
+            <!-- Single Website Scan Form -->
+            <form id="scanner-form">
+                <div class="form-group">
+                    <label for="url">Website URL:</label>
+                    <input type="text" id="url" name="url" placeholder="https://example.com" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="recipient_email">Recipient Email:</label>
+                    <input type="email" id="recipient_email" name="recipient_email" placeholder="user@example.com" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="max_pages">Max Pages (Optional):</label>
+                    <input type="number" id="max_pages" name="max_pages" placeholder="50">
+                </div>
+
+                <div class="form-group">
+                    <label for="delay">Delay in seconds (Optional):</label>
+                    <input type="text" id="delay" name="delay" placeholder="1.0">
+                </div>
+
+                <div class="form-group">
+                    <label for="concurrent">Concurrent Requests (Optional):</label>
+                    <input type="number" id="concurrent" name="concurrent" placeholder="5">
+                </div>
+
+                <button type="submit" id="submit-btn">Run Scan</button>
+            </form>
+
+            <hr style="margin: 20px 0;">
+
+            <!-- Run All Websites Scan Form -->
+            <form id="scanner-all-form">
+                <div class="form-group">
+                    <label for="all_recipient_email">Recipient Email (for Run All):</label>
+                    <input type="email" id="all_recipient_email" name="recipient_email" placeholder="user@example.com" required>
+                </div>
+                <button type="submit" id="submit-all-btn" style="background-color: #6c757d;">Run All Eligible Scans</button>
+            </form>
+        </section>
+
+        <!-- Container where HTML results from backend will be injected -->
+        <div id="result-container" style="margin-top: 30px;"></div>
     </div>
 
+    <!-- JavaScript to handle submissions asynchronously via Fetch API -->
+    <script>
+        // Handle Single Website Scan (/scanner/run)
+        document.getElementById('scanner-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const container = document.getElementById('result-container');
+            const submitBtn = document.getElementById('submit-btn');
+
+            container.innerHTML = '<p class="loading" style="color: #007BFF; font-style: italic;">Scanning website, please wait (this may take a minute)...</p>';
+            submitBtn.disabled = true;
+
+            try {
+                const response = await fetch('/scanner/run', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    const errData = await response.json();
+                    throw new Error(errData.detail || 'Failed to run scan');
+                }
+
+                const htmlResult = await response.text();
+                container.innerHTML = htmlResult;
+            } catch (err) {
+                container.innerHTML = `<p style="color: red; font-weight: bold;">Error: ${err.message}</p>`;
+            } finally {
+                submitBtn.disabled = false;
+            }
+        });
+
+        // Handle Run All Scans (/scanner/run_all)
+        document.getElementById('scanner-all-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const container = document.getElementById('result-container');
+            const submitAllBtn = document.getElementById('submit-all-btn');
+
+            container.innerHTML = '<p class="loading" style="color: #6c757d; font-style: italic;">Running all scans, please wait...</p>';
+            submitAllBtn.disabled = true;
+
+            try {
+                const response = await fetch('/scanner/run_all', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to run batch scans');
+                }
+
+                const htmlResult = await response.text();
+                container.innerHTML = htmlResult;
+            } catch (err) {
+                container.innerHTML = `<p style="color: red; font-weight: bold;">Error: ${err.message}</p>`;
+            } finally {
+                submitAllBtn.disabled = false;
+            }
+        });
+    </script>
 </body>
 </html>
