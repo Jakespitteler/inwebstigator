@@ -63,7 +63,7 @@ async def run_scanner_on_website(
     async with AsyncClient() as client:
         result_text: str = await scan_website(client, session, website, recipient_email, max_pages, delay, concurrent)
 
-    return result_text or ""  # Remove when format body is created
+    return result_text
 
 
 @SCANNER_ROUTER.post("/run_all", response_class=HTMLResponse)
@@ -80,6 +80,7 @@ async def run_scanner(session: SessionDep, recipient_email: str = Form(...)):
             result_text.append(await scan_website(client, session, website=website, recipient_email=recipient_email))
 
     html_content = f"<ul>{''.join(result_text)}</ul>"
+
     return HTMLResponse(content=html_content)
 
 

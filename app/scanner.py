@@ -21,7 +21,6 @@ APP_PASSWORD: SecretStr = config.email_password
 
 
 def _update_database_website_state(session: Session, website_state: WebsiteState):
-    # TODO If any below fail then we may need to rollback database change and do something else
     # Update critical pages
     critical_page_service = CriticalPageService(session)
     for critical_page in website_state.critical_page_states:
@@ -62,6 +61,8 @@ async def scan_website(
         WebsiteService(session).set_cooldown(id=website.id, hours=2)
         return "Scan aborted due to connection issues and website placed on cooldown."
 
+    # TODO add a try catch for the functions below (make sure database changes are still rolled back
+    # when the exception is caught)
     # Format notification
     scan_report_body: str = generate_scan_report_body(website_state)
 
