@@ -2,7 +2,7 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.db.models.critical_page_models import CriticalPageBase, CriticalPageRead
+from app.db.models.critical_page_models import CriticalPageBase, CriticalPageRead, CriticalPageState
 from app.db.models.internal_link_models import InternalLinkRead
 from app.db.utils.field_types import URLString
 
@@ -23,3 +23,12 @@ class WebsiteRead(BaseModel):
 
 class WebsiteUpdate(BaseModel):
     url: URLString | None = None
+
+
+class WebsiteState(BaseModel):
+    id: uuid.UUID
+    url: URLString
+
+    critical_page_states: list[CriticalPageState] = Field(default_factory=list[CriticalPageState])
+    added_internal_links: list[str] | None = None
+    removed_internal_links: list[str] | None = None
