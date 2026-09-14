@@ -1,0 +1,641 @@
+[
+    {
+        "detected_at": "2026-08-23T14:05:20+08:00",
+        "url": "https://www.teqsa.gov.au",
+        "changed": [
+            {
+                "old": "TEQSA’s provider portal is available.",
+                "new": "TEQSA’s provider portal is unavailable.",
+                "similarity": 0.9736842105263158
+            }
+        ],
+        "added": [],
+        "removed": []
+    },
+    {
+        "detected_at": "2026-08-23T14:09:40+08:00",
+        "url": "https://www.teqsa.gov.au",
+        "changed": [
+            {
+                "old": "A webinar series want to help inform the sector about our regulatory work",
+                "new": "A webinar series to help inform the sector about our regulatory work",
+                "similarity": 0.9645390070921985
+            }
+        ],
+        "added": [],
+        "removed": []
+    },
+    {
+        "detected_at": "2026-08-23T14:17:01+08:00",
+        "url": "https://www.teqsa.gov.au",
+        "changed": [],
+        "added": [],
+        "removed": [
+            "this is a new line whats up"
+        ]
+    },
+    {
+        "detected_at": "2026-08-23T14:20:57+08:00",
+        "url": "https://www.teqsa.gov.au",
+        "changed": [],
+        "added": [
+            "TEQSA’s provider portal is unavailable."
+        ],
+        "removed": []
+    },
+    {
+        "detected_at": "2026-08-23T14:22:54+08:00",
+        "url": "https://www.teqsa.gov.au",
+        "changed": [],
+        "added": [],
+        "removed": [
+            "THIS IS A TEST PARAGRAPH THAT SHOULD BE REMOVED."
+        ]
+    },
+    {
+        "detected_at": "2026-08-23T15:05:24+08:00",
+        "url": "https://www.teqsa.gov.au",
+        "changed": [
+            {
+                "old_section": "TEQSA Talks webinar series",
+                "new_section": "TEQSA Talks webinar series",
+                "old": "A webinar series want to help inform the sector about our regulatory work",
+                "new": "A webinar series to help inform the sector about our regulatory work",
+                "similarity": 0.9645390070921985
+            }
+        ],
+        "added": [],
+        "removed": []
+    },
+    {
+        "detected_at": "2026-08-23T15:08:32+08:00",
+        "url": "https://www.teqsa.gov.au",
+        "changed": [
+            {
+                "old_section": "TEQSA Talks webinar series",
+                "new_section": "TEQSA Talks webinar series",
+                "old": "A webinar series want to help inform the sector about our regulatory work",
+                "new": "A webinar series to help inform the sector about our regulatory work",
+                "similarity": 0.9645390070921985
+            }
+        ],
+        "added": [],
+        "removed": []
+    },
+    {
+        "detected_at": "2026-08-23T15:16:13+08:00",
+        "url": "https://www.teqsa.gov.au",
+        "changed": [],
+        "added": [
+            {
+                "section": "TEQSA Talks webinar series",
+                "text": "A webinar series to help inform the sector about our regulatory work"
+            },
+            {
+                "section": "Higher education good practice hub",
+                "text": "Resources for providers and academics"
+            }
+        ],
+        "removed": [
+            {
+                "section": "Higher education good practice hub",
+                "text": "this is a fake paragraph for testing"
+            }
+        ]
+    },
+    {
+        "detected_at": "2026-08-24T14:15:22+08:00",
+        "url": "https://www.teqsa.gov.au",
+        "changed": [
+            {
+                "old_section": "No heading",
+                "new_section": "No heading",
+                "old": "TEQSA’s provider portal is avilable.",
+                "new": "TEQSA’s provider portal is unavailable.",
+                "similarity": 0.96
+            }
+        ],
+        "added": [],
+        "removed": []
+    },
+    {
+        "detected_at": "2026-08-24T14:24:47+08:00",
+        "url": "https://www.teqsa.gov.au/how-we-regulate/public-reporting",
+        "changed": [],
+        "added": [
+            {
+                "section": "Purpose of public reports",
+                "text": "Our public reporting aligns with the objectives of the TEQSA Act, which call for us to:"
+            },
+            {
+                "section": "Purpose of public reports",
+                "text": "In accordance with these objectives, we make our regulatory decisions and actions publicly available. Reports provide information about the applicant, the decision and the main reasons for our decision."
+            },
+            {
+                "section": "Purpose of public reports",
+                "text": "Under the TEQSA Act, we may disclose to the public, higher education information that relates to actions under the Act. The Act also allows us to ‘collect, analyse, interpret and disseminate information’ relating to higher education providers, higher education awards, quality assurance practice and quality improvement in higher education and the Higher Education Standards Framework."
+            },
+            {
+                "section": "Approach to public reporting",
+                "text": "TEQSA uses the National Register of Higher Education Providers to share information with the public about registered providers. The National Register includes key information, such as:"
+            },
+            {
+                "section": "Approach to public reporting",
+                "text": "The information on the National Register identifies whether a decision has resulted in any changes to the information listed, for example, by amending a provider’s course accreditation or registration period, or by listing a new accredited higher education course of study. Conditions imposed are also noted on the National Register and are removed when they have been met by the provider, or if they are revoked."
+            },
+            {
+                "section": "More information",
+                "text": "More information relating to our public reporting can be found at:"
+            }
+        ],
+        "removed": [
+            {
+                "section": "Quick Links",
+                "text": "Quick Links"
+            },
+            {
+                "section": "TEQSA Talks webinar series",
+                "text": "A webinar series to help inform the sector about our regulatory work"
+            },
+            {
+                "section": "TEQSA Talks webinar series",
+                "text": "A webinar series to help inform the sector about our regulatory work"
+            },
+            {
+                "section": "Higher education good practice hub",
+                "text": "Resources for providers and academics"
+            },
+            {
+                "section": "Higher education good practice hub",
+                "text": "Resources for providers and academics"
+            },
+            {
+                "section": "TEQSA e-News",
+                "text": "Sign up for monthly updates"
+            },
+            {
+                "section": "TEQSA e-News",
+                "text": "Sign up for monthly updates"
+            },
+            {
+                "section": "TEQSA e-News",
+                "text": "Featured"
+            },
+            {
+                "section": "TEQSA Talks webinar series",
+                "text": "Featured"
+            },
+            {
+                "section": "Higher education good practice hub",
+                "text": "Featured"
+            },
+            {
+                "section": "TEQSA Talks webinar series",
+                "text": "A webinar series to help inform the sector about our regulatory work"
+            },
+            {
+                "section": "TEQSA Talks webinar series",
+                "text": "A webinar series to help inform the sector about our regulatory work"
+            },
+            {
+                "section": "Higher education good practice hub",
+                "text": "Resources for providers and academics"
+            },
+            {
+                "section": "Higher education good practice hub",
+                "text": "Resources for providers and academics"
+            },
+            {
+                "section": "TEQSA e-News",
+                "text": "Sign up for monthly updates"
+            },
+            {
+                "section": "TEQSA e-News",
+                "text": "Sign up for monthly updates"
+            },
+            {
+                "section": "Academic integrity",
+                "text": "Description Access TEQSA resources for students, academics and providers"
+            },
+            {
+                "section": "Fees and charges",
+                "text": "Description Information for providers about cost recovery, fees and charges"
+            }
+        ]
+    },
+    {
+        "detected_at": "2026-08-24T17:28:06+08:00",
+        "url": "https://www.teqsa.gov.au/how-we-regulate/public-reporting",
+        "changed": [
+            {
+                "old_section": "Approach to public reporting",
+                "new_section": "Approach to public reporting",
+                "old": "The information on the National, will add Register identifies whether a decision has resulted in any changes to the information listed, for example, by amending a provider’s course accreditation or registration period, or by listing a new accredited higher education course of study. Conditions imposed are also noted on the National Register and are removed when they have been met by the provider, or if they are revoked.",
+                "new": "The information on the National Register identifies whether a decision has resulted in any changes to the information listed, for example, by amending a provider’s course accreditation or registration period, or by listing a new accredited higher education course of study. Conditions imposed are also noted on the National Register and are removed when they have been met by the provider, or if they are revoked.",
+                "similarity": 0.9880382775119617
+            }
+        ],
+        "added": [],
+        "removed": []
+    },
+    {
+        "detected_at": "2026-08-27T22:39:45+08:00",
+        "url": "https://www.teqsa.gov.au/how-we-regulate/public-reporting",
+        "changed": [
+            {
+                "old_section": "No heading",
+                "new_section": "No heading",
+                "old": "TEQSA’s provider portal is available (testing for changes).",
+                "new": "TEQSA’s provider portal is unavailable.",
+                "similarity": 0.7551020408163265
+            }
+        ],
+        "added": [
+            {
+                "section": "Purpose of public reports",
+                "text": "Our public reporting aligns with the objectives of the TEQSA Act, which call for us to:"
+            }
+        ],
+        "removed": [
+            {
+                "section": "Using this website",
+                "text": "testing for deleted items"
+            }
+        ]
+    },
+    {
+        "detected_at": "2026-08-27T23:02:04+08:00",
+        "url": "https://www.teqsa.gov.au/how-we-regulate/public-reporting",
+        "changed": [],
+        "added": [
+            {
+                "section": "Breadcrumb",
+                "text": "How we regulate"
+            },
+            {
+                "section": "Breadcrumb",
+                "text": "Public reporting"
+            },
+            {
+                "section": "How we regulate",
+                "text": "Our approach to quality assurance and regulation"
+            },
+            {
+                "section": "How we regulate",
+                "text": "Public reporting"
+            },
+            {
+                "section": "How we regulate",
+                "text": "Risk assessment cycle"
+            },
+            {
+                "section": "How we regulate",
+                "text": "Acts and standards"
+            },
+            {
+                "section": "How we regulate",
+                "text": "TEQSA's work to support social cohesion and safety in higher education"
+            },
+            {
+                "section": "How we regulate",
+                "text": "Compliance monitoring approach"
+            },
+            {
+                "section": "How we regulate",
+                "text": "Review of TEQSA decisions"
+            },
+            {
+                "section": "How we regulate",
+                "text": "Statements of Regulatory Expectations"
+            },
+            {
+                "section": "How we regulate",
+                "text": "Dual sector regulatory strategy"
+            },
+            {
+                "section": "Purpose of public reports",
+                "text": "protect and enhance Australia’s reputation for quality higher education and training services"
+            },
+            {
+                "section": "Purpose of public reports",
+                "text": "protect and enhance Australia’s international competitiveness in the higher education sector"
+            },
+            {
+                "section": "Purpose of public reports",
+                "text": "protect and enhance Australia’s excellence, diversity and innovation in higher education in Australia"
+            },
+            {
+                "section": "Purpose of public reports",
+                "text": "protect students undertaking, or proposing to undertake, higher education in Australia by requiring the provision of quality higher education"
+            },
+            {
+                "section": "Purpose of public reports",
+                "text": "ensure students undertaking, or proposing to undertake, higher education, have access to information relating to higher education in Australia."
+            },
+            {
+                "section": "Approach to public reporting",
+                "text": "legal entity name"
+            },
+            {
+                "section": "Approach to public reporting",
+                "text": "trading name/s used for the provider’s higher education operations"
+            },
+            {
+                "section": "Approach to public reporting",
+                "text": "Australian Business Number"
+            },
+            {
+                "section": "Approach to public reporting",
+                "text": "provider category"
+            },
+            {
+                "section": "Approach to public reporting",
+                "text": "registration renewal date and period of registration"
+            },
+            {
+                "section": "Approach to public reporting",
+                "text": "head office address"
+            },
+            {
+                "section": "Approach to public reporting",
+                "text": "website for higher education operations"
+            },
+            {
+                "section": "Approach to public reporting",
+                "text": "self-accrediting authority status"
+            },
+            {
+                "section": "Approach to public reporting",
+                "text": "the names of each higher education course of study accredited by TEQSA, as well as the accreditation renewal date of course of study accredited and period of accreditation."
+            },
+            {
+                "section": "More information",
+                "text": "Policy on public statements on TEQSA’s regulatory decisions and processes"
+            },
+            {
+                "section": "More information",
+                "text": "National Register Guidelines"
+            }
+        ],
+        "removed": [
+            {
+                "section": "No heading",
+                "text": "TEQSA’s provider portal is unavailable."
+            },
+            {
+                "section": "Using this website",
+                "text": "In the spirit of reconciliation, TEQSA acknowledges the Traditional Custodians of Country throughout Australia and their connections to land, sea and community. We pay our respect to their Elders past and present and extend that respect to all Aboriginal and Torres Strait Islander peoples today."
+            },
+            {
+                "section": "Using this website",
+                "text": "In the spirit of reconciliation, TEQSA acknowledges the Traditional Custodians of Country throughout Australia and their connections to land, sea and community. We pay our respect to their Elders past and present and extend that respect to all Aboriginal and Torres Strait Islander peoples today."
+            }
+        ]
+    },
+    {
+        "detected_at": "2026-08-28T00:25:40+08:00",
+        "url": "https://www.teqsa.gov.au/how-we-regulate/public-reporting",
+        "changed": [],
+        "added": [
+            {
+                "section": "Last updated:",
+                "text": "Last updated:"
+            }
+        ],
+        "removed": [
+            {
+                "section": "Breadcrumb",
+                "text": "How we regulate"
+            },
+            {
+                "section": "Breadcrumb",
+                "text": "Public reporting"
+            },
+            {
+                "section": "How we regulate",
+                "text": "Our approach to quality assurance and regulation"
+            },
+            {
+                "section": "How we regulate",
+                "text": "Public reporting"
+            },
+            {
+                "section": "How we regulate",
+                "text": "Risk assessment cycle"
+            },
+            {
+                "section": "How we regulate",
+                "text": "Acts and standards"
+            },
+            {
+                "section": "How we regulate",
+                "text": "TEQSA's work to support social cohesion and safety in higher education"
+            },
+            {
+                "section": "How we regulate",
+                "text": "Compliance monitoring approach"
+            },
+            {
+                "section": "How we regulate",
+                "text": "Review of TEQSA decisions"
+            },
+            {
+                "section": "How we regulate",
+                "text": "Statements of Regulatory Expectations"
+            },
+            {
+                "section": "How we regulate",
+                "text": "Dual sector regulatory strategy"
+            }
+        ]
+    },
+    {
+        "detected_at": "2026-08-28T00:34:57+08:00",
+        "url": "https://www.teqsa.gov.au/how-we-regulate/public-reporting",
+        "changed": [],
+        "added": [
+            {
+                "section": "Last updated:",
+                "text": "13 Oct 2022"
+            }
+        ],
+        "removed": [
+            {
+                "section": "Last updated:",
+                "text": "Last updated:"
+            }
+        ]
+    },
+    {
+        "detected_at": "2026-08-28T00:45:37+08:00",
+        "url": "https://www.teqsa.gov.au/how-we-regulate/public-reporting",
+        "changed": [
+            {
+                "old_section": "Purpose of public reports",
+                "new_section": "Purpose of public reports",
+                "old": "Our public reporting aligns with the objectives of the TEQSA Act, which call for us to(test if there any changes):",
+                "new": "Our public reporting aligns with the objectives of the TEQSA Act, which call for us to:",
+                "similarity": 0.8656716417910447
+            },
+            {
+                "old_section": "Purpose of public reports",
+                "new_section": "Purpose of public reports",
+                "old": "protect and enhance Australia’s reputation for quality higher education and training services(test if there any changes)",
+                "new": "protect and enhance Australia’s reputation for quality higher education and training services",
+                "similarity": 0.8732394366197183
+            }
+        ],
+        "added": [
+            {
+                "section": "Purpose of public reports",
+                "text": "protect and enhance Australia’s international competitiveness in the higher education sector"
+            },
+            {
+                "section": "Purpose of public reports",
+                "text": "In accordance with these objectives, we make our regulatory decisions and actions publicly available. Reports provide information about the applicant, the decision and the main reasons for our decision."
+            }
+        ],
+        "removed": [
+            {
+                "section": "Purpose of public reports",
+                "text": "added item in the list middle"
+            },
+            {
+                "section": "Purpose of public reports",
+                "text": "added item in the list end"
+            },
+            {
+                "section": "Approach to public reporting",
+                "text": "removed test"
+            }
+        ]
+    },
+    {
+        "detected_at": "2026-08-28T13:30:25+08:00",
+        "url": "https://www.teqsa.gov.au/how-we-regulate/public-reporting",
+        "changed": [
+            {
+                "old_section": "Approach to public reporting",
+                "new_section": "Approach to public reporting",
+                "old": "provider category lol",
+                "new": "provider category",
+                "similarity": 0.8947368421052632
+            },
+            {
+                "old_section": "Approach to public reporting",
+                "new_section": "Approach to public reporting",
+                "old": "website for higher education operations changes",
+                "new": "website for higher education operations",
+                "similarity": 0.9069767441860465
+            }
+        ],
+        "added": [],
+        "removed": []
+    },
+    {
+        "detected_at": "2026-08-28T13:32:24+08:00",
+        "url": "https://www.teqsa.gov.au/how-we-regulate/public-reporting",
+        "changed": [],
+        "added": [],
+        "removed": [
+            {
+                "section": "Approach to public reporting",
+                "text": "TEST added item"
+            }
+        ]
+    },
+    {
+        "detected_at": "2026-08-28T13:33:53+08:00",
+        "url": "https://www.teqsa.gov.au/how-we-regulate/public-reporting",
+        "changed": [],
+        "added": [
+            {
+                "section": "Approach to public reporting",
+                "text": "provider category"
+            }
+        ],
+        "removed": []
+    },
+    {
+        "detected_at": "2026-08-28T13:44:15+08:00",
+        "url": "https://www.teqsa.gov.au/how-we-regulate/public-reporting",
+        "changed": [
+            {
+                "old_section": "Purpose of public reports",
+                "new_section": "Purpose of public reports",
+                "old": "protect students undertaking, or proposing to undertake, higher education in Australia by requiring the provision of quality higher education",
+                "new": "protect students undertaking, or proposing to undertake, higher education in Australia by requiring the provision of quality higher education",
+                "similarity": 1.0
+            }
+        ],
+        "added": [],
+        "removed": []
+    },
+    {
+        "detected_at": "2026-08-28T13:52:38+08:00",
+        "url": "https://www.teqsa.gov.au/how-we-regulate/public-reporting",
+        "changed": [
+            {
+                "old_section": "Purpose of public reports",
+                "new_section": "Purpose of public reports",
+                "old": "ensure students undertaking, or proposing to undertake, higher education, have access to information relating to higher education in Australia.",
+                "new": "ensure students undertaking, or proposing to undertake, higher education, have access to information relating to higher education in Australia.",
+                "similarity": 1.0
+            }
+        ],
+        "added": [],
+        "removed": []
+    },
+    {
+        "detected_at": "2026-08-28T13:59:30+08:00",
+        "url": "https://www.teqsa.gov.au/how-we-regulate/public-reporting",
+        "changed": [
+            {
+                "old_section": "Purpose of public reports",
+                "new_section": "Purpose of public reports",
+                "old_type": "paragraph",
+                "new_type": "list_item",
+                "old": "protect students undertaking, or proposing to undertake, higher education in Australia by requiring the provision of quality higher education",
+                "new": "protect students undertaking, or proposing to undertake, higher education in Australia by requiring the provision of quality higher education",
+                "similarity": 1.0
+            },
+            {
+                "old_section": "Purpose of public reports",
+                "new_section": "Purpose of public reports",
+                "old_type": "paragraph",
+                "new_type": "list_item",
+                "old": "ensure students undertaking, or proposing to undertake, higher education, have access to information relating to higher education in Australia.",
+                "new": "ensure students undertaking, or proposing to undertake, higher education, have access to information relating to higher education in Australia.",
+                "similarity": 1.0
+            }
+        ],
+        "added": [],
+        "removed": []
+    },
+    {
+        "detected_at": "2026-08-28T14:01:30+08:00",
+        "url": "https://www.teqsa.gov.au/how-we-regulate/public-reporting",
+        "changed": [
+            {
+                "old_section": "Purpose of public reports",
+                "new_section": "Purpose of public reports",
+                "old_type": "list_item",
+                "new_type": "list_item",
+                "old": "protect and enhance Australia’s excellence, diversity and innovation in higher education in Australian",
+                "new": "protect and enhance Australia’s excellence, diversity and innovation in higher education in Australia",
+                "similarity": 0.9950738916256158
+            },
+            {
+                "old_section": "Purpose of public reports",
+                "new_section": "Purpose of public reports",
+                "old_type": "list_item",
+                "new_type": "list_item",
+                "old": "ensure students undertaking, or proposing to undertake, higher education, have access to information relating to higher education in Australias.",
+                "new": "ensure students undertaking, or proposing to undertake, higher education, have access to information relating to higher education in Australia.",
+                "similarity": 0.9965156794425087
+            }
+        ],
+        "added": [],
+        "removed": []
+    }
+]
