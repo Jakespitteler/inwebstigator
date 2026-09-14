@@ -3,7 +3,7 @@ from collections.abc import Callable
 import httpx2
 import pytest
 
-from app.backend.web_scraper.utils import extract_links, fetch_content_from_url
+from app.backend.utils.html_extractor import extract_links_from_html, fetch_content_from_url
 from tests.conftest import RequestHandler
 
 # =============================
@@ -64,11 +64,11 @@ async def test_fetch_content_from_url_redirects(
 
 
 # =============================
-# Test extract_links
+# Test extract_links_from_html
 # =============================
 
 
-def test_extract_links_basic_and_relative(test_url: str) -> None:
+def test_extract_links_from_html_basic_and_relative(test_url: str) -> None:
     """Test standard absolute, relative links, alphabetical sorting, and uniqueness."""
     html_content: str = """
     <html>
@@ -80,7 +80,7 @@ def test_extract_links_basic_and_relative(test_url: str) -> None:
         </body>
     </html>
     """
-    result: list[str] = extract_links(test_url, html_content, internal_only=False)
+    result: list[str] = extract_links_from_html(test_url, html_content, internal_only=False)
 
     expected: list[str] = [
         "https://example.com/about",
@@ -90,7 +90,7 @@ def test_extract_links_basic_and_relative(test_url: str) -> None:
     assert result == expected
 
 
-def test_extract_links_internal_only(test_url: str) -> None:
+def test_extract_links_from_html_internal_only(test_url: str) -> None:
     """Test filtering for internal links only when internal_only=True."""
     html_content: str = """
     <html>
@@ -102,7 +102,7 @@ def test_extract_links_internal_only(test_url: str) -> None:
         </body>
     </html>
     """
-    result: list[str] = extract_links(test_url, html_content, internal_only=True)
+    result: list[str] = extract_links_from_html(test_url, html_content, internal_only=True)
 
     expected: list[str] = [
         "https://example.com/another-internal",
@@ -111,7 +111,7 @@ def test_extract_links_internal_only(test_url: str) -> None:
     assert result == expected
 
 
-def test_extract_links_skips_non_navigational(test_url: str) -> None:
+def test_extract_links_from_html_skips_non_navigational(test_url: str) -> None:
     """Test that empty strings, hash anchors, javascript, mailto, and tel schemes are ignored."""
     html_content: str = """
     <html>
@@ -125,13 +125,13 @@ def test_extract_links_skips_non_navigational(test_url: str) -> None:
         </body>
     </html>
     """
-    result: list[str] = extract_links(test_url, html_content)
+    result: list[str] = extract_links_from_html(test_url, html_content)
 
     expected: list[str] = ["https://example.com/valid-page"]
     assert result == expected
 
 
-def test_extract_links_fragment_stripping(test_url: str) -> None:
+def test_extract_links_from_html_fragment_stripping(test_url: str) -> None:
     """Test that URL fragments/anchors are stripped and duplicates are consolidated."""
     html_content: str = """
     <html>
@@ -142,23 +142,23 @@ def test_extract_links_fragment_stripping(test_url: str) -> None:
         </body>
     </html>
     """
-    result: list[str] = extract_links(test_url, html_content)
+    result: list[str] = extract_links_from_html(test_url, html_content)
 
     # All variations should collapse to the same clean URL and de-duplicate
     expected: list[str] = ["https://example.com/page"]
     assert result == expected
 
 
-def test_extract_links_invalid_url(test_url: str) -> None:
+def test_extract_links_from_html_invalid_url(test_url: str) -> None:
     """Test that ValueError is raised when url lacks a valid netloc/domain."""
     invalid_url: str = "not-a-valid-url"
     html_content: str = '<a href="/page">Page</a>'
 
     with pytest.raises(ValueError, match="Invalid url provided"):
-        extract_links(invalid_url, html_content)
+        extract_links_from_html(invalid_url, html_content)
 
 
-def test_extract_links_skips_missing_href(test_url: str) -> None:
+def test_extract_links_from_html_skips_missing_href(test_url: str) -> None:
     """Test that anchor tags without an href attribute are gracefully ignored."""
     html_content: str = """
     <html>
@@ -169,7 +169,7 @@ def test_extract_links_skips_missing_href(test_url: str) -> None:
         </body>
     </html>
     """
-    result: list[str] = extract_links(test_url, html_content)
+    result: list[str] = extract_links_from_html(test_url, html_content)
 
     expected: list[str] = ["https://example.com/valid"]
     assert result == expected

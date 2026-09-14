@@ -73,7 +73,7 @@ async def fetch_content_from_url(client: AsyncClient, url: str) -> tuple[str, st
     return response.text, str(response.url)
 
 
-def extract_links(
+def extract_links_from_html(
     url: str,
     html_content: str,
     internal_only: bool = False,

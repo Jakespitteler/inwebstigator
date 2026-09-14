@@ -6,7 +6,7 @@ from httpx2 import Response
 from pydantic import BaseModel
 
 from app.db.core import Base
-from app.db.models import critical_page_models, internal_link_models, website_models
+from app.db.models import critical_page_models, internal_link_models, user_models, website_models
 from app.frontend.api import routers
 
 
@@ -137,12 +137,18 @@ class TestCRUDRouters:
 # ==========================
 
 
+class TestUserRouter(TestCRUDRouters):
+    __test__ = True
+    prefix = routers.USER_ROUTER.prefix
+    model_create = user_models.UserCreate(email="test_user@gmail.com", password="")
+    model_update = user_models.UserUpdate(email="test_user_update@gmail.com")
+    fixture_name = "test_user"
+
+
 class TestWebsiteRouter(TestCRUDRouters):
     __test__ = True
     prefix = routers.WEBSITE_ROUTER.prefix
-    model_create = website_models.WebsiteCreate(
-        url="https://www.test_website.com", critical_pages=[], internal_links=[]
-    )
+    model_create = website_models.WebsiteCreate(url="https://www.test_website.com", user_id=uuid.uuid4())
     model_update = website_models.WebsiteUpdate(url="https://www.updated_website.com")
     fixture_name = "test_website"
 
@@ -157,7 +163,7 @@ class TestCriticalPageRouter(TestCRUDRouters):
         text_body="",
         website_id=uuid.uuid4(),
     )
-    model_update = critical_page_models.CriticalPageUpdate(url="https://www.test_website.com/updated_critical_page")
+    model_update = critical_page_models.CriticalPageUpdate(links=["https://www.test_website.com/updated_critical_page"])
     fixture_name = "test_critical_page"
 
 

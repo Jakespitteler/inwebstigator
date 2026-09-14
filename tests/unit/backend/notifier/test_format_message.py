@@ -1,8 +1,12 @@
 import uuid
 
+from app.backend.notifier.format_message import (
+    _link,  # pyright: ignore[reportPrivateUsage]
+    _safe,  # pyright: ignore[reportPrivateUsage]
+    generate_scan_report_html,
+)
 from app.db.models.critical_page_models import ChangedBlock, ContentBlock, CriticalPageRead, HTMLBlockType
 from app.db.models.website_models import WebsiteRead
-from app.notifier.format_message import _link, _safe, generate_scan_report_html  # pyright: ignore[reportPrivateUsage]
 
 
 def test_safe_escaping() -> None:
@@ -37,7 +41,7 @@ def test_link_inactive() -> None:
 
 
 def test_generate_scan_report_html_no_changes() -> None:
-    state: WebsiteRead = WebsiteRead(id=uuid.uuid4(), url="https://example.com")
+    state: WebsiteRead = WebsiteRead(id=uuid.uuid4(), user_id=uuid.uuid4(), url="https://example.com")
     html_output: str = generate_scan_report_html(state)
 
     assert "No changes detected since the last scan" in html_output
@@ -47,6 +51,7 @@ def test_generate_scan_report_html_no_changes() -> None:
 def test_generate_scan_report_html_with_internal_links() -> None:
     state: WebsiteRead = WebsiteRead(
         id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
         url="https://example.com",
         recent_added_internal_links=["https://example.com/page-one"],
         recent_removed_internal_links=["https://example.com/page-two"],
@@ -80,6 +85,7 @@ def test_generate_scan_report_html_with_critical_pages() -> None:
 
     website: WebsiteRead = WebsiteRead(
         id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
         url="https://example.com",
         critical_pages=[critical_page],
     )

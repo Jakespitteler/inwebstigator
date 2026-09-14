@@ -1,3 +1,4 @@
+import uuid
 from collections.abc import Sequence
 
 import pytest
@@ -49,7 +50,7 @@ def test_create_website(session: Session) -> None:
     Args:
         session: The database session fixture.
     """
-    website_details = WebsiteCreate(url="https://www.test_website.com")
+    website_details = WebsiteCreate(url="https://www.test_website.com", user_id=uuid.uuid4())
 
     created_website: WebsiteRead = WebsiteService(session).create(website_details)
     assert created_website.id is not None
@@ -68,6 +69,7 @@ def test_create_website_with_links_and_critical_pages(session: Session) -> None:
     """
     website_details = WebsiteCreate(
         url="https://www.test_website.com",
+        user_id=uuid.uuid4(),
         critical_pages=[CriticalPageBase(url="https://www.test_website.com/critical_page")],
         internal_links=["https://www.test_website.com/internal_link"],
     )

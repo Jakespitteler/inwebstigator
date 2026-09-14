@@ -16,9 +16,11 @@ class HTMLBlockType(StrEnum):
     HEADING_6 = "h6"
     CODE = "pre"
     QUOTE = "blockquote"
+    LIST = "blockquote"
     UNORDERED_LIST = "ul"
     ORDERED_LIST = "ol"
     DIVISION = "div"
+    TABLE_ROW = "tr"
 
 
 class ContentBlock(BaseModel):

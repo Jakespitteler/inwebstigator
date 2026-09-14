@@ -6,11 +6,13 @@
     "python.testing.pytestEnabled": true,
     "cSpell.words": [
         "autoflush",
+        "autojunk",
         "autouse",
         "dtick",
         "getfixturevalue",
         "inwebstigator",
         "KHTML",
+        "noscript",
         "ondelete",
         "onupdate",
         "parametrize",

@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from app.notifier.email_service import (
+from app.backend.notifier.email_service import (
     build_message,
     configuration_problems,
     send_email,
@@ -33,18 +33,18 @@ class FakeSMTP:
 
 
 def test_configuration_problems_no_issues(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.notifier.email_service.SMTP_USER", "test@example.com")
-    monkeypatch.setattr("app.notifier.email_service.SMTP_PASS", "secret")
-    monkeypatch.setattr("app.notifier.email_service.SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr("app.backend.notifier.email_service.SMTP_USER", "test@example.com")
+    monkeypatch.setattr("app.backend.notifier.email_service.SMTP_PASS", "secret")
+    monkeypatch.setattr("app.backend.notifier.email_service.SMTP_HOST", "smtp.example.com")
 
     problems: list[str] = configuration_problems()
     assert problems == []
 
 
 def test_configuration_problems_all_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.notifier.email_service.SMTP_USER", "")
-    monkeypatch.setattr("app.notifier.email_service.SMTP_PASS", "")
-    monkeypatch.setattr("app.notifier.email_service.SMTP_HOST", "")
+    monkeypatch.setattr("app.backend.notifier.email_service.SMTP_USER", "")
+    monkeypatch.setattr("app.backend.notifier.email_service.SMTP_PASS", "")
+    monkeypatch.setattr("app.backend.notifier.email_service.SMTP_HOST", "")
 
     problems: list[str] = configuration_problems()
     assert len(problems) == 3
@@ -54,9 +54,9 @@ def test_configuration_problems_all_missing(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_configuration_problems_partial_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.notifier.email_service.SMTP_USER", "")
-    monkeypatch.setattr("app.notifier.email_service.SMTP_PASS", "secret")
-    monkeypatch.setattr("app.notifier.email_service.SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr("app.backend.notifier.email_service.SMTP_USER", "")
+    monkeypatch.setattr("app.backend.notifier.email_service.SMTP_PASS", "secret")
+    monkeypatch.setattr("app.backend.notifier.email_service.SMTP_HOST", "smtp.example.com")
 
     problems: list[str] = configuration_problems()
     assert len(problems) == 1
@@ -64,7 +64,7 @@ def test_configuration_problems_partial_missing(monkeypatch: pytest.MonkeyPatch)
 
 
 def test_build_message_basic(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.notifier.email_service.FROM_ADDR", "sender@example.com")
+    monkeypatch.setattr("app.backend.notifier.email_service.FROM_ADDR", "sender@example.com")
     fixed_time: datetime = datetime(2026, 6, 1, 12, 0, 0, tzinfo=UTC)
 
     msg: EmailMessage = build_message(
@@ -82,7 +82,7 @@ def test_build_message_basic(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_build_message_default_now(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.notifier.email_service.FROM_ADDR", "sender@example.com")
+    monkeypatch.setattr("app.backend.notifier.email_service.FROM_ADDR", "sender@example.com")
 
     msg: EmailMessage = build_message(
         subject="Default Time",
@@ -94,7 +94,7 @@ def test_build_message_default_now(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_build_message_with_html(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.notifier.email_service.FROM_ADDR", "sender@example.com")
+    monkeypatch.setattr("app.backend.notifier.email_service.FROM_ADDR", "sender@example.com")
     msg: EmailMessage = build_message(
         subject="HTML Subject",
         recipients=["one@example.com", "two@example.com"],
@@ -106,10 +106,10 @@ def test_build_message_with_html(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_send_email_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.notifier.email_service.SMTP_HOST", "smtp.example.com")
-    monkeypatch.setattr("app.notifier.email_service.SMTP_PORT", 465)
-    monkeypatch.setattr("app.notifier.email_service.SMTP_USER", "user@example.com")
-    monkeypatch.setattr("app.notifier.email_service.SMTP_PASS", "pass")
+    monkeypatch.setattr("app.backend.notifier.email_service.SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr("app.backend.notifier.email_service.SMTP_PORT", 465)
+    monkeypatch.setattr("app.backend.notifier.email_service.SMTP_USER", "user@example.com")
+    monkeypatch.setattr("app.backend.notifier.email_service.SMTP_PASS", "pass")
 
     fake_smtp_instance: FakeSMTP | None = None
 
@@ -118,7 +118,7 @@ def test_send_email_success(monkeypatch: pytest.MonkeyPatch) -> None:
         fake_smtp_instance = FakeSMTP(*args, **kwargs)
         return fake_smtp_instance
 
-    monkeypatch.setattr("app.notifier.email_service.smtplib.SMTP_SSL", mock_smtp_ssl_init)
+    monkeypatch.setattr("app.backend.notifier.email_service.smtplib.SMTP_SSL", mock_smtp_ssl_init)
 
     msg: EmailMessage = EmailMessage()
     result: bool = send_email(msg)
@@ -131,10 +131,10 @@ def test_send_email_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_send_email_success_no_auth(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.notifier.email_service.SMTP_HOST", "smtp.example.com")
-    monkeypatch.setattr("app.notifier.email_service.SMTP_PORT", 465)
-    monkeypatch.setattr("app.notifier.email_service.SMTP_USER", "")
-    monkeypatch.setattr("app.notifier.email_service.SMTP_PASS", "")
+    monkeypatch.setattr("app.backend.notifier.email_service.SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr("app.backend.notifier.email_service.SMTP_PORT", 465)
+    monkeypatch.setattr("app.backend.notifier.email_service.SMTP_USER", "")
+    monkeypatch.setattr("app.backend.notifier.email_service.SMTP_PASS", "")
 
     fake_smtp_instance: FakeSMTP | None = None
 
@@ -143,7 +143,7 @@ def test_send_email_success_no_auth(monkeypatch: pytest.MonkeyPatch) -> None:
         fake_smtp_instance = FakeSMTP(*args, **kwargs)
         return fake_smtp_instance
 
-    monkeypatch.setattr("app.notifier.email_service.smtplib.SMTP_SSL", mock_smtp_ssl_init)
+    monkeypatch.setattr("app.backend.notifier.email_service.smtplib.SMTP_SSL", mock_smtp_ssl_init)
 
     msg: EmailMessage = EmailMessage()
     result: bool = send_email(msg)
@@ -155,13 +155,13 @@ def test_send_email_success_no_auth(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_send_email_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.notifier.email_service.SMTP_HOST", "smtp.example.com")
-    monkeypatch.setattr("app.notifier.email_service.SMTP_PORT", 465)
+    monkeypatch.setattr("app.backend.notifier.email_service.SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr("app.backend.notifier.email_service.SMTP_PORT", 465)
 
     def mock_smtp_ssl_raise(*args: Any, **kwargs: Any) -> Any:
         raise Exception("Connection refused")
 
-    monkeypatch.setattr("app.notifier.email_service.smtplib.SMTP_SSL", mock_smtp_ssl_raise)
+    monkeypatch.setattr("app.backend.notifier.email_service.smtplib.SMTP_SSL", mock_smtp_ssl_raise)
 
     msg: EmailMessage = EmailMessage()
     result: bool = send_email(msg)

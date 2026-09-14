@@ -4,13 +4,13 @@ from collections.abc import Awaitable, Iterator
 
 import httpx2
 
-from app.backend.web_scraper.errors import TrafficError, WebConnectionError
-from app.backend.web_scraper.utils import (
-    extract_links,
+from app.backend.utils.html_extractor import (
+    extract_links_from_html,
     fetch_content_from_url,
     is_internal_web_page,
     normalise_url,
 )
+from app.backend.web_scraper.errors import TrafficError, WebConnectionError
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ async def fetch_and_extract(
             if not is_internal_web_page(base_url, check_url=absolute_url):
                 return url, [], None
 
-            links: list[str] = extract_links(
+            links: list[str] = extract_links_from_html(
                 base_url=base_url,
                 url=absolute_url,
                 html_content=html_content,

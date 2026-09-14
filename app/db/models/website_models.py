@@ -9,6 +9,7 @@ from app.db.utils.field_types import URLString
 
 class WebsiteCreate(BaseModel):
     url: URLString
+    user_id: uuid.UUID
     critical_pages: list[CriticalPageBase] = Field(default_factory=list[CriticalPageBase])
     internal_links: list[URLString] = Field(default_factory=list[URLString])
 
@@ -16,6 +17,7 @@ class WebsiteCreate(BaseModel):
 class WebsiteRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
+    user_id: uuid.UUID
     url: URLString
     critical_pages: list[CriticalPageRead] | None = None
     internal_links: list[InternalLinkRead] | None = None
