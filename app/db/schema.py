@@ -22,6 +22,13 @@ class DBCriticalPage(Base):
     website_id: Mapped[int] = mapped_column(ForeignKey("websites.id", ondelete="CASCADE"), nullable=False)
     website: Mapped["DBWebsite"] = relationship(back_populates="critical_pages")
 
+    previous_run_added_links: Mapped[list[str]] = mapped_column(JSON, nullable=True)
+    previous_run_added_documents: Mapped[list[str]] = mapped_column(JSON, nullable=True)
+    previous_run_added_text: Mapped[list[str]] = mapped_column(JSON, nullable=True)
+    previous_run_removed_links: Mapped[list[str]] = mapped_column(JSON, nullable=True)
+    previous_run_removed_documents: Mapped[list[str]] = mapped_column(JSON, nullable=True)
+    previous_run_removed_text: Mapped[list[str]] = mapped_column(JSON, nullable=True)
+
 
 class DBWebsite(Base):
     __tablename__ = "websites"
@@ -35,3 +42,5 @@ class DBWebsite(Base):
         back_populates="website",
         cascade="all, delete-orphan",
     )
+    previous_run_added_internal_links: Mapped[list[str]] = mapped_column(JSON, nullable=True)
+    previous_run_removed_internal_links: Mapped[list[str]] = mapped_column(JSON, nullable=True)

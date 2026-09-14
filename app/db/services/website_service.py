@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from sqlalchemy.orm import Session
 
 from app.db import repository
+from app.db.errors import NotFoundError
 from app.db.models.critical_page_models import CriticalPageCreate
 from app.db.models.internal_link_models import InternalLinkCreateBatch
 from app.db.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
@@ -12,7 +13,6 @@ from app.db.schema import DBWebsite
 from app.db.services.critical_page_service import CriticalPageService
 from app.db.services.internal_link_service import InternalLinkService
 from app.db.utils.interfaces import CRUDService
-from app.db.errors import NotFoundError
 
 logger: logging.Logger = logging.getLogger(__name__)
 

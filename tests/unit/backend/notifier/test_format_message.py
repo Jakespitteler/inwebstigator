@@ -1,52 +1,8 @@
+import uuid
+
+from app.db.models.critical_page_models import ChangedBlock, ContentBlock, CriticalPageRead, HTMLBlockType
+from app.db.models.website_models import WebsiteRead
 from app.notifier.format_message import _link, _safe, generate_scan_report_html  # pyright: ignore[reportPrivateUsage]
-
-
-class DummyTextBlock:
-    def __init__(self, text: str, parent_heading: str | None = None) -> None:
-        self.text: str = text
-        self.parent_heading: str | None = parent_heading
-
-
-class DummyTextChange:
-    def __init__(self, old_block: DummyTextBlock, new_block: DummyTextBlock) -> None:
-        self.old_block: DummyTextBlock = old_block
-        self.new_block: DummyTextBlock = new_block
-
-
-class DummyCriticalPageState:
-    def __init__(
-        self,
-        url: str,
-        links_added: list[str] | None = None,
-        links_removed: list[str] | None = None,
-        documents_added: list[str] | None = None,
-        documents_removed: list[str] | None = None,
-        text_added: list[DummyTextBlock] | None = None,
-        text_removed: list[DummyTextBlock] | None = None,
-        text_changed: list[DummyTextChange] | None = None,
-    ) -> None:
-        self.url: str = url
-        self.links_added: list[str] = links_added or []
-        self.links_removed: list[str] = links_removed or []
-        self.documents_added: list[str] = documents_added or []
-        self.documents_removed: list[str] = documents_removed or []
-        self.text_added: list[DummyTextBlock] = text_added or []
-        self.text_removed: list[DummyTextBlock] = text_removed or []
-        self.text_changed: list[DummyTextChange] = text_changed or []
-
-
-class DummyWebsiteState:
-    def __init__(
-        self,
-        url: str,
-        added_internal_links: list[str] | None = None,
-        removed_internal_links: list[str] | None = None,
-        critical_page_states: list[DummyCriticalPageState] | None = None,
-    ) -> None:
-        self.url: str = url
-        self.added_internal_links: list[str] = added_internal_links or []
-        self.removed_internal_links: list[str] = removed_internal_links or []
-        self.critical_page_states: list[DummyCriticalPageState] = critical_page_states or []
 
 
 def test_safe_escaping() -> None:
@@ -81,20 +37,21 @@ def test_link_inactive() -> None:
 
 
 def test_generate_scan_report_html_no_changes() -> None:
-    state: DummyWebsiteState = DummyWebsiteState(url="https://example.com")
-    html_output: str = generate_scan_report_html(state)  # type: ignore
+    state: WebsiteRead = WebsiteRead(id=uuid.uuid4(), url="https://example.com")
+    html_output: str = generate_scan_report_html(state)
 
     assert "No changes detected since the last scan" in html_output
     assert "Website monitoring report for https://example.com" in html_output
 
 
 def test_generate_scan_report_html_with_internal_links() -> None:
-    state: DummyWebsiteState = DummyWebsiteState(
+    state: WebsiteRead = WebsiteRead(
+        id=uuid.uuid4(),
         url="https://example.com",
-        added_internal_links=["/page-one"],
-        removed_internal_links=["/page-two"],
+        recent_added_internal_links=["https://example.com/page-one"],
+        recent_removed_internal_links=["https://example.com/page-two"],
     )
-    html_output: str = generate_scan_report_html(state)  # type: ignore
+    html_output: str = generate_scan_report_html(state)
 
     assert "New Internal Links (1)" in html_output
     assert "/page-one" in html_output
@@ -103,28 +60,31 @@ def test_generate_scan_report_html_with_internal_links() -> None:
 
 
 def test_generate_scan_report_html_with_critical_pages() -> None:
-    block_added: DummyTextBlock = DummyTextBlock(text="New content added", parent_heading="Section A")
-    block_removed: DummyTextBlock = DummyTextBlock(text="Old content removed")
-    old_change: DummyTextBlock = DummyTextBlock(text="Before text", parent_heading="Changes")
-    new_change: DummyTextBlock = DummyTextBlock(text="After text", parent_heading="Changes")
+    block_added = ContentBlock(text="New content added", parent_heading="Section A", block_type=HTMLBlockType.PARAGRAPH)
+    block_removed = ContentBlock(text="Old content removed", block_type=HTMLBlockType.PARAGRAPH)
+    old_change = ContentBlock(text="Before text", parent_heading="Changes", block_type=HTMLBlockType.PARAGRAPH)
+    new_change = ContentBlock(text="After text", parent_heading="Changes", block_type=HTMLBlockType.PARAGRAPH)
 
-    cp: DummyCriticalPageState = DummyCriticalPageState(
+    critical_page: CriticalPageRead = CriticalPageRead(
+        id=uuid.uuid4(),
         url="https://example.com/critical",
-        links_added=["https://external.com"],
-        links_removed=["https://old-external.com"],
-        documents_added=["doc.pdf"],
-        documents_removed=["old.pdf"],
-        text_added=[block_added],
-        text_removed=[block_removed],
-        text_changed=[DummyTextChange(old_block=old_change, new_block=new_change)],
+        website_id=uuid.uuid4(),
+        recent_links_added=["https://external.com"],
+        recent_links_removed=["https://old-external.com"],
+        recent_documents_added=["https://example.com/critical/doc.pdf"],
+        recent_documents_removed=["https://example.com/critical/old.pdf"],
+        recent_text_added=[block_added],
+        recent_text_removed=[block_removed],
+        recent_text_changed=[ChangedBlock(old_block=old_change, new_block=new_change, similarity=0.5)],
     )
 
-    state: DummyWebsiteState = DummyWebsiteState(
+    website: WebsiteRead = WebsiteRead(
+        id=uuid.uuid4(),
         url="https://example.com",
-        critical_page_states=[cp],
+        critical_pages=[critical_page],
     )
 
-    html_output: str = generate_scan_report_html(state)  # type: ignore
+    html_output: str = generate_scan_report_html(website)
 
     assert "Watched Pages Changed (1)" in html_output
     assert "Links Added:" in html_output
