@@ -57,13 +57,13 @@ class CriticalPageRead(BaseModel):
     documents: list[URLString] | None = None
     text_body: str | None = None
 
-    recent_links_added: list[URLString] = Field(default_factory=list[URLString])
-    recent_links_removed: list[URLString] = Field(default_factory=list[URLString])
-    recent_documents_added: list[URLString] = Field(default_factory=list[URLString])
-    recent_documents_removed: list[URLString] = Field(default_factory=list[URLString])
-    recent_text_added: list[ContentBlock] = Field(default_factory=list[ContentBlock])
-    recent_text_removed: list[ContentBlock] = Field(default_factory=list[ContentBlock])
-    recent_text_changed: list[ChangedBlock] = Field(default_factory=list[ChangedBlock])
+    recent_links_added: list[URLString] | None = None
+    recent_links_removed: list[URLString] | None = None
+    recent_documents_added: list[URLString] | None = None
+    recent_documents_removed: list[URLString] | None = None
+    recent_text_added: list[ContentBlock] | None = None
+    recent_text_removed: list[ContentBlock] | None = None
+    recent_text_changed: list[ChangedBlock] | None = None
 
 
 class CriticalPageUpdate(BaseModel):
