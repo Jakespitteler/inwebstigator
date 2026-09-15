@@ -3,26 +3,34 @@ from collections.abc import Callable
 
 import httpx2
 import pytest
+from tenacity import wait_none
 
-from app.backend.web_scraper.errors import TrafficError, WebConnectionError
-from app.backend.web_scraper.site_crawler import crawl_site, fetch_and_extract
+from app.backend.site_crawler import crawl_site, fetch_internal_links_from_url
+from app.core.errors import TrafficError, WebConnectionError
 from tests.conftest import RequestHandler
 
+
+@pytest.fixture(autouse=True)
+def disable_retry_wait():
+    fetch_internal_links_from_url.retry.wait = wait_none()  # pyright: ignore[reportFunctionMemberAccess]
+    yield
+
+
 # ========================
-# Test fetch_and_extract
+# Test fetch_internal_links_from_url
 # ========================
 
 
 @pytest.mark.anyio
-async def test_fetch_and_extract_success(
+async def test_fetch_internal_links_from_url_success(
     test_url: str,
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
     website_handler: RequestHandler,
 ):
-    """Tests that fetch_and_extract successfully retrieves content and extracts internal links."""
+    """Tests that fetch_internal_links_from_url successfully retrieves content and extracts internal links."""
 
     async with mock_client_factory(website_handler) as client:
-        url, links, status_code = await fetch_and_extract(client, test_url, asyncio.Semaphore(2))
+        url, links, status_code = await fetch_internal_links_from_url(client, test_url, asyncio.Semaphore(2))
 
     assert url == test_url
     assert len(links) == 4
@@ -31,7 +39,7 @@ async def test_fetch_and_extract_success(
 
 
 @pytest.mark.anyio
-async def test_fetch_and_extract_traffic_error(
+async def test_fetch_internal_links_from_url_traffic_error(
     test_url: str,
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
     rate_limit_handler: RequestHandler,
@@ -39,13 +47,13 @@ async def test_fetch_and_extract_traffic_error(
     """Tests that a 429 status code correctly triggers a TrafficError exception."""
     async with mock_client_factory(rate_limit_handler) as client:
         with pytest.raises(TrafficError) as exc_info:
-            await fetch_and_extract(client, test_url, asyncio.Semaphore(2))
+            await fetch_internal_links_from_url(client, test_url, asyncio.Semaphore(2))
 
     assert exc_info.value.status_code == 429
 
 
 @pytest.mark.anyio
-async def test_fetch_and_extract_connection_error(
+async def test_fetch_internal_links_from_url_connection_error(
     test_url: str,
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
     connection_error_handler: RequestHandler,
@@ -53,19 +61,19 @@ async def test_fetch_and_extract_connection_error(
     """Tests that connection errors correctly raise WebConnectionError."""
     async with mock_client_factory(connection_error_handler) as client:
         with pytest.raises(WebConnectionError):
-            await fetch_and_extract(client, test_url, asyncio.Semaphore(2))
+            await fetch_internal_links_from_url(client, test_url, asyncio.Semaphore(2))
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("handler", ["server_error_handler", "request_error_handler", "unexpected_error_handler"])
-async def test_fetch_and_extract_non_fatal_errors(
+async def test_fetch_internal_links_from_url_non_fatal_errors(
     test_url: str,
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
     handler: RequestHandler,
 ):
     """Tests that non-fatal errors handle gracefully, returning empty links."""
     async with mock_client_factory(handler) as client:
-        url, links, _ = await fetch_and_extract(client, test_url, asyncio.Semaphore(2))
+        url, links, _ = await fetch_internal_links_from_url(client, test_url, asyncio.Semaphore(2))
 
     assert url == test_url
     assert links == []

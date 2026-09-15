@@ -13,7 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.backend.web_scraper.site_crawler import crawl_site  # noqa: E402
+from app.backend.site_crawler import crawl_site  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s - %(message)s")
 logger: logging.Logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ HEADERS = {
 }
 
 
-URL: str = "https://www.teqsa.gov.au/"
+URL: str = "https://webloom-two.vercel.app/test-site"
 
 MAX_PAGES: int = 10000
 MAX_CONCURRENT: int = 30
