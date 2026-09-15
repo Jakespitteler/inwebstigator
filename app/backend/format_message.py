@@ -5,12 +5,27 @@ from app.models.website_models import WebsiteRead
 
 
 def _safe(text: str) -> str:
-    """Safely escape scraped text for HTML insertion."""
+    """Escapes scraped text for safe insertion into HTML strings.
+
+    Args:
+        text: The raw input string to escape.
+
+    Returns:
+        The HTML-escaped string with double and single quotes sanitised.
+    """
     return html.escape(text, quote=True)
 
 
 def _link(url: str) -> str:
-    """Creates a hyperlink with semantic classes."""
+    """Generates an HTML hyperlink or fallback text node based on URL protocol validity.
+
+    Args:
+        url: The target URL string to format into HTML.
+
+    Returns:
+        An HTML string containing either an anchor tag with the `link-active` CSS class
+        for HTTP(S) links or a span tag with the `link-inactive` CSS class for non-web links.
+    """
     safe_url = _safe(url)
     if url.lower().startswith(("http://", "https://")):
         return f'<a href="{safe_url}" class="link-active">{safe_url}</a>'
@@ -18,8 +33,17 @@ def _link(url: str) -> str:
 
 
 def generate_scan_report_html(Website: WebsiteRead) -> str:
-    """
-    Formats the website state into a clean HTML structure with inline CSS styles for email compatibility.
+    """Generates a complete inline-styled HTML scan report for email notifications.
+
+    Parses the provided WebsiteRead instance for added/removed site-wide internal links
+    and tracked critical page changes (including links, documents, added/removed text blocks,
+    and side-by-side text diffs).
+
+    Args:
+        Website: The WebsiteRead data model holding state and scan results.
+
+    Returns:
+        A standalone string of HTML ready to be dispatched via email.
     """
     now: datetime = datetime.now(UTC)
 

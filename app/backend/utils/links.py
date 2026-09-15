@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 
 logging.getLogger("httpx2").setLevel(logging.WARNING)
 
-WEB_PAGE_EXTENSIONS = {"", ".html", ".htm", ".php", ".asp", ".aspx", ".jsp"}
+WEB_PAGE_EXTENSIONS: tuple[str, ...] = ("", ".html", ".htm", ".php", ".asp", ".aspx", ".jsp")
 
 DOCUMENT_EXTENSIONS: tuple[str, ...] = (
     ".pdf",
@@ -23,31 +23,54 @@ DOCUMENT_EXTENSIONS: tuple[str, ...] = (
 
 
 def find_added_links(previous_state: list[str], current_state: list[str]) -> list[str]:
+    """Identifies links that were added between a previous state and a current state.
+
+    Args:
+        previous_state: A list of URL strings representing the initial state.
+        current_state: A list of URL strings representing the updated state.
+
+    Returns:
+        A list of URL strings present in current_state but missing from previous_state.
+    """
     return list(set(current_state) - set(previous_state))
 
 
 def find_removed_links(previous_state: list[str], current_state: list[str]) -> list[str]:
+    """Identifies links that were removed between a previous state and a current state.
+
+    Args:
+        previous_state: A list of URL strings representing the initial state.
+        current_state: A list of URL strings representing the updated state.
+
+    Returns:
+        A list of URL strings present in previous_state but missing from current_state.
+    """
     return list(set(previous_state) - set(current_state))
 
 
-def find_link_difference(previous_state: list[str], current_state: list[str]) -> tuple[list[str], list[str]]:
-    """Compare found links with stored links and update the database.
+def is_document(link: str) -> bool:
+    """Determines whether a given URL points to a document file based on its file extension.
 
     Args:
-        previous_state (list[str]): The stored links
-        current_state (list[str]): The found links
+        link: The target URL string to inspect.
 
     Returns:
-        tuple[list[str], list[str]]: Added and removed links for the website.
+        True if the URL path ends with a supported document extension, False otherwise.
     """
-    return find_added_links(previous_state, current_state), find_removed_links(previous_state, current_state)
-
-
-def is_document(link: str) -> bool:
     return urlparse(link).path.lower().endswith(DOCUMENT_EXTENSIONS)
 
 
 def separate_document_links(links: list[str]) -> tuple[list[str], list[str]]:
+    """Categorises a list of URLs into document links and non-document links.
+
+    Args:
+        links: A list of URL strings to split into separate lists.
+
+    Returns:
+        A tuple containing two lists:
+            - The first list contains URLs identified as documents.
+            - The second list contains remaining non-document URLs.
+    """
     doc_links: list[str] = []
     non_doc_links: list[str] = []
     for link in links:
@@ -62,15 +85,27 @@ def _is_web_page(parsed_url: ParseResult) -> bool:
     """Determines if a link goes to a web page (rather than a document).
 
     Args:
-        parsed_url (ParseResult): The parsed_url to check.
+        parsed_url: The parsed URL structure to check.
 
     Returns:
-        bool: True if the parsed_url goes to a webpage.
+        True if the parsed URL path matches recognised web page extensions.
     """
     return PurePosixPath(parsed_url.path).suffix.lower() in WEB_PAGE_EXTENSIONS
 
 
 def is_internal_web_page(base_url: str, check_url: str) -> bool:
+    """Checks whether a URL is an internal webpage residing within the base URL hierarchy.
+
+    Verifies that the target URL matches the domain network location of the base URL,
+    represents a standard web page, and resides at or beneath the path level of the base URL.
+
+    Args:
+        base_url: The reference base URL string defining the root domain and path scope.
+        check_url: The target URL string to validate.
+
+    Returns:
+        True if check_url is an internal webpage within the base URL subpath, False otherwise.
+    """
     parsed_base_url: ParseResult = urlparse(base_url)
     parsed_check_url: ParseResult = urlparse(check_url)
 
@@ -90,10 +125,10 @@ def normalise_url(url: str) -> str:
     """Normalises a URL by removing fragments and trailing slashes for deduplication.
 
     Args:
-        url (str): The url to normalise.
+        url: The url to normalise.
 
     Returns:
-        str: The normalised url.
+        The normalised url.
     """
     parsed: ParseResult = urlparse(url)
     path: str = parsed.path
@@ -101,7 +136,9 @@ def normalise_url(url: str) -> str:
     return parsed._replace(fragment="", path=path).geturl()
 
 
-def extract_links_from_html(  # TODO may need to ignore<nav> tags since a link could get added to every page in the website if thats the case (but also we are just checking th ecritical pages so idk)
+# TODO may need to ignore <nav> tags since a link could get added to every page in the website if that's the case
+# (but also we are just checking th critical pages so idk)
+def extract_links_from_html(
     url: str,
     html_content: str,
     internal_only: bool = False,
@@ -110,16 +147,17 @@ def extract_links_from_html(  # TODO may need to ignore<nav> tags since a link c
     """Extracts, resolves, and normalises unique links from HTML content.
 
     Args:
-        url (str): The URL of the page, used to resolve relative paths.
-        html_content (str): The raw HTML string to be parsed for links.
-        internal_only (bool): If True, filters links to only those sharing the base domain.
+        url: The URL of the page, used to resolve relative paths.
+        html_content: The raw HTML string to be parsed for links.
+        internal_only: If True, filters links to only those sharing the base domain and path scope.
+        base_url: Optional override URL string used to evaluate domain boundaries when
+            internal_only is enabled. Defaults to `url` if omitted.
 
     Returns:
-        list[str]: A sorted list of unique, absolute URLs found in the HTML matching criteria.
+        A sorted list of unique, absolute URLs found in the HTML matching criteria.
 
     Raises:
         ValueError: If the url is improperly formatted and cannot be parsed correctly.
-        TypeError: If an href attribute is not a string.
     """
     if not base_url:
         base_url = url
@@ -140,7 +178,7 @@ def extract_links_from_html(  # TODO may need to ignore<nav> tags since a link c
 
         # Filter by internal domain if requested
         if internal_only and not is_internal_web_page(base_url, check_url=absolute_url):
-            continue  # TODO only get child URLs
+            continue
 
         links.add(normalise_url(absolute_url))
 

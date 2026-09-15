@@ -49,7 +49,7 @@ def engine() -> Iterator[Engine]:
 @pytest.fixture(scope="session", autouse=True)
 def setup_database(engine: Engine) -> None:
     """Creates the database schema."""
-    core.Base.metadata.create_all(bind=engine)
+    schema.Base.metadata.create_all(bind=engine)
     TestBase.metadata.create_all(bind=engine)
 
 
@@ -91,7 +91,7 @@ def api_client(session: Session) -> Iterator[TestClient]:
 # ==========================
 
 
-def _create_and_add[DBRecord: core.Base](session: Session, record: DBRecord) -> DBRecord:
+def _create_and_add[DBRecord: schema.Base](session: Session, record: DBRecord) -> DBRecord:
     """
     Creates a temporary record for testing.
 

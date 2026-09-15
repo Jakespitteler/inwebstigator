@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from httpx2 import Response
 from pydantic import BaseModel
 
-from app.db.core import Base
+from app.db.schema import Base
 from app.frontend.api import routers
 from app.models import critical_page_models, user_models, website_models
 
@@ -135,6 +135,15 @@ class TestCRUDRouters:
 # ==========================
 #  Test Implementations
 # ==========================
+
+
+def test_read_root(api_client: TestClient) -> None:
+    """
+    Tests the root endpoint to ensure the server is running.
+    """
+    response: Response = api_client.get(url="/")
+    assert response.status_code == 200
+    assert "Server is Running." in response.text
 
 
 class TestUserRouter(TestCRUDRouters):

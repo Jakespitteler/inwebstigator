@@ -6,6 +6,13 @@ load_dotenv()
 
 
 class Config(BaseSettings):
+    """Application settings and environment configuration manager.
+
+    Loads configuration variables from environment files or environment variables,
+    providing default fallback values and sensitive credential handling via Pydantic's
+    SecretStr type.
+    """
+
     app_name: str = "inwebstigator"
     debug: bool = False
     db_user: str = ""

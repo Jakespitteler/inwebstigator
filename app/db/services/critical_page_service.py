@@ -14,23 +14,22 @@ logger: logging.Logger = logging.getLogger(__name__)
 
 class CriticalPageService(CRUDService[CriticalPageRead, CriticalPageCreate, CriticalPageUpdate]):
     def __init__(self, session: Session):
-        """_summary_
+        """Initialises the CriticalPageService with an active database session.
 
         Args:
-            session (Session): The database session.
+            session: The SQLAlchemy database session object used for executing operations.
         """
         self._db = session
 
     def get_all(self, skip: int = 0, limit: int = 100) -> Sequence[CriticalPageRead]:
-        """
-        Retrieves critical_page records.
+        """Retrieves a paginated list of critical page records from the database.
 
         Args:
-            skip: The number of records to skip.
-            limit: The maximum number of records to return.
+            skip: The number of initial records to skip for pagination. Defaults to 0.
+            limit: The maximum number of records to return. Defaults to 100.
 
         Returns:
-            The retrieved critical_pages.
+            A sequence of CriticalPageRead models representing the retrieved records.
         """
         critical_page_records: Sequence[DBCriticalPage] = repository.get_list(
             self._db,
@@ -41,33 +40,33 @@ class CriticalPageService(CRUDService[CriticalPageRead, CriticalPageCreate, Crit
         return [CriticalPageRead.model_validate(critical_page_record) for critical_page_record in critical_page_records]
 
     def get(self, id: uuid.UUID) -> CriticalPageRead:
-        """
-        Retrieves a single critical_page by its primary key.
+        """Retrieves a single critical page record by its unique primary key identifier.
 
         Args:
-            id: The id of the critical_page to retrieve.
-
-        Raises:
-            NotFoundError: If no critical_page exists with the provided ID.
+            id: The UUID identifier of the target critical page record.
 
         Returns:
-            The retrieved critical_page.
+            The matching CriticalPageRead data model instance.
+
+        Raises:
+            NotFoundError: If no critical page record matches the provided UUID.
         """
         critical_page_record: DBCriticalPage = repository.get(self._db, table=DBCriticalPage, id=id)
         return CriticalPageRead.model_validate(critical_page_record)
 
     def create(self, model_create: CriticalPageCreate) -> CriticalPageRead:
-        """
-        Creates a new critical_page record.
+        """Updates attributes of an existing critical page record by its primary key.
 
         Args:
-            model_create: The critical_page details to create.
-
-        Raises:
-            IntegrityError: If the critical_page already exists in db.
+            id: The UUID identifier of the critical page record to update.
+            model_update: The CriticalPageUpdate schema containing fields to update.
 
         Returns:
-            The critical_page record.
+            The updated CriticalPageRead data model instance.
+
+        Raises:
+            NotFoundError: If no critical page record matches the provided UUID.
+            IntegrityError: If updated attribute values violate database constraints.
         """
         critical_page_record: DBCriticalPage = DBCriticalPage(**model_create.model_dump())
         repository.add(self._db, record=critical_page_record)
@@ -95,14 +94,13 @@ class CriticalPageService(CRUDService[CriticalPageRead, CriticalPageCreate, Crit
         return CriticalPageRead.model_validate(critical_page_record)
 
     def delete(self, id: uuid.UUID) -> None:
-        """
-        Deletes a critical_page by its primary key.
+        """Deletes a critical page record from the database by its primary key.
 
         Args:
-            id: The id of the critical_page to delete.
+            id: The UUID identifier of the critical page record to remove.
 
         Raises:
-            NotFoundError: If no critical_page exists with the provided ID.
+            NotFoundError: If no critical page record matches the provided UUID.
         """
         repository.get(self._db, table=DBCriticalPage, id=id)
         repository.delete(self._db, table=DBCriticalPage, id=id)

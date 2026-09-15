@@ -9,7 +9,7 @@ from sqlalchemy.orm import InstrumentedAttribute, Session, selectinload
 from sqlalchemy.orm.interfaces import ORMOption
 
 from app.core.errors import IntegrityError, NotFoundError
-from app.db.core import Base
+from app.db.schema import Base
 
 logger: logging.Logger = logging.getLogger(__name__)
 

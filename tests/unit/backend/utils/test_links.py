@@ -3,7 +3,6 @@ import pytest
 from app.backend.utils.links import (
     extract_links_from_html,
     find_added_links,
-    find_link_difference,
     find_removed_links,
     is_document,
     separate_document_links,
@@ -36,14 +35,6 @@ def test_find_removed_links_no_changes() -> None:
     current: list[str] = ["/page1", "/page2"]
     removed: list[str] = find_removed_links(previous, current)
     assert removed == []
-
-
-def test_find_link_difference() -> None:
-    previous: list[str] = ["/page1", "/page2"]
-    current: list[str] = ["/page2", "/page3"]
-    added, removed = find_link_difference(previous, current)
-    assert added == ["/page3"]
-    assert removed == ["/page1"]
 
 
 @pytest.mark.parametrize(

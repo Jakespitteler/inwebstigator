@@ -2,7 +2,7 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.backend.compare_content import ChangedBlock, ContentBlock
+from app.backend.diff_checker import ChangedBlock, ContentBlock
 from app.db.utils.field_types import URLString
 
 

@@ -13,24 +13,15 @@ SMTP_USER: str = config.email
 SMTP_PASS: str = config.email_password.get_secret_value()
 
 
-def configuration_problems() -> list[str]:
-    """What's stopping a real send, empty if it's good to go.
-
-    Everything starts blank, so a half filled .env fails here instead of
-    quietly mailing nobody.
-    """
-    problems: list[str] = []
-    if not SMTP_USER:
-        problems.append("EMAIL is empty -- set it to the account you're sending from")
-    if not SMTP_PASS:
-        problems.append("EMAIL_PASSWORD is empty -- Gmail needs an app password, not your login")
-    if not SMTP_HOST:
-        problems.append("SMTP_HOST is empty -- set it to your mail server (Gmail: smtp.gmail.com)")
-    return problems
-
-
 def _sender_domain() -> str | None:
-    """Domain of FROM_ADDR, for the Message-ID."""
+    """Extracts the domain portion of the configured sender email address.
+
+    Parses FROM_ADDR to isolate the domain following the '@' symbol, which is used
+    to construct compliant Message-ID headers.
+
+    Returns:
+        The domain string if successfully parsed, otherwise None.
+    """
     _, address = parseaddr(FROM_ADDR)
     _, _, domain = address.partition("@")
     return domain or None
@@ -42,10 +33,20 @@ def build_message(
     html_body: str,
     now: datetime | None = None,
 ) -> EmailMessage:
-    """Put finished text in an email envelope. Doesn't send.
+    """Constructs a structured MIME EmailMessage instance without sending it.
 
-    Pass html_body and you get multipart/alternative, with body as the
-    fallback. recipients defaults to CLIENT_TO.
+    Populates standard metadata headers (Subject, From, To, Auto-Submitted, Date,
+    Message-ID) and attaches the HTML body payload.
+
+    Args:
+        subject: The subject text line for the email message.
+        recipients: A list of recipient email address strings.
+        html_body: The raw HTML content string representing the email body.
+        now: Optional datetime object representing the sending timestamp.
+            Defaults to current UTC time if omitted.
+
+    Returns:
+        A fully constructed EmailMessage instance ready for transmission.
     """
     now = now or datetime.now(UTC)
     msg = EmailMessage()
@@ -63,6 +64,18 @@ def build_message(
 
 
 def send_email(msg: EmailMessage) -> bool:
+    """Transmits a constructed EmailMessage object over an encrypted SMTP_SSL connection.
+
+    Establishes an SSL connection to the configured SMTP host and port, handles
+    authentication if required, and dispatches the email payload.
+
+    Args:
+        msg: The prepared EmailMessage instance to send.
+
+    Returns:
+        True if the email was successfully accepted by the SMTP server, False if
+        an exception or connection failure occurred.
+    """
     try:
         with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=30) as smtp:
             if SMTP_USER:

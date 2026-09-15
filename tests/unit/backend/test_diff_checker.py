@@ -1,4 +1,4 @@
-from app.backend.compare_content import compare_content
+from app.backend.diff_checker import compare_page_content, find_link_difference
 from app.backend.utils.html_parser import ContentBlock, HTMLBlockType, PageContent
 
 
@@ -16,7 +16,7 @@ def test_compare_identical_content():
     old = PageContent(blocks=blocks)
     new = PageContent(blocks=blocks)
 
-    added, removed, changed = compare_content(old, new)
+    added, removed, changed = compare_page_content(old, new)
 
     assert len(added) == 0
     assert len(removed) == 0
@@ -28,7 +28,7 @@ def test_compare_pure_insertion():
     old = PageContent(blocks=[create_block("First paragraph.")])
     new = PageContent(blocks=[create_block("First paragraph."), create_block("Second paragraph.")])
 
-    added, removed, changed = compare_content(old, new)
+    added, removed, changed = compare_page_content(old, new)
 
     assert len(added) == 1
     assert added[0].text == "Second paragraph."
@@ -41,7 +41,7 @@ def test_compare_pure_deletion():
     old = PageContent(blocks=[create_block("Keep this paragraph."), create_block("Remove this paragraph.")])
     new = PageContent(blocks=[create_block("Keep this paragraph.")])
 
-    added, removed, changed = compare_content(old, new)
+    added, removed, changed = compare_page_content(old, new)
 
     assert len(added) == 0
     assert len(removed) == 1
@@ -58,7 +58,7 @@ def test_compare_edited_high_similarity():
     old = PageContent(blocks=[create_block(old_text)])
     new = PageContent(blocks=[create_block(new_text)])
 
-    added, removed, changed = compare_content(old, new)
+    added, removed, changed = compare_page_content(old, new)
 
     assert len(added) == 0
     assert len(removed) == 0
@@ -73,7 +73,7 @@ def test_compare_replaced_low_similarity():
     old = PageContent(blocks=[create_block("Alpha zebra 12345")])
     new = PageContent(blocks=[create_block("Qwerty uiop 67890")])
 
-    added, removed, changed = compare_content(old, new)
+    added, removed, changed = compare_page_content(old, new)
 
     assert len(changed) == 0
     assert len(removed) == 1
@@ -95,7 +95,7 @@ def test_compare_uneven_replacements_more_old():
     )
     new = PageContent(blocks=[create_block("This line will be slightly tweaked.")])
 
-    added, removed, changed = compare_content(old, new)
+    added, removed, changed = compare_page_content(old, new)
 
     assert len(changed) == 1
     assert len(removed) == 1
@@ -116,7 +116,7 @@ def test_compare_uneven_replacements_more_new():
         ]
     )
 
-    added, removed, changed = compare_content(old, new)
+    added, removed, changed = compare_page_content(old, new)
 
     assert len(changed) == 1
     assert len(removed) == 0
@@ -132,7 +132,7 @@ def test_compare_metadata_change():
     old = PageContent(blocks=[create_block("Exact same text.", heading="Old Heading")])
     new = PageContent(blocks=[create_block("Exact same text.", heading="New Heading")])
 
-    added, removed, changed = compare_content(old, new)
+    added, removed, changed = compare_page_content(old, new)
 
     assert len(added) == 0
     assert len(removed) == 0
@@ -154,11 +154,19 @@ def test_compare_custom_similarity_threshold():
     new = PageContent(blocks=[create_block(str2)])
 
     # Using default threshold (0.60), should classify as changed
-    _, _, default_changed = compare_content(old, new)
+    _, _, default_changed = compare_page_content(old, new)
     assert len(default_changed) == 1
 
     # Using strict threshold (0.95), should classify as removed/added
-    strict_added, strict_removed, strict_changed = compare_content(old, new, similarity_threshold=0.95)
+    strict_added, strict_removed, strict_changed = compare_page_content(old, new, similarity_threshold=0.95)
     assert len(strict_changed) == 0
     assert len(strict_removed) == 1
     assert len(strict_added) == 1
+
+
+def test_find_link_difference() -> None:
+    previous: list[str] = ["/page1", "/page2"]
+    current: list[str] = ["/page2", "/page3"]
+    added, removed = find_link_difference(previous, current)
+    assert added == ["/page3"]
+    assert removed == ["/page1"]

@@ -1,10 +1,7 @@
-import uuid
 from collections.abc import Generator
-from datetime import datetime
 
-from sqlalchemy import UUID as PG_UUID
-from sqlalchemy import DateTime, Engine, create_engine, text
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
+from sqlalchemy import Engine, create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import config
 
@@ -26,14 +23,3 @@ def get_db_session() -> Generator[Session]:
         raise
     finally:
         db_session.close()
-
-
-class Base(DeclarativeBase):
-    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(), primary_key=True, default=uuid.uuid4)
-
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=text("CURRENT_TIMESTAMP"),
-        onupdate=text("CURRENT_TIMESTAMP"),
-    )

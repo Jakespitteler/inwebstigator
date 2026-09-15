@@ -3,17 +3,20 @@ from typing import Any
 
 
 class DataBaseError(Exception):
-    """Base class for all database exceptions."""
+    """Base class for all custom database-related exceptions in the application."""
 
     ...
 
 
 class NotFoundError(DataBaseError):
-    """
-    Exception raised when a record is not found.
+    """Exception raised when a requested database record cannot be found.
+
+    Handles initialisation via either a primary key UUID or a dictionary of
+    query attributes to build descriptive error messages.
 
     Attributes:
-        id: The UUID of the record that was not found.
+        id: The UUID of the missing record, if supplied.
+        attributes: Key-value attributes used during the lookup, if supplied.
     """
 
     def __init__(
@@ -32,8 +35,10 @@ class NotFoundError(DataBaseError):
 
 
 class IntegrityError(DataBaseError):
-    """
-    Exception raised when data integrity constraints are violated.
+    """Exception raised when database integrity or unique constraints are violated.
+
+    Attributes:
+        args: Positional argument tuple containing the standard error message string.
     """
 
     def __init__(self) -> None:
@@ -41,14 +46,17 @@ class IntegrityError(DataBaseError):
 
 
 class WebCrawlerError(Exception):
-    """Base class for all web crawler exceptions."""
+    """Base class for all custom web crawler exceptions in the application."""
 
     ...
 
 
 class TrafficError(WebCrawlerError):
-    """
-    Exception raised when a website's rate limits have been exceeded or the server is overloaded.
+    """Exception raised when web scraping exceeds server rate limits or encounters traffic blocks.
+
+    Attributes:
+        url: The target URL string that triggered the traffic error.
+        status_code: The HTTP status code returned by the server (e.g., 429, 403, 503).
     """
 
     def __init__(self, url: str, status_code: int) -> None:
@@ -58,8 +66,10 @@ class TrafficError(WebCrawlerError):
 
 
 class WebConnectionError(WebCrawlerError):
-    """
-    Exception raised when a website's drops out or loses connection.
+    """Exception raised when network connection timeouts or link drops occur during a crawl operation.
+
+    Attributes:
+        url: The target URL string that failed to establish or maintain a connection.
     """
 
     def __init__(self, url: str) -> None:
