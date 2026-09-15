@@ -26,7 +26,9 @@ class DBInternalLink(Base):
 
 class DBCriticalPage(Base):
     __tablename__ = "critical_pages"
-    url: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
+    __table_args__ = (UniqueConstraint("url", "website_id", name="uq_critical_page_url_website"),)
+
+    url: Mapped[str] = mapped_column(String, nullable=False, index=True)
     links: Mapped[list[str]] = mapped_column(JSON, nullable=True)
     documents: Mapped[list[str]] = mapped_column(JSON, nullable=True)
     text_body: Mapped[str] = mapped_column(String, nullable=True)
@@ -47,13 +49,13 @@ class DBWebsite(Base):
     __tablename__ = "websites"
     __table_args__ = (UniqueConstraint("url", "user_id", name="uq_website_url_user"),)
 
-    url: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    url: Mapped[str] = mapped_column(String, nullable=False, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     user: Mapped[DBUser] = relationship(back_populates="websites")
     internal_links: Mapped[list[DBInternalLink]] = relationship(
         back_populates="website",
         cascade="all, delete-orphan",
-    )  # having passive_delete=True here will speed up deletion but won't execute changes properly
+    )
     critical_pages: Mapped[list[DBCriticalPage]] = relationship(
         back_populates="website",
         cascade="all, delete-orphan",

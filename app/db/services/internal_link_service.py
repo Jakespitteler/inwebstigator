@@ -4,15 +4,15 @@ from collections.abc import Sequence
 
 from sqlalchemy.orm import Session
 
+from app.core.errors import NotFoundError
 from app.db import repository
-from app.db.errors import NotFoundError
 from app.db.models.internal_link_models import (
     InternalLinkCreate,
-    InternalLinkCreateBatch,
     InternalLinkRead,
     InternalLinkUpdate,
 )
 from app.db.schema import DBInternalLink
+from app.db.utils.field_types import URLString
 from app.db.utils.interfaces import CRUDService
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -100,7 +100,7 @@ class InternalLinkService(CRUDService[InternalLinkRead, InternalLinkCreate, Inte
         repository.add(self._db, record=internal_link_record)
         return InternalLinkRead.model_validate(internal_link_record)
 
-    def create_batch(self, model_create_batch: InternalLinkCreateBatch) -> Sequence[InternalLinkRead]:
+    def create_batch(self, urls: Sequence[URLString], website_id: uuid.UUID) -> Sequence[InternalLinkRead]:
         """
         Creates multiple new internal_link records in batch.
 
@@ -113,9 +113,7 @@ class InternalLinkService(CRUDService[InternalLinkRead, InternalLinkCreate, Inte
         Returns:
             The sequence of created internal_link records.
         """
-        internal_link_records = [
-            DBInternalLink(url=url, website_id=model_create_batch.website_id) for url in model_create_batch.urls
-        ]
+        internal_link_records = [DBInternalLink(url=url, website_id=website_id) for url in urls]
 
         repository.batch_add(self._db, records=internal_link_records)
 
@@ -154,3 +152,22 @@ class InternalLinkService(CRUDService[InternalLinkRead, InternalLinkCreate, Inte
         """
         repository.get(self._db, table=DBInternalLink, id=id)
         repository.delete(self._db, table=DBInternalLink, id=id)
+
+    def delete_batch(self, urls: Sequence[str], website_id: uuid.UUID) -> None:
+        """
+        Deletes multiple internal_link records by their URLs in batch.
+
+        Args:
+            urls: Sequence of URLs of internal_links to delete.
+            website_id: The id of the website that the links are associated with.
+
+        Raises:
+            NotFoundError: If `urls` are passed but any provided ID does not exist in the database.
+            IntegrityError: If deletion violates database constraints.
+        """
+
+        repository.batch_delete(
+            self._db,
+            table=DBInternalLink,
+            attributes={"url": list(urls), "website_id": website_id},
+        )

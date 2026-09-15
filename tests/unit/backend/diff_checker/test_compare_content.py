@@ -1,5 +1,5 @@
 from app.backend.diff_checker.compare_content import compare_content
-from app.db.models.critical_page_models import ContentBlock, HTMLBlockType, PageContent
+from app.backend.utils.html_parser import ContentBlock, HTMLBlockType, PageContent
 
 
 def create_block(text: str, heading: str = "H1", block_type: HTMLBlockType = HTMLBlockType.PARAGRAPH) -> ContentBlock:

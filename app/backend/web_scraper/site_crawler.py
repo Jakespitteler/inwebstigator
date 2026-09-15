@@ -3,6 +3,7 @@ import logging
 from collections.abc import Awaitable, Iterator
 
 import httpx2
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.backend.utils.html_extractor import (
     extract_links_from_html,
@@ -10,11 +11,22 @@ from app.backend.utils.html_extractor import (
     is_internal_web_page,
     normalise_url,
 )
-from app.backend.web_scraper.errors import TrafficError, WebConnectionError
+from app.core.config import config
+from app.core.errors import TrafficError, WebConnectionError
 
 logger = logging.getLogger(__name__)
 
 
+@retry(
+    wait=wait_exponential(
+        multiplier=config.fetch_site_retry_multiplier,
+        min=config.fetch_site_retry_min_wait_seconds,
+        max=config.fetch_site_retry_max_wait_seconds,
+    ),
+    stop=stop_after_attempt(config.fetch_site_retry_max_attempts),
+    retry=retry_if_exception_type((WebConnectionError, TrafficError)),
+    reraise=True,
+)
 async def fetch_and_extract(
     client: httpx2.AsyncClient,
     url: str,

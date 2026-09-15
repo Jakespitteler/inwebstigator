@@ -1,13 +1,13 @@
 from bs4 import BeautifulSoup, Tag
 
 from app.backend.utils.html_parser import (
+    PageContent,
     clean_html,
     extract_last_updated,
     extract_links,
     extract_sequential_blocks,
     parse_html,
 )
-from app.db.models.critical_page_models import PageContent
 
 
 def test_clean_html_removes_unwanted_tags() -> None:

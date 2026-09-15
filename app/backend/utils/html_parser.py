@@ -1,10 +1,29 @@
 import re
 from collections.abc import Callable
+from enum import StrEnum
 
 from bs4 import BeautifulSoup, Comment, Tag
+from pydantic import BaseModel, Field
 
 from app.backend.utils.text import parse_standard_text, parse_table_row
-from app.db.models.critical_page_models import ContentBlock, HTMLBlockType, PageContent
+
+
+class HTMLBlockType(StrEnum):
+    PARAGRAPH = "p"
+    HEADING_1 = "h1"
+    HEADING_2 = "h2"
+    HEADING_3 = "h3"
+    HEADING_4 = "h4"
+    HEADING_5 = "h5"
+    HEADING_6 = "h6"
+    CODE = "pre"
+    QUOTE = "blockquote"
+    LIST = "blockquote"
+    UNORDERED_LIST = "ul"
+    ORDERED_LIST = "ol"
+    DIVISION = "div"
+    TABLE_ROW = "tr"
+
 
 # Maps HTML tags to their internal block type and the function required to parse them.
 BLOCK_PARSERS: dict[HTMLBlockType, Callable[[Tag], str]] = {
@@ -12,6 +31,25 @@ BLOCK_PARSERS: dict[HTMLBlockType, Callable[[Tag], str]] = {
     HTMLBlockType.LIST: parse_standard_text,
     HTMLBlockType.TABLE_ROW: parse_table_row,
 }
+
+
+class ContentBlock(BaseModel):
+    parent_heading: str | None = None
+    block_type: HTMLBlockType
+    text: str
+
+
+class ChangedBlock(BaseModel):
+    old_block: ContentBlock
+    new_block: ContentBlock
+    similarity: float
+
+
+class PageContent(BaseModel):
+    headings: list[str] = Field(default_factory=list[str])
+    blocks: list[ContentBlock] = Field(default_factory=list[ContentBlock])
+    links: list[str] = Field(default_factory=list[str])
+    last_updated: str | None = None
 
 
 def clean_html(soup: BeautifulSoup) -> BeautifulSoup:

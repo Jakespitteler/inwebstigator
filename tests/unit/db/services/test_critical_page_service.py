@@ -3,14 +3,12 @@ from collections.abc import Sequence
 import pytest
 from sqlalchemy.orm import Session
 
-from app.db.errors import NotFoundError
+from app.backend.utils.html_parser import ChangedBlock, ContentBlock, HTMLBlockType
+from app.core.errors import NotFoundError
 from app.db.models.critical_page_models import (
-    ChangedBlock,
-    ContentBlock,
     CriticalPageCreate,
     CriticalPageRead,
     CriticalPageUpdate,
-    HTMLBlockType,
 )
 from app.db.schema import DBCriticalPage, DBWebsite
 from app.db.services.critical_page_service import CriticalPageService
@@ -54,9 +52,6 @@ def test_create_critical_page(session: Session, test_website: DBWebsite) -> None
     """
     critical_page_details = CriticalPageCreate(
         url="https://www.test_website.com/test_critical_page",
-        links=[],
-        documents=[],
-        text_body="",
         website_id=test_website.id,
     )
 
@@ -113,9 +108,6 @@ def test_create_critical_page_with_recent_changes(session: Session, test_website
 
     critical_page_details = CriticalPageCreate(
         url="https://www.test_website.com/test_recent_changes",
-        links=[],
-        documents=[],
-        text_body="Updated body",
         website_id=test_website.id,
     )
 

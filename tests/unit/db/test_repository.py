@@ -4,8 +4,8 @@ from collections.abc import Sequence
 import pytest
 from sqlalchemy.orm import Session
 
+from app.core.errors import IntegrityError, NotFoundError
 from app.db import repository
-from app.db.errors import IntegrityError, NotFoundError
 from tests.conftest import DBTestTable
 
 
@@ -70,7 +70,23 @@ def test_get_list_with_limit(session: Session) -> None:
     assert len(records) == 2
 
 
-# TODO: Test invalid limits
+def test_get_list_invalid_limits(session: Session) -> None:
+    """
+    Tests retrieving list with negative or zero limits/skips.
+
+    Args:
+        session: The database session fixture.
+    """
+    record = DBTestTable(name="Limit Test Record")
+    repository.add(session, record)
+
+    # Limit 0 returns empty list
+    records = repository.get_list(session, table=DBTestTable, skip=0, limit=0)
+    assert len(records) == 0
+
+    # Large skip out of bounds returns empty list
+    records = repository.get_list(session, table=DBTestTable, skip=100, limit=10)
+    assert len(records) == 0
 
 
 def test_get_list_attributes(session: Session, test_record: DBTestTable) -> None:
@@ -206,3 +222,129 @@ def test_delete(session: Session, test_record: DBTestTable) -> None:
     # Confirm it's gone
     with pytest.raises(NotFoundError):
         repository.get(session, table=DBTestTable, id=test_record.id)
+
+
+def test_batch_delete_by_ids(session: Session) -> None:
+    """
+    Tests deleting multiple records in batch using IDs.
+
+    Args:
+        session: The database session fixture.
+    """
+    records = [
+        DBTestTable(name="Batch Delete 1"),
+        DBTestTable(name="Batch Delete 2"),
+        DBTestTable(name="Batch Delete 3"),
+    ]
+    repository.batch_add(session, records)
+    ids = [record.id for record in records]
+
+    repository.batch_delete(session, table=DBTestTable, ids=ids)
+
+    # Confirm all are deleted
+    for record_id in ids:
+        with pytest.raises(NotFoundError):
+            repository.get(session, table=DBTestTable, id=record_id)
+
+
+def test_batch_delete_by_attributes(session: Session) -> None:
+    """
+    Tests deleting records matching a given set of attribute criteria.
+
+    Args:
+        session: The database session fixture.
+    """
+    record1 = DBTestTable(name="Target Record")
+    record2 = DBTestTable(name="Keep Record")
+    repository.batch_add(session, [record1, record2])
+
+    repository.batch_delete(
+        session,
+        table=DBTestTable,
+        attributes={DBTestTable.name.key: "Target Record"},
+    )
+
+    # Target deleted
+    with pytest.raises(NotFoundError):
+        repository.get(session, table=DBTestTable, id=record1.id)
+
+    # Unmatched record remains
+    fetched = repository.get(session, table=DBTestTable, id=record2.id)
+    assert fetched.id == record2.id
+
+
+def test_batch_delete_by_ids_and_attributes(session: Session) -> None:
+    """
+    Tests deleting records matching both explicit IDs and attribute filters.
+
+    Args:
+        session: The database session fixture.
+    """
+    record1 = DBTestTable(name="Matching Record")
+    record2 = DBTestTable(name="Other Record")
+    repository.batch_add(session, [record1, record2])
+
+    repository.batch_delete(
+        session,
+        table=DBTestTable,
+        ids=[record1.id],
+        attributes={DBTestTable.name.key: "Matching Record"},
+    )
+
+    with pytest.raises(NotFoundError):
+        repository.get(session, table=DBTestTable, id=record1.id)
+
+
+def test_batch_delete_no_params_raises_value_error(session: Session) -> None:
+    """
+    Tests that calling batch_delete with neither IDs nor attributes raises ValueError.
+
+    Args:
+        session: The database session fixture.
+    """
+    with pytest.raises(ValueError, match="At least one search parameter"):
+        repository.batch_delete(session, table=DBTestTable)
+
+
+def test_batch_delete_unmatched_attributes_noop(session: Session) -> None:
+    """
+    Tests that batch_delete with non-matching attributes succeeds without error or deleting records.
+
+    Args:
+        session: The database session fixture.
+    """
+    record = DBTestTable(name="Existing Record")
+    repository.add(session, record)
+
+    repository.batch_delete(
+        session,
+        table=DBTestTable,
+        attributes={DBTestTable.name.key: "Non-existent Record"},
+    )
+
+    # Confirm record still exists
+    fetched = repository.get(session, table=DBTestTable, id=record.id)
+    assert fetched.id == record.id
+
+
+def test_batch_delete_raises_not_found_error(session: Session) -> None:
+    """
+    Tests that batch_delete raises NotFoundError if an explicitly passed ID does not exist.
+
+    Args:
+        session: The database session fixture.
+    """
+    record = DBTestTable(name="Valid Delete Record")
+    repository.add(session, record)
+
+    missing_id = uuid.uuid4()
+    ids = [record.id, missing_id]
+
+    with pytest.raises(NotFoundError) as e:
+        repository.batch_delete(session, table=DBTestTable, ids=ids)
+
+    assert str(missing_id) in str(e.value)
+
+    # Confirm atomic rollback (valid record was not deleted)
+    fetched = repository.get(session, table=DBTestTable, id=record.id)
+    assert fetched.id == record.id

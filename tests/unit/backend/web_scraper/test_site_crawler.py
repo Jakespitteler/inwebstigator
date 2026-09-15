@@ -3,10 +3,18 @@ from collections.abc import Callable
 
 import httpx2
 import pytest
+from tenacity import wait_none
 
-from app.backend.web_scraper.errors import TrafficError, WebConnectionError
 from app.backend.web_scraper.site_crawler import crawl_site, fetch_and_extract
+from app.core.errors import TrafficError, WebConnectionError
 from tests.conftest import RequestHandler
+
+
+@pytest.fixture(autouse=True)
+def disable_retry_wait():
+    fetch_and_extract.retry.wait = wait_none()  # pyright: ignore[reportFunctionMemberAccess]
+    yield
+
 
 # ========================
 # Test fetch_and_extract

@@ -3,7 +3,7 @@ from collections.abc import Sequence
 import pytest
 from sqlalchemy.orm import Session
 
-from app.db.errors import NotFoundError
+from app.core.errors import NotFoundError
 from app.db.models.user_models import UserCreate, UserRead, UserUpdate
 from app.db.schema import DBUser
 from app.db.services.user_service import UserService

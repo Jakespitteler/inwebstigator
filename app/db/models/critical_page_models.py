@@ -1,51 +1,14 @@
 import uuid
-from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.backend.diff_checker.compare_content import ChangedBlock, ContentBlock
 from app.db.utils.field_types import URLString
 
 
-class HTMLBlockType(StrEnum):
-    PARAGRAPH = "p"
-    HEADING_1 = "h1"
-    HEADING_2 = "h2"
-    HEADING_3 = "h3"
-    HEADING_4 = "h4"
-    HEADING_5 = "h5"
-    HEADING_6 = "h6"
-    CODE = "pre"
-    QUOTE = "blockquote"
-    LIST = "blockquote"
-    UNORDERED_LIST = "ul"
-    ORDERED_LIST = "ol"
-    DIVISION = "div"
-    TABLE_ROW = "tr"
-
-
-class ContentBlock(BaseModel):
-    parent_heading: str | None = None
-    block_type: HTMLBlockType
-    text: str
-
-
-class ChangedBlock(BaseModel):
-    """Represents a block that was edited rather than completely replaced."""
-
-    old_block: ContentBlock
-    new_block: ContentBlock
-    similarity: float
-
-
-class CriticalPageBase(BaseModel):
+class CriticalPageCreate(BaseModel):
     url: URLString
-    links: list[URLString] = Field(default_factory=list[URLString])
-    documents: list[URLString] = Field(default_factory=list[URLString])
-    text_body: str = Field(default="")
-
-
-class CriticalPageCreate(CriticalPageBase):
-    website_id: uuid.UUID
+    website_id: uuid.UUID | None = Field(default=None, examples=[""])
 
 
 class CriticalPageRead(BaseModel):
@@ -67,6 +30,7 @@ class CriticalPageRead(BaseModel):
 
 
 class CriticalPageUpdate(BaseModel):
+    url: URLString | None = None
     links: list[URLString] | None = None
     documents: list[URLString] | None = None
     text_body: str | None = None
@@ -78,10 +42,3 @@ class CriticalPageUpdate(BaseModel):
     recent_text_added: list[ContentBlock] | None = None
     recent_text_removed: list[ContentBlock] | None = None
     recent_text_changed: list[ChangedBlock] | None = None
-
-
-class PageContent(BaseModel):
-    headings: list[str] = Field(default_factory=list)
-    blocks: list[ContentBlock] = Field(default_factory=list[ContentBlock])
-    links: list[str] = Field(default_factory=list)
-    last_updated: str | None = Field(default=None)

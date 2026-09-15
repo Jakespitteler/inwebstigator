@@ -5,7 +5,8 @@ from app.backend.notifier.format_message import (
     _safe,  # pyright: ignore[reportPrivateUsage]
     generate_scan_report_html,
 )
-from app.db.models.critical_page_models import ChangedBlock, ContentBlock, CriticalPageRead, HTMLBlockType
+from app.backend.utils.html_parser import HTMLBlockType
+from app.db.models.critical_page_models import ChangedBlock, ContentBlock, CriticalPageRead
 from app.db.models.website_models import WebsiteRead
 
 

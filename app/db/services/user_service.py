@@ -4,8 +4,8 @@ from collections.abc import Sequence
 
 from sqlalchemy.orm import Session
 
+from app.core.errors import NotFoundError
 from app.db import repository
-from app.db.errors import NotFoundError
 from app.db.models.user_models import UserCreate, UserRead, UserUpdate
 from app.db.schema import DBUser
 from app.db.utils.interfaces import CRUDService
@@ -88,7 +88,7 @@ class UserService(CRUDService[UserRead, UserCreate, UserUpdate]):
         Returns:
             The user record.
         """
-        user_record: DBUser = DBUser(**model_create.model_dump(exclude={"critical_pages", "internal_links"}))
+        user_record: DBUser = DBUser(**model_create.model_dump())
         repository.add(self._db, record=user_record)
 
         return UserRead.model_validate(user_record)

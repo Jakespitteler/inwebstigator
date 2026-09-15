@@ -8,8 +8,8 @@ from sqlalchemy.exc import IntegrityError as SQLIntegrityError
 from sqlalchemy.orm import InstrumentedAttribute, Session, selectinload
 from sqlalchemy.orm.interfaces import ORMOption
 
+from app.core.errors import IntegrityError, NotFoundError
 from app.db.core import Base
-from app.db.errors import IntegrityError, NotFoundError
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -174,3 +174,67 @@ def delete[DBTable: Base](session: Session, table: type[DBTable], id: uuid.UUID)
     session.delete(record)
     session.flush()
     logger.info(f"Record deleted from database successfully: {record.__tablename__=}, {record.id=}")
+
+
+def batch_delete[DBTable: Base](
+    session: Session,
+    table: type[DBTable],
+    ids: Sequence[uuid.UUID] | None = None,
+    attributes: dict[str, Any] | None = None,
+) -> None:
+    """
+    Deletes multiple records matching the provided IDs and/or attribute criteria.
+
+    Args:
+        session: The database session.
+        table: The table to query.
+        ids: Optional sequence of IDs to match.
+        attributes: Optional attribute-value pairs to filter by. Supports sequence values for SQL IN clauses.
+
+    Raises:
+        NotFoundError: If `ids` are explicitly passed but any provided ID is missing.
+        ValueError: If neither `ids` nor `attributes` are provided.
+        IntegrityError: If deletion violates foreign key constraints.
+    """
+    if not ids and not attributes:
+        raise ValueError("At least one search parameter ('ids' or 'attributes') must be provided.")
+
+    statement: Select[tuple[DBTable]] = select(table)
+
+    if ids:
+        statement = statement.where(table.id.in_(ids))
+
+    if attributes:
+        for key, value in attributes.items():
+            column = getattr(table, key)
+            if isinstance(value, (list, tuple, set)):
+                statement = statement.where(column.in_(value))
+            else:
+                statement = statement.where(column == value)
+
+    records = session.scalars(statement).all()
+
+    # If explicit IDs were requested, ensure all were found
+    if ids:
+        found_ids = {record.id for record in records}
+        missing_ids = set(ids) - found_ids
+        if missing_ids:
+            missing_id = next(iter(missing_ids))
+            raise NotFoundError(id=missing_id)
+
+    if not records:
+        logger.info(f"No records found to delete for {table.__tablename__=}.")
+        return
+
+    try:
+        for record in records:
+            session.delete(record)
+        session.flush()
+    except SQLIntegrityError as e:
+        tablename = getattr(table, "__tablename__", "unknown")
+        logger.error(f"Failed to bulk delete records from database, rolling back. {tablename=}")
+        session.rollback()
+        raise IntegrityError() from e
+
+    tablename = records[0].__tablename__
+    logger.info(f"Successfully bulk deleted {len(records)} records from database. {tablename=}")

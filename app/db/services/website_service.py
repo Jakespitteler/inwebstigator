@@ -4,10 +4,9 @@ from collections.abc import Sequence
 
 from sqlalchemy.orm import Session
 
+from app.core.errors import NotFoundError
 from app.db import repository
-from app.db.errors import NotFoundError
 from app.db.models.critical_page_models import CriticalPageCreate
-from app.db.models.internal_link_models import InternalLinkCreateBatch
 from app.db.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
 from app.db.schema import DBWebsite
 from app.db.services.critical_page_service import CriticalPageService
@@ -97,23 +96,16 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         Returns:
             The website record.
         """
-        website_record: DBWebsite = DBWebsite(**model_create.model_dump(exclude={"critical_pages", "internal_links"}))
+        website_record: DBWebsite = DBWebsite(**model_create.model_dump(exclude={"critical_pages"}))
         repository.add(self._db, record=website_record)
 
         if model_create.critical_pages:
             [
                 CriticalPageService(self._db).create(
-                    CriticalPageCreate(website_id=website_record.id, **critical_page.model_dump())
+                    CriticalPageCreate(website_id=website_record.id, url=critical_page_url)
                 )
-                for critical_page in model_create.critical_pages
+                for critical_page_url in model_create.critical_pages
             ]
-        if model_create.internal_links:
-            InternalLinkService(self._db).create_batch(
-                model_create_batch=InternalLinkCreateBatch(
-                    urls=model_create.internal_links,
-                    website_id=website_record.id,
-                )
-            )
 
         return WebsiteRead.model_validate(website_record)
 
@@ -132,12 +124,28 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         Returns:
             The updated website.
         """
+        website_record: DBWebsite = repository.get(self._db, table=DBWebsite, id=id)
+        if model_update.url:
+            website_record = repository.update(self._db, record=website_record, updates={"url": model_update.url})
 
-        website_record = repository.update(
-            self._db,
-            record=repository.get(self._db, table=DBWebsite, id=id),
-            updates=model_update.model_dump(exclude_unset=True),
-        )
+        critical_page_service = CriticalPageService(self._db)
+        if model_update.critical_page_updates:
+            for critical_page_id, critical_page_updates in model_update.critical_page_updates.items():
+                critical_page_service.update(id=critical_page_id, model_update=critical_page_updates)
+
+        internal_link_service = InternalLinkService(self._db)
+        if model_update.recent_added_internal_links:
+            internal_link_service.create_batch(
+                urls=model_update.recent_added_internal_links,
+                website_id=website_record.id,
+            )
+        if model_update.recent_removed_internal_links:
+            internal_link_service.delete_batch(
+                urls=model_update.recent_removed_internal_links,
+                website_id=website_record.id,
+            )
+        website_record: DBWebsite = repository.get(self._db, table=DBWebsite, id=id)
+
         return WebsiteRead.model_validate(website_record)
 
     def delete(self, id: uuid.UUID) -> None:
