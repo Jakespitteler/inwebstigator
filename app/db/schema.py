@@ -1,3 +1,5 @@
+import uuid
+
 from sqlalchemy import JSON, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -50,7 +52,7 @@ class DBWebsite(Base):
     __table_args__ = (UniqueConstraint("url", "user_id", name="uq_website_url_user"),)
 
     url: Mapped[str] = mapped_column(String, nullable=False, index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     user: Mapped[DBUser] = relationship(back_populates="websites")
     internal_links: Mapped[list[DBInternalLink]] = relationship(
         back_populates="website",

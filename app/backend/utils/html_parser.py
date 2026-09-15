@@ -5,7 +5,19 @@ from enum import StrEnum
 from bs4 import BeautifulSoup, Comment, Tag
 from pydantic import BaseModel, Field
 
-from app.backend.utils.text import parse_standard_text, parse_table_row
+
+def normalize_text(text: str) -> str:
+    """Removes extra whitespace and newlines."""
+    return " ".join(text.split())
+
+
+def parse_standard_text(tag: Tag) -> str:
+    return normalize_text(tag.get_text(" ", strip=True))
+
+
+def parse_table_row(tag: Tag) -> str:
+    cells = tag.find_all(["th", "td"])
+    return " | ".join(normalize_text(cell.get_text(" ", strip=True)) for cell in cells)
 
 
 class HTMLBlockType(StrEnum):
@@ -73,7 +85,7 @@ def extract_links(container: Tag, ignore_parents: frozenset[str]) -> list[str]:
         str(link["href"])
         for link in container.find_all("a", href=True)
         if not link.find_parent(list(ignore_parents)) and link.get("href")
-    ]
+    ]  # TODO May be able to use the other extract links function
 
 
 def extract_last_updated(container: Tag) -> str | None:

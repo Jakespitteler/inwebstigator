@@ -5,9 +5,9 @@ from collections.abc import Awaitable, Iterator
 import httpx2
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
-from app.backend.utils.html_extractor import (
+from app.backend.utils.http_client import fetch_content_from_url
+from app.backend.utils.links import (
     extract_links_from_html,
-    fetch_content_from_url,
     is_internal_web_page,
     normalise_url,
 )

@@ -60,9 +60,9 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         )
         return WebsiteRead.model_validate(website_record)
 
-    def get_by_url(self, url: str) -> WebsiteRead:
+    def get_by_url(self, url: str, user_id: uuid.UUID) -> WebsiteRead:
         """
-        Retrieve a website and its relationships by URL.
+        Retrieve a website and its relationships by URL and user ID.
 
         Raises:
             NotFoundError: If no website exists with the URL.
@@ -70,7 +70,7 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         website_records: Sequence[DBWebsite] = repository.get_list(
             self._db,
             table=DBWebsite,
-            attributes={"url": url},
+            attributes={"url": url, "user_id": user_id},
             relations=[
                 DBWebsite.internal_links,
                 DBWebsite.critical_pages,

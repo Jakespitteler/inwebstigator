@@ -42,7 +42,7 @@ def _evaluate_replacements(
 def compare_content(
     old_content: PageContent,
     new_content: PageContent,
-    similarity_threshold: float = 0.60,
+    similarity_threshold: float = 0.60,  # TODO may have to drop to 0
 ) -> tuple[list[ContentBlock], list[ContentBlock], list[ChangedBlock]]:
 
     old_sequence: list[tuple[str | None, HTMLBlockType, str]] = [

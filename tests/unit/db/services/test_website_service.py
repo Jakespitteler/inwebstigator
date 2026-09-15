@@ -8,7 +8,7 @@ from app.core.errors import NotFoundError
 from app.db.models.critical_page_models import CriticalPageCreate, CriticalPageRead, CriticalPageUpdate
 from app.db.models.internal_link_models import InternalLinkCreate, InternalLinkRead
 from app.db.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
-from app.db.schema import DBWebsite
+from app.db.schema import DBUser, DBWebsite
 from app.db.services.critical_page_service import CriticalPageService
 from app.db.services.internal_link_service import InternalLinkService
 from app.db.services.website_service import WebsiteService
@@ -62,14 +62,16 @@ def test_get_website_by_url(session: Session, test_website: DBWebsite) -> None:
         session: The database session fixture.
         test_website: The test website record.
     """
-    fetched_website: WebsiteRead = WebsiteService(session).get_by_url(url=test_website.url)
+    fetched_website: WebsiteRead = WebsiteService(session).get_by_url(
+        url=test_website.url, user_id=test_website.user_id
+    )
 
     assert fetched_website is not None
     assert fetched_website.id == test_website.id
     assert fetched_website.url == test_website.url
 
 
-def test_get_website_by_url_raises_not_found(session: Session) -> None:
+def test_get_website_by_url_raises_not_found(session: Session, test_user: DBUser) -> None:
     """
     Tests that retrieving a non-existent URL raises NotFoundError.
 
@@ -77,7 +79,7 @@ def test_get_website_by_url_raises_not_found(session: Session) -> None:
         session: The database session fixture.
     """
     with pytest.raises(NotFoundError):
-        WebsiteService(session).get_by_url(url="https://www.nonexistent_website.com")
+        WebsiteService(session).get_by_url(url="https://www.nonexistent_website.com", user_id=test_user.id)
 
 
 def test_create_website(session: Session) -> None:
