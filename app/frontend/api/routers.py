@@ -2,9 +2,9 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from app.db.models import critical_page_models, user_models, website_models
 from app.db.services import critical_page_service, user_service, website_service
 from app.frontend.api.crud_router_factory import create_crud_router
+from app.models import critical_page_models, user_models, website_models
 
 ROOT_ROUTER = APIRouter()
 templates = Jinja2Templates(directory="app/frontend/templates")

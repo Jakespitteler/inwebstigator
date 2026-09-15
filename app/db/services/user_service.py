@@ -6,9 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
 from app.db import repository
-from app.db.models.user_models import UserCreate, UserRead, UserUpdate
 from app.db.schema import DBUser
 from app.db.utils.interfaces import CRUDService
+from app.models.user_models import UserCreate, UserRead, UserUpdate
 
 logger: logging.Logger = logging.getLogger(__name__)
 

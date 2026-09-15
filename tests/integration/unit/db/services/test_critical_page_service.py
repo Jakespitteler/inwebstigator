@@ -5,13 +5,13 @@ from sqlalchemy.orm import Session
 
 from app.backend.utils.html_parser import ChangedBlock, ContentBlock, HTMLBlockType
 from app.core.errors import NotFoundError
-from app.db.models.critical_page_models import (
+from app.db.schema import DBCriticalPage, DBWebsite
+from app.db.services.critical_page_service import CriticalPageService
+from app.models.critical_page_models import (
     CriticalPageCreate,
     CriticalPageRead,
     CriticalPageUpdate,
 )
-from app.db.schema import DBCriticalPage, DBWebsite
-from app.db.services.critical_page_service import CriticalPageService
 
 
 def test_get_all_critical_pages(session: Session, test_critical_page: DBCriticalPage) -> None:

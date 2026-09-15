@@ -39,7 +39,7 @@ def _evaluate_replacements(
     return added, removed, changed
 
 
-def compare_content(
+def compare_page_content(
     old_content: PageContent,
     new_content: PageContent,
     similarity_threshold: float = 0.60,  # TODO may have to drop to 0

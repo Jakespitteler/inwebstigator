@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from app.backend.notifier.email_service import (
+from app.backend.email_service import (
     build_message,
     configuration_problems,
     send_email,

@@ -6,12 +6,12 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
 from app.db import repository
-from app.db.models.critical_page_models import CriticalPageCreate
-from app.db.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
 from app.db.schema import DBWebsite
 from app.db.services.critical_page_service import CriticalPageService
 from app.db.services.internal_link_service import InternalLinkService
 from app.db.utils.interfaces import CRUDService
+from app.models.critical_page_models import CriticalPageCreate
+from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
 
 logger: logging.Logger = logging.getLogger(__name__)
 

@@ -1,7 +1,7 @@
 import html
 from datetime import UTC, datetime
 
-from app.db.models.website_models import WebsiteRead
+from app.models.website_models import WebsiteRead
 
 
 def _safe(text: str) -> str:

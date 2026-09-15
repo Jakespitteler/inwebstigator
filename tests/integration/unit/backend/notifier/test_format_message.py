@@ -1,13 +1,13 @@
 import uuid
 
-from app.backend.notifier.format_message import (
+from app.backend.format_message import (
     _link,  # pyright: ignore[reportPrivateUsage]
     _safe,  # pyright: ignore[reportPrivateUsage]
     generate_scan_report_html,
 )
 from app.backend.utils.html_parser import HTMLBlockType
-from app.db.models.critical_page_models import ChangedBlock, ContentBlock, CriticalPageRead
-from app.db.models.website_models import WebsiteRead
+from app.models.critical_page_models import ChangedBlock, ContentBlock, CriticalPageRead
+from app.models.website_models import WebsiteRead
 
 
 def test_safe_escaping() -> None:

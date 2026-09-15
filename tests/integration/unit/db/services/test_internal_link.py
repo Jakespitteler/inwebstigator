@@ -5,13 +5,13 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
-from app.db.models.internal_link_models import (
+from app.db.schema import DBInternalLink, DBWebsite
+from app.db.services.internal_link_service import InternalLinkService
+from app.models.internal_link_models import (
     InternalLinkCreate,
     InternalLinkRead,
     InternalLinkUpdate,
 )
-from app.db.schema import DBInternalLink, DBWebsite
-from app.db.services.internal_link_service import InternalLinkService
 
 
 def test_get_all_internal_links(session: Session, test_internal_link: DBInternalLink) -> None:

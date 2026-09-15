@@ -6,8 +6,8 @@ from httpx2 import Response
 from pydantic import BaseModel
 
 from app.db.core import Base
-from app.db.models import critical_page_models, user_models, website_models
 from app.frontend.api import routers
+from app.models import critical_page_models, user_models, website_models
 
 
 class TestCRUDRouters:

@@ -4,9 +4,9 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
-from app.db.models.user_models import UserCreate, UserRead, UserUpdate
 from app.db.schema import DBUser
 from app.db.services.user_service import UserService
+from app.models.user_models import UserCreate, UserRead, UserUpdate
 
 
 def test_get_all_users(session: Session, test_user: DBUser) -> None:

@@ -1,4 +1,4 @@
-from app.backend.diff_checker.compare_content import compare_content
+from app.backend.compare_content import compare_content
 from app.backend.utils.html_parser import ContentBlock, HTMLBlockType, PageContent
 
 

@@ -2,9 +2,9 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.db.models.critical_page_models import CriticalPageRead, CriticalPageUpdate
-from app.db.models.internal_link_models import InternalLinkRead
 from app.db.utils.field_types import URLString
+from app.models.critical_page_models import CriticalPageRead, CriticalPageUpdate
+from app.models.internal_link_models import InternalLinkRead
 
 
 class WebsiteCreate(BaseModel):

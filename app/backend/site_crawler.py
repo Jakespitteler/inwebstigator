@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
     retry=retry_if_exception_type((WebConnectionError, TrafficError)),
     reraise=True,
 )
-async def fetch_and_extract(
+async def fetch_internal_links_from_url(
     client: httpx2.AsyncClient,
     url: str,
     semaphore: asyncio.Semaphore,
@@ -133,7 +133,13 @@ async def crawl_site(
         queue = queue[batch_size:]
 
         tasks: Iterator[Awaitable[tuple[str, list[str], int | None]]] = (
-            fetch_and_extract(client=client, base_url=url, url=current_url, semaphore=semaphore, delay=delay)
+            fetch_internal_links_from_url(
+                client=client,
+                base_url=url,
+                url=current_url,
+                semaphore=semaphore,
+                delay=delay,
+            )
             for current_url in batch
         )
         batch_results: list[tuple[str, list[str], int | None]] = await asyncio.gather(*tasks)

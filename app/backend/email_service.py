@@ -39,7 +39,7 @@ def _sender_domain() -> str | None:
 def build_message(
     subject: str,
     recipients: list[str],
-    html_body: str | None = None,
+    html_body: str,
     now: datetime | None = None,
 ) -> EmailMessage:
     """Put finished text in an email envelope. Doesn't send.
@@ -58,8 +58,7 @@ def build_message(
     # us as a bulk sender. Same reason the Message-ID domain matches the sender.
     msg["Date"] = formatdate(now.timestamp())
     msg["Message-ID"] = make_msgid(domain=_sender_domain())
-    if html_body:
-        msg.add_alternative(html_body, subtype="html")
+    msg.add_alternative(html_body, subtype="html")
     return msg
 
 

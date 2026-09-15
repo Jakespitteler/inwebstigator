@@ -6,14 +6,14 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
 from app.db import repository
-from app.db.models.internal_link_models import (
+from app.db.schema import DBInternalLink
+from app.db.utils.field_types import URLString
+from app.db.utils.interfaces import CRUDService
+from app.models.internal_link_models import (
     InternalLinkCreate,
     InternalLinkRead,
     InternalLinkUpdate,
 )
-from app.db.schema import DBInternalLink
-from app.db.utils.field_types import URLString
-from app.db.utils.interfaces import CRUDService
 
 logger: logging.Logger = logging.getLogger(__name__)
 

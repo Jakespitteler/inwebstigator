@@ -5,9 +5,9 @@ from collections.abc import Sequence
 from sqlalchemy.orm import Session
 
 from app.db import repository
-from app.db.models.critical_page_models import CriticalPageCreate, CriticalPageRead, CriticalPageUpdate
 from app.db.schema import DBCriticalPage
 from app.db.utils.interfaces import CRUDService
+from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead, CriticalPageUpdate
 
 logger: logging.Logger = logging.getLogger(__name__)
 
