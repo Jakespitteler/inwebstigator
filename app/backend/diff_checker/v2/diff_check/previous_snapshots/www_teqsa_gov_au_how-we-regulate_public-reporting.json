@@ -30,7 +30,7 @@
         {
             "section": "Purpose of public reports",
             "type": "list_item",
-            "text": "protect students undertaking, or proposing to undertake, higher education in Australia by requiring the provision of quality higher education"
+            "text": "higher education in Australia by requiring the provision of quality higher education"
         },
         {
             "section": "Purpose of public reports",
@@ -124,7 +124,6 @@
         }
     ],
     "links": [
-        "#main-content",
         "/national-register",
         "/guides-resources/resources/corporate-publications/policy-public-statements-teqsas-regulatory-decisions-and-processes",
         "https://www.legislation.gov.au/Series/F2017L01599"

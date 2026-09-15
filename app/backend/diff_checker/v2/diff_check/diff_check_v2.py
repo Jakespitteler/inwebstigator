@@ -1,4 +1,5 @@
 import asyncio
+from email.mime import text
 import json
 import re
 from datetime import datetime
@@ -41,24 +42,62 @@ def extract_content(html):
     content = {"headings": [], "paragraph_details": [], "links": []}
 
     # Find the main page content
-    main_content = soup.find("main")
+    main_content = soup.find("body")
 
     if main_content is None:
         main_content = soup
 
     current_section = "No heading"
 
-    for element in main_content.find_all(["h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "tr"]):
+    for element in main_content.find_all(
+        ["h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "tr", "summary", "time"]
+    ):
         # Ignore navigation and sidebar content
-        if element.find_parent(["nav", "aside"]):
+        if element.find_parent(["nav", "aside", "header", "footer"]):
             continue
 
         text = element.get_text(" ", strip=True)
+
         # Clean whitespace
         text = " ".join(text.split())
 
         if not text:
             continue
+
+        # Ignore temporary loading placeholders, this happend because the website is uisng javescript
+        lower_text = text.lower()
+
+        if (
+            lower_text in [
+                "loading...",
+                "loading component...",
+                "loading content...",
+                "please wait...",
+                "fetching data..."
+            ]
+            or (
+                lower_text.startswith("please wait")
+                and "loading" in lower_text
+            )
+        ):
+            continue
+        
+        section_for_item = current_section
+
+        # If this content is inside <details>,
+        # use the <summary> text as its section
+        details_parent = element.find_parent("details")
+
+        if details_parent and element.name != "summary":
+            summary_tag = details_parent.find("summary")
+
+            if summary_tag:
+                summary_text = " ".join(
+                    summary_tag.get_text(" ", strip=True).split()
+                )
+
+                if summary_text:
+                    section_for_item = summary_text
 
         # If we find a heading,
         # remember it as the current section
@@ -67,14 +106,44 @@ def extract_content(html):
 
             current_section = text
 
-        # If we find a paragraph,
-        # save both its text and its section
+        # Paragraph
         elif element.name == "p":
-            content["paragraph_details"].append({"section": current_section, "type": "paragraph", "text": text})
+            content["paragraph_details"].append({
+                "section": section_for_item,
+                "type": "paragraph",
+                "text": text
+            })
 
+        # List item
         elif element.name == "li":
-            content["paragraph_details"].append({"section": current_section, "type": "list_item", "text": text})
+            if element.find("p"): # If the list item already contains paragraphs those paragraphs will be extracted separately
+                continue
 
+            content["paragraph_details"].append({
+                "section": section_for_item,
+                "type": "list_item",
+                "text": text
+            })
+
+        # Details / accordion heading
+        elif element.name == "summary":
+            content["paragraph_details"].append({
+                "section": text,
+                "type": "summary",
+                "text": text
+            })
+
+        elif element.name == "time":
+            if element.find_parent(["p", "li", "tr"]): # Avoid duplicate text if the time is already inside, a paragraph, list item or table row
+                continue
+
+            content["paragraph_details"].append({
+                "section": section_for_item,
+                "type": "time",
+                "text": text
+            })
+
+        # Table row
         elif element.name == "tr":
 
             cells = element.find_all(["th", "td"])
@@ -86,7 +155,7 @@ def extract_content(html):
 
             if row_text:
                 content["paragraph_details"].append({
-                    "section": current_section,
+                    "section": section_for_item,
                     "type": "table_row",
                     "text": row_text
                 })
@@ -110,11 +179,42 @@ def extract_content(html):
 
             content["paragraph_details"].append({"section": "Last updated:", "type": "last_updated", "text": date_text})
 
+    # Capture meaningful text from simple leaf divs
+    for div in main_content.find_all("div"):
+
+        if div.find_parent(["nav", "aside", "header", "footer"]):
+            continue
+
+        # Ignore divs that contain other HTML elements
+        if div.find(True):
+            continue
+
+        text = " ".join(div.get_text(" ", strip=True).split())
+
+        if not text:
+            continue
+
+        # Ignore temporary placeholders
+        if text.lower() in [
+            "loading...",
+            "loading component...",
+            "loading content...",
+            "please wait...",
+            "fetching data..."
+        ]:
+            continue
+
+        content["paragraph_details"].append({
+            "section": "No heading",
+            "type": "text_block",
+            "text": text
+        })
+
     # Links
     # -------------------------
 
     for link in main_content.find_all("a", href=True):
-        if link.find_parent(["nav", "aside"]):
+        if link.find_parent(["nav", "aside", "header", "footer"]):
             continue
 
         href = link["href"]
@@ -372,6 +472,10 @@ async def diff_check(client, url):
 
     new_content = extract_content(html)
 
+    for item in new_content["paragraph_details"]:
+        if item.get("type") == "last_updated":
+            print("Last updated:", item["text"])
+
     old_snapshot = load_snapshot(url)
 
 
@@ -477,9 +581,10 @@ async def diff_check(client, url):
 
 
 
+
 async def main():
 
-    test_urls = ["https://www.teqsa.gov.au/national-register","https://www.teqsa.gov.au/how-we-regulate/public-reporting","https://www.teqsa.gov.au/"]
+    test_urls = ["https://www.uwa.edu.au/news/article/2026/september/new-researcher-development-academy-to-strengthen-was-future-workforce?utm_source=chatgpt.com"]
 
     async with httpx2.AsyncClient(headers=HEADERS, timeout=SECONDS_TIMEOUT) as client:
 
