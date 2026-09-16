@@ -29,7 +29,7 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         """
         self._db = session
 
-    def get_all(self, skip: int = 0, limit: int = 100) -> Sequence[WebsiteRead]:
+    def get_all(self, skip: int = 0, limit: int = 100, user_id: uuid.UUID | None = None) -> Sequence[WebsiteRead]:
         """Retrieves a paginated list of website records from the database.
 
         Args:
@@ -39,7 +39,14 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         Returns:
             A sequence of WebsiteRead models representing the retrieved records.
         """
-        website_records: Sequence[DBWebsite] = repository.get_list(self._db, table=DBWebsite, skip=skip, limit=limit)
+
+        website_records: Sequence[DBWebsite] = repository.get_list(
+            self._db,
+            table=DBWebsite,
+            skip=skip,
+            limit=limit,
+            attributes={"user_id": user_id} if user_id else None,
+        )
         return [WebsiteRead.model_validate(website_record) for website_record in website_records]
 
     def get(self, id: uuid.UUID) -> WebsiteRead:

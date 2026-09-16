@@ -54,6 +54,7 @@ async def integrity_error_handler(request: Request, exc: IntegrityError):
 
 # Register routes
 app.include_router(routers.ROOT_ROUTER)
+app.include_router(routers.SCANNER_ROUTER)
 app.include_router(routers.USER_ROUTER)
 app.include_router(routers.WEBSITE_ROUTER)
 app.include_router(routers.CRITICAL_PAGE_ROUTER)
