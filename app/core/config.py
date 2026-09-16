@@ -33,6 +33,11 @@ class Config(BaseSettings):
     fetch_site_retry_max_wait_seconds: int = 15
     fetch_site_retry_multiplier: int = 1
 
+    email_retry_max_attempts: int = 3
+    email_retry_min_wait_seconds: int = 2
+    email_retry_max_wait_seconds: int = 15
+    email_retry_multiplier: int = 1
+
     @property
     def db_url(self) -> str:
         return f"sqlite:///./{self.db_name}"

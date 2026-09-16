@@ -3,6 +3,8 @@ from datetime import UTC, datetime
 from email.message import EmailMessage
 from email.utils import formatdate, make_msgid, parseaddr
 
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+
 from app.core.config import config
 
 FROM_ADDR: str = config.email
@@ -63,25 +65,32 @@ def build_message(
     return msg
 
 
-def send_email(msg: EmailMessage) -> bool:
+@retry(
+    wait=wait_exponential(
+        multiplier=config.email_retry_multiplier,
+        min=config.email_retry_min_wait_seconds,
+        max=config.email_retry_max_wait_seconds,
+    ),
+    stop=stop_after_attempt(config.email_retry_max_attempts),
+    retry=retry_if_exception_type((smtplib.SMTPException, TimeoutError, ConnectionError)),
+    reraise=True,
+)
+def send_email(msg: EmailMessage) -> None:
     """Transmits a constructed EmailMessage object over an encrypted SMTP_SSL connection.
 
     Establishes an SSL connection to the configured SMTP host and port, handles
-    authentication if required, and dispatches the email payload.
+    authentication if required, and dispatches the email payload. Applies automatic
+    retry logic with exponential backoff for transient network or SMTP errors.
 
     Args:
         msg: The prepared EmailMessage instance to send.
 
-    Returns:
-        True if the email was successfully accepted by the SMTP server, False if
-        an exception or connection failure occurred.
+    Raises:
+        smtplib.SMTPException: If an SMTP-related error occurs and all retry attempts are exhausted.
+        TimeoutError: If the connection times out and all retry attempts are exhausted.
+        ConnectionError: If a network connection failure occurs and all retry attempts are exhausted.
     """
-    try:
-        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=30) as smtp:
-            if SMTP_USER:
-                smtp.login(SMTP_USER, SMTP_PASS)
-            smtp.send_message(msg)
-    except Exception as exc:
-        print(f"  send failed: {exc}")
-        return False
-    return True
+    with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=30) as smtp:
+        if SMTP_USER:
+            smtp.login(SMTP_USER, SMTP_PASS)
+        smtp.send_message(msg)
