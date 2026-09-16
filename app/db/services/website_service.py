@@ -1,9 +1,11 @@
 import logging
 import uuid
 from collections.abc import Sequence
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
+from app.core.config import config
 from app.core.errors import NotFoundError
 from app.db import repository
 from app.db.schema import DBWebsite
@@ -14,6 +16,8 @@ from app.models.critical_page_models import CriticalPageCreate
 from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
 
 logger: logging.Logger = logging.getLogger(__name__)
+
+MAX_DELAY: float = config.web_crawler_max_delay
 
 
 class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
@@ -164,3 +168,38 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         """
         repository.get(self._db, table=DBWebsite, id=id)  # Check if the record exists
         repository.delete(self._db, table=DBWebsite, id=id)
+
+    def set_cooldown(self, id: uuid.UUID, hours: int) -> WebsiteRead:
+        on_cooldown_until = datetime.now() + timedelta(hours=hours)
+
+        website_record = repository.update(
+            self._db,
+            record=repository.get(self._db, table=DBWebsite, id=id),
+            updates=WebsiteUpdate(on_cooldown_until=on_cooldown_until).model_dump(exclude_unset=True),
+        )
+        logger.warning(f"Website {website_record.url} placed on cooldown until {on_cooldown_until}.")
+        return WebsiteRead.model_validate(website_record)
+
+    def throttle_and_cooldown(self, id: uuid.UUID, hours: int = 24) -> WebsiteRead:
+        website_record: DBWebsite = repository.get(self._db, table=DBWebsite, id=id)
+
+        new_delay: float = min(config.web_crawler_max_delay, website_record.recommended_delay + 0.5)
+        new_concurrent: int = max(1, website_record.recommended_concurrent // 2)
+
+        on_cooldown_until = datetime.now() + timedelta(hours=hours)
+
+        updated_record = repository.update(
+            self._db,
+            record=website_record,
+            updates=WebsiteUpdate(
+                recommended_delay=new_delay,
+                recommended_concurrent=new_concurrent,
+                on_cooldown_until=on_cooldown_until,
+            ).model_dump(exclude_unset=True),
+        )
+
+        logger.warning(
+            f"Website {website_record.url} throttled ({new_delay=}s, {new_concurrent=}) "
+            f"and placed on cooldown until {on_cooldown_until}."
+        )
+        return WebsiteRead.model_validate(updated_record)

@@ -25,7 +25,7 @@ def get_root(request: Request) -> HTMLResponse:
     """
     context: dict[str, str] = {
         "title": "HomePage",
-        "heading": "Digital Horizon Scan",
+        "heading": "Inwebstigator",
         "message": "Server is Running.",
     }
     return templates.TemplateResponse(request=request, name="index.html", context=context)

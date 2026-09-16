@@ -42,7 +42,16 @@ def test_link_inactive() -> None:
 
 
 def test_generate_scan_report_html_no_changes() -> None:
-    state: WebsiteRead = WebsiteRead(id=uuid.uuid4(), user_id=uuid.uuid4(), url="https://example.com")
+    state: WebsiteRead = WebsiteRead(
+        id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        url="https://example.com",
+        critical_pages=[],
+        internal_links=[],
+        recommended_delay=0,
+        recommended_concurrent=1,
+        active=True,
+    )
     html_output: str = generate_scan_report_html(state)
 
     assert "No changes detected since the last scan" in html_output
@@ -54,6 +63,11 @@ def test_generate_scan_report_html_with_internal_links() -> None:
         id=uuid.uuid4(),
         user_id=uuid.uuid4(),
         url="https://example.com",
+        critical_pages=[],
+        internal_links=[],
+        recommended_delay=0,
+        recommended_concurrent=1,
+        active=True,
         recent_added_internal_links=["https://example.com/page-one"],
         recent_removed_internal_links=["https://example.com/page-two"],
     )
@@ -89,6 +103,10 @@ def test_generate_scan_report_html_with_critical_pages() -> None:
         user_id=uuid.uuid4(),
         url="https://example.com",
         critical_pages=[critical_page],
+        internal_links=[],
+        recommended_delay=0,
+        recommended_concurrent=1,
+        active=True,
     )
 
     html_output: str = generate_scan_report_html(website)

@@ -134,7 +134,12 @@ def test_user(session: Session) -> schema.DBUser:
 def test_website(session: Session, test_user: schema.DBUser) -> schema.DBWebsite:
     return _create_and_add(
         session,
-        record=schema.DBWebsite(url="https://www.test_website.com", user_id=test_user.id),
+        record=schema.DBWebsite(
+            url="https://www.test_website.com",
+            user_id=test_user.id,
+            recommended_delay=0,
+            recommended_concurrent=20,
+        ),
     )
 
 
@@ -144,9 +149,6 @@ def test_critical_page(session: Session, test_website: schema.DBWebsite) -> sche
         session,
         record=schema.DBCriticalPage(
             url=f"{test_website.url}/test_critical_page",
-            links=[],
-            documents=[],
-            text_body="",
             website_id=test_website.id,
         ),
     )
