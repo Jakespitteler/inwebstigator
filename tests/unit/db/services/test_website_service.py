@@ -1,20 +1,21 @@
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
 
 import pytest
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
-from app.db.schema import DBUser, DBWebsite
 from app.db.services.critical_page_service import CriticalPageService
 from app.db.services.internal_link_service import InternalLinkService
 from app.db.services.website_service import WebsiteService
 from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead, CriticalPageUpdate
 from app.models.internal_link_models import InternalLinkCreate, InternalLinkRead
+from app.models.user_models import UserRead
 from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
 
 
-def test_get_all_websites(session: Session, test_website: DBWebsite) -> None:
+def test_get_all_websites(session: Session, test_website: WebsiteRead) -> None:
     """
     Tests retrieving a list of all websites.
 
@@ -28,7 +29,7 @@ def test_get_all_websites(session: Session, test_website: DBWebsite) -> None:
     assert any(c.url == test_website.url for c in fetched_websites)
 
 
-def test_get_website(session: Session, test_website: DBWebsite) -> None:
+def test_get_website(session: Session, test_website: WebsiteRead) -> None:
     """
     Tests retrieving an existing website by ID.
 
@@ -54,7 +55,7 @@ def test_get_website_raises_not_found(session: Session) -> None:
         WebsiteService(session).get(id=uuid.uuid4())
 
 
-def test_get_website_by_url(session: Session, test_website: DBWebsite) -> None:
+def test_get_website_by_url(session: Session, test_website: WebsiteRead) -> None:
     """
     Tests retrieving a website record by its URL.
 
@@ -71,7 +72,7 @@ def test_get_website_by_url(session: Session, test_website: DBWebsite) -> None:
     assert fetched_website.url == test_website.url
 
 
-def test_get_website_by_url_raises_not_found(session: Session, test_user: DBUser) -> None:
+def test_get_website_by_url_raises_not_found(session: Session, test_user: UserRead) -> None:
     """
     Tests that retrieving a non-existent URL raises NotFoundError.
 
@@ -123,7 +124,7 @@ def test_create_website_with_links_and_critical_pages(session: Session) -> None:
     assert fetched_website.critical_pages[0].url == "https://www.test_website.com/critical_page"
 
 
-def test_update_website(session: Session, test_website: DBWebsite) -> None:
+def test_update_website(session: Session, test_website: WebsiteRead) -> None:
     """
     Tests updating an existing website's details.
 
@@ -141,7 +142,7 @@ def test_update_website(session: Session, test_website: DBWebsite) -> None:
     assert fetched_website.url == model_update.url
 
 
-def test_update_website_internal_links(session: Session, test_website: DBWebsite) -> None:
+def test_update_website_internal_links(session: Session, test_website: WebsiteRead) -> None:
     """
     Tests updating a website with added and removed internal links.
 
@@ -175,7 +176,7 @@ def test_update_website_internal_links(session: Session, test_website: DBWebsite
     assert existing_link_url not in internal_link_urls
 
 
-def test_delete_website(session: Session, test_website: DBWebsite) -> None:
+def test_delete_website(session: Session, test_website: WebsiteRead) -> None:
     """
     Tests deleting an existing website and cascading its children.
 
@@ -201,7 +202,7 @@ def test_delete_website_raises_not_found(session: Session) -> None:
         WebsiteService(session).delete(id=uuid.uuid4())
 
 
-def test_delete_website_cascades(session: Session, test_website: DBWebsite) -> None:
+def test_delete_website_cascades(session: Session, test_website: WebsiteRead) -> None:
     """
     Tests deleting an existing website and cascading its children.
 
@@ -234,7 +235,7 @@ def test_delete_website_cascades(session: Session, test_website: DBWebsite) -> N
         CriticalPageService(session).get(id=created_critical_page.id)
 
 
-def test_update_website_critical_page_updates(session: Session, test_website: DBWebsite) -> None:
+def test_update_website_critical_page_updates(session: Session, test_website: WebsiteRead) -> None:
     """
     Tests updating a website's critical pages using critical_page_updates.
 
@@ -257,3 +258,40 @@ def test_update_website_critical_page_updates(session: Session, test_website: DB
 
     fetched_page = critical_page_service.get(id=created_page.id)
     assert fetched_page.url == updated_url
+
+
+def test_set_cooldown(session: Session, test_website: WebsiteRead) -> None:
+    """
+    Tests setting a cooldown period on a website.
+
+    Args:
+        session: The database session fixture.
+        test_website: The test website record.
+    """
+    hours = 12
+    updated_website: WebsiteRead = WebsiteService(session).set_cooldown(id=test_website.id, hours=hours)
+
+    assert updated_website.on_cooldown_until is not None
+    # Verify the cooldown is set to a future timestamp
+    assert updated_website.on_cooldown_until > datetime.now()
+
+
+def test_throttle_and_cooldown(session: Session, test_website: WebsiteRead) -> None:
+    """
+    Tests throttling parameters (increasing delay, decreasing concurrency)
+    and placing a website on cooldown.
+
+    Args:
+        session: The database session fixture.
+        test_website: The test website record.
+    """
+    initial_delay = test_website.recommended_delay
+    initial_concurrent = test_website.recommended_concurrent
+
+    hours = 24
+    updated_website: WebsiteRead = WebsiteService(session).throttle_and_cooldown(id=test_website.id, hours=hours)
+
+    assert updated_website.on_cooldown_until is not None
+    assert updated_website.recommended_delay > initial_delay
+    assert updated_website.recommended_concurrent <= initial_concurrent
+    assert updated_website.on_cooldown_until > datetime.now()

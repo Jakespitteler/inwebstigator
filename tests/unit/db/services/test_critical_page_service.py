@@ -5,16 +5,16 @@ from sqlalchemy.orm import Session
 
 from app.backend.utils.html_parser import ChangedBlock, ContentBlock, HTMLBlockType
 from app.core.errors import NotFoundError
-from app.db.schema import DBCriticalPage, DBWebsite
 from app.db.services.critical_page_service import CriticalPageService
 from app.models.critical_page_models import (
     CriticalPageCreate,
     CriticalPageRead,
     CriticalPageUpdate,
 )
+from app.models.website_models import WebsiteRead
 
 
-def test_get_all_critical_pages(session: Session, test_critical_page: DBCriticalPage) -> None:
+def test_get_all_critical_pages(session: Session, test_critical_page: CriticalPageRead) -> None:
     """
     Tests retrieving a list of all critical_pages.
 
@@ -28,7 +28,7 @@ def test_get_all_critical_pages(session: Session, test_critical_page: DBCritical
     assert any(c.url == test_critical_page.url for c in fetched_critical_pages)
 
 
-def test_get_critical_page(session: Session, test_critical_page: DBCriticalPage) -> None:
+def test_get_critical_page(session: Session, test_critical_page: CriticalPageRead) -> None:
     """
     Tests retrieving an existing critical page by ID.
 
@@ -43,7 +43,7 @@ def test_get_critical_page(session: Session, test_critical_page: DBCriticalPage)
     assert fetched_critical_page.url == test_critical_page.url
 
 
-def test_create_critical_page(session: Session, test_website: DBWebsite) -> None:
+def test_create_critical_page(session: Session, test_website: WebsiteRead) -> None:
     """
     Tests creating a new critical page with basic details.
 
@@ -63,7 +63,7 @@ def test_create_critical_page(session: Session, test_website: DBWebsite) -> None
     assert fetched_critical_page.url == critical_page_details.url
 
 
-def test_update_critical_page(session: Session, test_critical_page: DBCriticalPage) -> None:
+def test_update_critical_page(session: Session, test_critical_page: CriticalPageRead) -> None:
     """
     Tests updating an existing critical_page's details.
 
@@ -83,7 +83,7 @@ def test_update_critical_page(session: Session, test_critical_page: DBCriticalPa
     assert fetched_critical_page.links == model_update.links
 
 
-def test_delete_critical_page(session: Session, test_critical_page: DBCriticalPage) -> None:
+def test_delete_critical_page(session: Session, test_critical_page: CriticalPageRead) -> None:
     """
     Tests deleting an existing critical_page.
 
@@ -98,7 +98,7 @@ def test_delete_critical_page(session: Session, test_critical_page: DBCriticalPa
         CriticalPageService(session).get(id=test_critical_page.id)
 
 
-def test_create_critical_page_with_recent_changes(session: Session, test_website: DBWebsite) -> None:
+def test_create_critical_page_with_recent_changes(session: Session, test_website: WebsiteRead) -> None:
     """Tests creating a critical page populated with recent change attributes."""
     sample_block = ContentBlock(
         parent_heading="Introduction",
@@ -127,7 +127,7 @@ def test_create_critical_page_with_recent_changes(session: Session, test_website
     assert updated_page.recent_text_added[0].block_type == HTMLBlockType.PARAGRAPH
 
 
-def test_update_critical_page_complex_diff_fields(session: Session, test_critical_page: DBCriticalPage) -> None:
+def test_update_critical_page_complex_diff_fields(session: Session, test_critical_page: CriticalPageRead) -> None:
     """Tests updating and retrieving complex nested objects like ChangedBlock."""
     old_block = ContentBlock(parent_heading="Header", block_type=HTMLBlockType.PARAGRAPH, text="Old version")
     new_block = ContentBlock(parent_heading="Header", block_type=HTMLBlockType.PARAGRAPH, text="New version")

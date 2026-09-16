@@ -170,6 +170,18 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         repository.delete(self._db, table=DBWebsite, id=id)
 
     def set_cooldown(self, id: uuid.UUID, hours: int) -> WebsiteRead:
+        """Sets a cooldown expiration timestamp on a website record.
+
+        Args:
+            id: The UUID identifier of the target website record.
+            hours: The number of hours from now to keep the website on cooldown.
+
+        Returns:
+            The refreshed WebsiteRead data model instance reflecting the updated cooldown state.
+
+        Raises:
+            NotFoundError: If no website record matches the provided UUID.
+        """
         on_cooldown_until = datetime.now() + timedelta(hours=hours)
 
         website_record = repository.update(
@@ -181,6 +193,18 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         return WebsiteRead.model_validate(website_record)
 
     def throttle_and_cooldown(self, id: uuid.UUID, hours: int = 24) -> WebsiteRead:
+        """Increases crawler delay, decreases concurrency limits, and sets a cooldown period.
+
+        Args:
+            id: The UUID identifier of the target website record.
+            hours: The number of hours to keep the website on cooldown. Defaults to 24.
+
+        Returns:
+            The refreshed WebsiteRead data model instance reflecting updated throttling and cooldown settings.
+
+        Raises:
+            NotFoundError: If no website record matches the provided UUID.
+        """
         website_record: DBWebsite = repository.get(self._db, table=DBWebsite, id=id)
 
         new_delay: float = min(config.web_crawler_max_delay, website_record.recommended_delay + 0.5)

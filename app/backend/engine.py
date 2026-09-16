@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from httpx2 import AsyncClient
@@ -20,6 +21,20 @@ BATCH_402_THRESHOLD_SECONDS: int = config.web_crawler_batch_402_threshold_second
 
 
 async def get_critical_page_updates(client: AsyncClient, stored_page: CriticalPageRead) -> CriticalPageUpdate:
+    """Fetches the latest content for a critical page and computes the differences from its stored state.
+
+    Analyses the fetched HTML to extract and categorise links (documents vs. regular links),
+    then compares them against the previously stored state to identify additions and removals.
+    It also parses the textual content of the page to detect structural or text changes.
+
+    Args:
+        client (AsyncClient): The HTTP client used for fetching page content.
+        stored_page (CriticalPageRead): The current state of the critical page retrieved from the database.
+
+    Returns:
+        CriticalPageUpdate: A schema object containing the updated fields (text_body, links, documents)
+        and the computed recent differences (added/removed links, text changes).
+    """
     updates = CriticalPageUpdate(url=stored_page.url)
 
     text_body, _ = await fetch_content_from_url(client, url=stored_page.url)
@@ -65,13 +80,30 @@ async def get_website_updates(
     delay: float | None,
     concurrent: int | None,
 ) -> WebsiteUpdate:
+    """Crawls a website to detect changes in internal links and updates its monitored critical pages.
+
+    Iterates through all associated critical pages to fetch their updates, and crawls the primary
+    website URL to map its current internal linking structure. Computes differences in internal
+    links compared to the stored state.
+
+    Args:
+        client (AsyncClient): The HTTP client used for web crawling and page fetching.
+        stored_website (WebsiteRead): The current state of the website retrieved from the database.
+        max_pages (int | None): Maximum number of pages to crawl. Overrides the default if provided.
+        delay (float | None): Delay between requests. Uses the website's recommended delay if None.
+        concurrent (int | None): Maximum concurrent requests. Uses the website's recommended concurrency if None.
+
+    Returns:
+        WebsiteUpdate: A schema object containing updates to critical pages and computed
+        differences for internal links (added/removed).
+    """
     updates = WebsiteUpdate(url=stored_website.url)
 
-    updates.critical_page_updates = (
-        {cp.id: await get_critical_page_updates(client, cp) for cp in stored_website.critical_pages}
-        if stored_website.critical_pages
-        else None
-    )
+    if stored_website.critical_pages:
+        results = await asyncio.gather(*(get_critical_page_updates(client, cp) for cp in stored_website.critical_pages))
+        updates.critical_page_updates = {
+            cp.id: update for cp, update in zip(stored_website.critical_pages, results, strict=False)
+        }
 
     current_internal_links: list[str] = list(
         await crawl_site(

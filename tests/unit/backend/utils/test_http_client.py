@@ -4,6 +4,7 @@ import httpx2
 import pytest
 
 from app.backend.utils.http_client import fetch_content_from_url
+from app.db.utils.field_types import URLString
 from tests.conftest import RequestHandler
 
 
@@ -47,13 +48,14 @@ async def test_fetch_content_from_url_request_error(
 
 @pytest.mark.anyio
 async def test_fetch_content_from_url_redirects(
+    test_url: URLString,
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
     redirect_handler: RequestHandler,
 ) -> None:
     """Test that the function correctly follows redirects and returns the final destination URL."""
 
     async with mock_client_factory(redirect_handler) as client:
-        content, final_url = await fetch_content_from_url(client, url="https://example.com/initial")
+        content, final_url = await fetch_content_from_url(client, url=f"{test_url}initial")
 
-    assert final_url == "https://example.com/final"
+    assert final_url == f"{test_url}final"
     assert content == "Final Destination Content"
