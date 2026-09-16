@@ -3,40 +3,60 @@ import logging
 from collections.abc import Awaitable, Iterator
 
 import httpx2
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
-from app.backend.web_scraper.errors import TrafficError, WebConnectionError
-from app.backend.web_scraper.utils import (
-    extract_links,
-    fetch_content_from_url,
+from app.backend.utils.http_client import fetch_content_from_url
+from app.backend.utils.links import (
+    extract_links_from_html,
     is_internal_web_page,
     normalise_url,
 )
+from app.core.config import config
+from app.core.errors import TrafficError, WebConnectionError
 
 logger = logging.getLogger(__name__)
 
 
-async def fetch_and_extract(
+@retry(
+    wait=wait_exponential(
+        multiplier=config.fetch_site_retry_multiplier,
+        min=config.fetch_site_retry_min_wait_seconds,
+        max=config.fetch_site_retry_max_wait_seconds,
+    ),
+    stop=stop_after_attempt(config.fetch_site_retry_max_attempts),
+    retry=retry_if_exception_type((WebConnectionError, TrafficError)),
+    reraise=True,
+)
+async def fetch_internal_links_from_url(
     client: httpx2.AsyncClient,
     url: str,
     semaphore: asyncio.Semaphore,
     delay: float | None = None,
     base_url: str | None = None,
 ) -> tuple[str, list[str], int | None]:
-    """Safely fetches HTML and extracts internal links under a concurrency limit.
+    """Safely fetches HTML content and extracts internal links under concurrency constraints.
+
+    Uses an asyncio Semaphore to throttle concurrent requests and applies retry logic
+    for connection failures or rate-limiting responses. Ensures redirects remain within the
+    target base domain scope.
 
     Args:
-        client (httpx2.AsyncClient): the web client.
-        url (str): the url to fetch and extract internal links from.
-        semaphore (asyncio.Semaphore): The concurrency limiter.
-        delay (float): the time to wait in between before fetching content.
+        client: The HTTP client instance used to execute network requests.
+        url: The target URL string to fetch and parse for internal links.
+        semaphore: An asyncio Semaphore controlling maximum concurrent HTTP operations.
+        delay: Optional duration in seconds to wait before executing the HTTP request.
+        base_url: Optional base domain URL string used to validate internal links.
+            Defaults to `url` if omitted.
 
     Returns:
-        tuple[str, list[str], int | None]: (the url, all of the internal links on that page, the status
-            code from the request)
+        A tuple containing three elements:
+            - The final resolved URL string after following redirects.
+            - A list of extracted internal URL strings found on the page.
+            - The HTTP response status code (or None if an unhandled non-HTTP error occurred).
 
     Raises:
         TrafficError: If the server returns a rate-limiting or throttling status code (429, 502, 503, 504).
-        WebConnectionError: If a timeout or connection failure occurs.
+        WebConnectionError: If a request timeout or network connection failure occurs.
     """
     if not base_url:
         base_url = url
@@ -52,7 +72,7 @@ async def fetch_and_extract(
             if not is_internal_web_page(base_url, check_url=absolute_url):
                 return url, [], None
 
-            links: list[str] = extract_links(
+            links: list[str] = extract_links_from_html(
                 base_url=base_url,
                 url=absolute_url,
                 html_content=html_content,
@@ -90,21 +110,28 @@ async def crawl_site(
     delay: float = 0,
     batch_403_threshold: int = 20,
 ) -> set[str]:
-    """Crawls a website asynchronously starting from url up to max_pages.
+    """Asynchronously crawls a website starting from an entry URL up to a maximum page limit.
+
+    Traverses internal links in batched concurrent async requests, tracking visited and queued
+    URLs. Monitors batch HTTP responses to detect site-wide blockades or firewall restrictions.
 
     Args:
-        client (httpx2.httpx2.AsyncClient): The web client
-        url (str): The website for the crawler to extract links from.
-        max_pages (int, optional): The limit on pages able to be visited before the crawler stops. Defaults to 5000.
-        max_concurrent (int, optional): The maximum amount of URLs to visit concurrently. Defaults to 10.
-        delay (float): The time to wait in between scraping URLs.
+        client: The HTTP client instance used to execute network requests.
+        url: The entry point URL string from which the crawler discovers links.
+        max_pages: The maximum number of unique internal pages to visit before stopping.
+            Defaults to 5000.
+        max_concurrent: The maximum number of concurrent HTTP requests permitted.
+            Defaults to 10.
+        delay: The time in seconds to pause before fetching individual URLs. Defaults to 0.
+        batch_403_threshold: The threshold count of 403 Forbidden responses in a single batch
+            that triggers a site-wide block exception. Defaults to 20.
 
     Returns:
-        set[str]: All internal links in the website
+        A set of normalized internal URL strings visited during the crawl.
 
     Raises:
-        TrafficError: If a batch encounters a volume of 403 Forbidden responses exceeding the block_threshold,
-            indicating a firewall or site-wide ban.
+        TrafficError: If a single batch encounters 403 Forbidden responses equal to or exceeding
+            batch_403_threshold, indicating firewall blocking or access denial.
     """
     semaphore = asyncio.Semaphore(max_concurrent)
 
@@ -121,7 +148,13 @@ async def crawl_site(
         queue = queue[batch_size:]
 
         tasks: Iterator[Awaitable[tuple[str, list[str], int | None]]] = (
-            fetch_and_extract(client=client, base_url=url, url=current_url, semaphore=semaphore, delay=delay)
+            fetch_internal_links_from_url(
+                client=client,
+                base_url=url,
+                url=current_url,
+                semaphore=semaphore,
+                delay=delay,
+            )
             for current_url in batch
         )
         batch_results: list[tuple[str, list[str], int | None]] = await asyncio.gather(*tasks)

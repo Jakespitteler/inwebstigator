@@ -10,11 +10,6 @@ class InternalLinkCreate(BaseModel):
     website_id: uuid.UUID
 
 
-class InternalLinkCreateBatch(BaseModel):
-    urls: list[URLString]
-    website_id: uuid.UUID
-
-
 class InternalLinkRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID

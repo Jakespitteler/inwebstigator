@@ -13,4 +13,12 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Local databases
 *.db
+*.db-wal
+*.db-shm
+
+# Also ignore a plain .env (the *.env rule above misses it)
+.env
+!.env.example

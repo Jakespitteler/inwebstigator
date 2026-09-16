@@ -1,0 +1,19 @@
+[
+    {
+        "detected_at": "2026-09-11T19:58:54+08:00",
+        "url": "https://www.teqsa.gov.au/",
+        "changed": [
+            {
+                "old_section": "this is a test for history",
+                "new_section": "TEQSA Talks webinar series",
+                "old_type": "paragraph",
+                "new_type": "paragraph",
+                "old": "A webinar series to help inform the sector about our regulatory work",
+                "new": "A webinar series to help inform the sector about our regulatory work",
+                "similarity": 1.0
+            }
+        ],
+        "added": [],
+        "removed": []
+    }
+]
