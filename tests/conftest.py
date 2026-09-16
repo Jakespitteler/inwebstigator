@@ -9,7 +9,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import UUID as PG_UUID
 from sqlalchemy import DateTime, Engine, MetaData, StaticPool, String, create_engine, text
 from sqlalchemy.orm import Mapped, Session, declarative_base, mapped_column
+from tenacity import wait_none
 
+from app.backend.email_service import send_email
+from app.backend.site_crawler import fetch_internal_links_from_url
 from app.core.config import config
 from app.db import core, repository, schema
 from app.main import app
@@ -84,6 +87,13 @@ def api_client(session: Session) -> Iterator[TestClient]:
     with TestClient(app) as client:
         yield client
         app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def disable_retry_wait():
+    fetch_internal_links_from_url.retry.wait = wait_none()  # pyright: ignore[reportFunctionMemberAccess]
+    send_email.retry.wait = wait_none()  # pyright: ignore[reportFunctionMemberAccess]
+    yield
 
 
 # ==========================

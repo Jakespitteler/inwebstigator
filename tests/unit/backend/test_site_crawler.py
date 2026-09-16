@@ -3,18 +3,10 @@ from collections.abc import Callable
 
 import httpx2
 import pytest
-from tenacity import wait_none
 
 from app.backend.site_crawler import crawl_site, fetch_internal_links_from_url
 from app.core.errors import TrafficError, WebConnectionError
 from tests.conftest import RequestHandler
-
-
-@pytest.fixture(autouse=True)
-def disable_retry_wait():
-    fetch_internal_links_from_url.retry.wait = wait_none()  # pyright: ignore[reportFunctionMemberAccess]
-    yield
-
 
 # ========================
 # Test fetch_internal_links_from_url

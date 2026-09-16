@@ -90,9 +90,8 @@ def test_send_email_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.backend.email_service.smtplib.SMTP_SSL", mock_smtp_ssl_init)
 
     msg: EmailMessage = EmailMessage()
-    result: bool = send_email(msg)
+    send_email(msg)  # Returns None on success
 
-    assert result is True
     assert fake_smtp_instance is not None
     assert fake_smtp_instance.logged_in == ("user@example.com", "pass")
     assert len(fake_smtp_instance.sent_messages) == 1
@@ -115,24 +114,37 @@ def test_send_email_success_no_auth(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.backend.email_service.smtplib.SMTP_SSL", mock_smtp_ssl_init)
 
     msg: EmailMessage = EmailMessage()
-    result: bool = send_email(msg)
+    send_email(msg)
 
-    assert result is True
     assert fake_smtp_instance is not None
     assert fake_smtp_instance.logged_in is None
     assert len(fake_smtp_instance.sent_messages) == 1
 
 
-def test_send_email_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_send_email_failure_and_retries(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.backend.email_service.SMTP_HOST", "smtp.example.com")
     monkeypatch.setattr("app.backend.email_service.SMTP_PORT", 465)
 
+    # Speed up tests by minimizing wait times and setting attempts count
+    monkeypatch.setattr("app.backend.email_service.config.email_retry_max_attempts", 3)
+    monkeypatch.setattr("app.backend.email_service.config.email_retry_min_wait_seconds", 0)
+    monkeypatch.setattr("app.backend.email_service.config.email_retry_max_wait_seconds", 0)
+    monkeypatch.setattr("app.backend.email_service.config.email_retry_multiplier", 1)
+
+    attempts = 0
+
     def mock_smtp_ssl_raise(*args: Any, **kwargs: Any) -> Any:
-        raise Exception("Connection refused")
+        nonlocal attempts
+        attempts += 1
+        raise TimeoutError("Connection refused")
 
     monkeypatch.setattr("app.backend.email_service.smtplib.SMTP_SSL", mock_smtp_ssl_raise)
 
     msg: EmailMessage = EmailMessage()
-    result: bool = send_email(msg)
 
-    assert result is False
+    # Verify that the exception is re-raised after exhausting retry attempts
+    with pytest.raises(TimeoutError, match="Connection refused"):
+        send_email(msg)
+
+    # Ensure it tried the configured maximum number of attempts
+    assert attempts == 3
