@@ -3,9 +3,10 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import config
+from app.core.errors import IntegrityError, NotFoundError
 from app.core.logging import setup_logging
-from app.db.core import Base, engine
-from app.db.errors import IntegrityError, NotFoundError
+from app.db.core import engine
+from app.db.schema import Base
 from app.frontend.api import routers
 
 setup_logging()
@@ -53,6 +54,6 @@ async def integrity_error_handler(request: Request, exc: IntegrityError):
 
 # Register routes
 app.include_router(routers.ROOT_ROUTER)
+app.include_router(routers.USER_ROUTER)
 app.include_router(routers.WEBSITE_ROUTER)
 app.include_router(routers.CRITICAL_PAGE_ROUTER)
-app.include_router(routers.INTERNAL_LINK_ROUTER)

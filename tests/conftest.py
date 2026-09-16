@@ -9,7 +9,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import UUID as PG_UUID
 from sqlalchemy import DateTime, Engine, MetaData, StaticPool, String, create_engine, text
 from sqlalchemy.orm import Mapped, Session, declarative_base, mapped_column
+from tenacity import wait_none
 
+from app.backend.email_service import send_email
+from app.backend.site_crawler import fetch_internal_links_from_url
 from app.core.config import config
 from app.db import core, repository, schema
 from app.main import app
@@ -49,7 +52,7 @@ def engine() -> Iterator[Engine]:
 @pytest.fixture(scope="session", autouse=True)
 def setup_database(engine: Engine) -> None:
     """Creates the database schema."""
-    core.Base.metadata.create_all(bind=engine)
+    schema.Base.metadata.create_all(bind=engine)
     TestBase.metadata.create_all(bind=engine)
 
 
@@ -86,12 +89,19 @@ def api_client(session: Session) -> Iterator[TestClient]:
         app.dependency_overrides.clear()
 
 
+@pytest.fixture(autouse=True)
+def disable_retry_wait():
+    fetch_internal_links_from_url.retry.wait = wait_none()  # pyright: ignore[reportFunctionMemberAccess]
+    send_email.retry.wait = wait_none()  # pyright: ignore[reportFunctionMemberAccess]
+    yield
+
+
 # ==========================
 #  Test Records
 # ==========================
 
 
-def _create_and_add[DBRecord: core.Base](session: Session, record: DBRecord) -> DBRecord:
+def _create_and_add[DBRecord: schema.Base](session: Session, record: DBRecord) -> DBRecord:
     """
     Creates a temporary record for testing.
 
@@ -113,10 +123,18 @@ def test_record(session: Session) -> DBTestTable:
 
 
 @pytest.fixture()
-def test_website(session: Session) -> schema.DBWebsite:
+def test_user(session: Session) -> schema.DBUser:
     return _create_and_add(
         session,
-        record=schema.DBWebsite(url="https://www.test_website.com"),
+        record=schema.DBUser(email="testUser@gmail.com", password=""),
+    )
+
+
+@pytest.fixture()
+def test_website(session: Session, test_user: schema.DBUser) -> schema.DBWebsite:
+    return _create_and_add(
+        session,
+        record=schema.DBWebsite(url="https://www.test_website.com", user_id=test_user.id),
     )
 
 

@@ -4,54 +4,51 @@ from collections.abc import Sequence
 
 from sqlalchemy.orm import Session
 
+from app.core.errors import NotFoundError
 from app.db import repository
-from app.db.models.critical_page_models import CriticalPageCreate
-from app.db.models.internal_link_models import InternalLinkCreateBatch
-from app.db.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
 from app.db.schema import DBWebsite
 from app.db.services.critical_page_service import CriticalPageService
 from app.db.services.internal_link_service import InternalLinkService
 from app.db.utils.interfaces import CRUDService
-from app.db.errors import NotFoundError
+from app.models.critical_page_models import CriticalPageCreate
+from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
 
 logger: logging.Logger = logging.getLogger(__name__)
 
 
 class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
     def __init__(self, session: Session):
-        """_summary_
+        """Initialises the WebsiteService with an active database session.
 
         Args:
-            session (Session): The database session.
+            session: The SQLAlchemy database session object used for executing operations.
         """
         self._db = session
 
     def get_all(self, skip: int = 0, limit: int = 100) -> Sequence[WebsiteRead]:
-        """
-        Retrieves website records.
+        """Retrieves a paginated list of website records from the database.
 
         Args:
-            skip: The number of records to skip.
-            limit: The maximum number of records to return.
+            skip: The number of initial records to skip for pagination. Defaults to 0.
+            limit: The maximum number of records to return. Defaults to 100.
 
         Returns:
-            The retrieved websites.
+            A sequence of WebsiteRead models representing the retrieved records.
         """
         website_records: Sequence[DBWebsite] = repository.get_list(self._db, table=DBWebsite, skip=skip, limit=limit)
         return [WebsiteRead.model_validate(website_record) for website_record in website_records]
 
     def get(self, id: uuid.UUID) -> WebsiteRead:
-        """
-        Retrieves a single website by its primary key.
+        """Retrieves a single website record and its relationships by its unique primary key identifier.
 
         Args:
-            id: The id of the website to retrieve.
-
-        Raises:
-            NotFoundError: If no website exists with the provided ID.
+            id: The UUID identifier of the target website record.
 
         Returns:
-            The retrieved website.
+            The matching WebsiteRead data model instance populated with internal links and critical pages.
+
+        Raises:
+            NotFoundError: If no website record matches the provided UUID.
         """
         website_record: DBWebsite = repository.get(
             self._db,
@@ -61,17 +58,23 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         )
         return WebsiteRead.model_validate(website_record)
 
-    def get_by_url(self, url: str) -> WebsiteRead:
-        """
-        Retrieve a website and its relationships by URL.
+    def get_by_url(self, url: str, user_id: uuid.UUID) -> WebsiteRead:
+        """Retrieves a single website record and its relationships matching a URL and user ID.
+
+        Args:
+            url: The target URL string of the website.
+            user_id: The UUID identifier of the owner user entity.
+
+        Returns:
+            The matching WebsiteRead data model instance populated with relationships.
 
         Raises:
-            NotFoundError: If no website exists with the URL.
+            NotFoundError: If no matching website record exists for the provided URL and user ID.
         """
         website_records: Sequence[DBWebsite] = repository.get_list(
             self._db,
             table=DBWebsite,
-            attributes={"url": url},
+            attributes={"url": url, "user_id": user_id},
             relations=[
                 DBWebsite.internal_links,
                 DBWebsite.critical_pages,
@@ -85,70 +88,79 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         return WebsiteRead.model_validate(website_records[0])
 
     def create(self, model_create: WebsiteCreate) -> WebsiteRead:
-        """
-        Creates a new website record.
+        """Creates and persists a new website record along with any associated critical pages.
 
         Args:
-            model_create: The website details to create.
-
-        Raises:
-            IntegrityError: If the website already exists in db.
+            model_create: The WebsiteCreate payload containing website attributes and critical page URLs.
 
         Returns:
-            The website record.
+            The created WebsiteRead data model instance reflecting saved state.
+
+        Raises:
+            IntegrityError: If the record violates database constraints or already exists.
         """
-        website_record: DBWebsite = DBWebsite(**model_create.model_dump(exclude={"critical_pages", "internal_links"}))
+        website_record: DBWebsite = DBWebsite(**model_create.model_dump(exclude={"critical_pages"}))
         repository.add(self._db, record=website_record)
 
         if model_create.critical_pages:
             [
                 CriticalPageService(self._db).create(
-                    CriticalPageCreate(website_id=website_record.id, **critical_page.model_dump())
+                    CriticalPageCreate(website_id=website_record.id, url=critical_page_url)
                 )
-                for critical_page in model_create.critical_pages
+                for critical_page_url in model_create.critical_pages
             ]
-        if model_create.internal_links:
-            InternalLinkService(self._db).create_batch(
-                model_create_batch=InternalLinkCreateBatch(
-                    urls=model_create.internal_links,
-                    website_id=website_record.id,
-                )
-            )
 
         return WebsiteRead.model_validate(website_record)
 
     def update(self, id: uuid.UUID, model_update: WebsiteUpdate) -> WebsiteRead:
-        """
-        Updates an existing website record.
+        """Updates attributes of an existing website record and syncs its sub-resources.
+
+        Handles updates to website URLs, batch updates for monitored critical pages,
+        and batch additions/removals of internal links.
 
         Args:
-            id: The id of the website to update.
-            model_update: The new data to apply to the website.
-
-        Raises:
-            NotFoundError: If the website with id does not exist.
-            IntegrityError: If the website updated details already exists in db.
+            id: The UUID identifier of the website record to update.
+            model_update: The WebsiteUpdate schema containing modified fields and sub-resource updates.
 
         Returns:
-            The updated website.
-        """
+            The refreshed WebsiteRead data model instance following updates.
 
-        website_record = repository.update(
-            self._db,
-            record=repository.get(self._db, table=DBWebsite, id=id),
-            updates=model_update.model_dump(exclude_unset=True),
-        )
+        Raises:
+            NotFoundError: If the website record or any referenced sub-resource does not exist.
+            IntegrityError: If updated attributes violate database constraints.
+        """
+        website_record: DBWebsite = repository.get(self._db, table=DBWebsite, id=id)
+        if model_update.url:
+            website_record = repository.update(self._db, record=website_record, updates={"url": model_update.url})
+
+        critical_page_service = CriticalPageService(self._db)
+        if model_update.critical_page_updates:
+            for critical_page_id, critical_page_updates in model_update.critical_page_updates.items():
+                critical_page_service.update(id=critical_page_id, model_update=critical_page_updates)
+
+        internal_link_service = InternalLinkService(self._db)
+        if model_update.recent_added_internal_links:
+            internal_link_service.create_batch(
+                urls=model_update.recent_added_internal_links,
+                website_id=website_record.id,
+            )
+        if model_update.recent_removed_internal_links:
+            internal_link_service.delete_batch(
+                urls=model_update.recent_removed_internal_links,
+                website_id=website_record.id,
+            )
+        website_record: DBWebsite = repository.get(self._db, table=DBWebsite, id=id)
+
         return WebsiteRead.model_validate(website_record)
 
     def delete(self, id: uuid.UUID) -> None:
-        """
-        Deletes a website by its primary key.
+        """Deletes a website record and associated resources from the database by its primary key.
 
         Args:
-            id: The id of the website to delete.
+            id: The UUID identifier of the website record to remove.
 
         Raises:
-            NotFoundError: If no website exists with the provided ID.
+            NotFoundError: If no website record matches the provided UUID.
         """
         repository.get(self._db, table=DBWebsite, id=id)  # Check if the record exists
         repository.delete(self._db, table=DBWebsite, id=id)
