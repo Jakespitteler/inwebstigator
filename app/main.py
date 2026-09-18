@@ -12,8 +12,10 @@ from markupsafe import Markup, escape
 from app.core.config import config
 from app.core.errors import IntegrityError, NotFoundError
 from app.core.logging import setup_logging
-from app.db.core import engine
+from app.db.core import SessionLocal, engine
 from app.db.schema import Base
+from app.db.services.user_service import UserService
+from app.db.services.website_service import WebsiteService
 from app.frontend.api import routers
 
 setup_logging()
@@ -180,6 +182,18 @@ def get_dashboard(request: Request):
         reverse=True,
     )
 
+    with SessionLocal() as session:
+        website_service = WebsiteService(session)
+        website_summaries = website_service.get_all()
+
+        websites = [
+            website_service.get(website.id)
+            for website in website_summaries
+        ]
+
+        user_service = UserService(session)
+        users = user_service.get_all()
+
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
@@ -193,6 +207,8 @@ def get_dashboard(request: Request):
             ),
             "week_start": week_start.strftime("%d %b %Y"),
             "week_end": today.strftime("%d %b %Y"),
+            "websites": websites,
+            "users": users,
         },
     )
 
