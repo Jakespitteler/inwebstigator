@@ -21,6 +21,46 @@ h1 {
     margin-bottom: 30px;
 }
 
+
+/* DAILY/WEEKLY TABS */
+
+.tab-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 25px;
+    margin-bottom: 25px;
+}
+
+.tab-button {
+    border: 1px solid #ccc;
+    background-color: white;
+    padding: 10px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 15px;
+}
+
+.tab-button:hover {
+    background-color: #f0f0f0;
+}
+
+.tab-button.active {
+    background-color: #222;
+    color: white;
+    border-color: #222;
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+
+/* CHANGE RECORDS */
+
 .change-record {
     background-color: white;
     padding: 25px;
@@ -62,56 +102,276 @@ h1 {
     background-color: #f0f0f0;
 }
 
-.added-label {
-    font-weight: bold;
-    color: green;
-}
-
-.removed-label {
-    font-weight: bold;
-    color: red;
-}
-
-.removed-word {
-    color: red;
-    font-weight: bold;
-}
-
+.added-label,
 .added-word {
     color: green;
     font-weight: bold;
 }
 
-.tab-buttons {
-    display: flex;
-    gap: 10px;
-    margin-top: 25px;
-    margin-bottom: 25px;
+.removed-label,
+.removed-word {
+    color: red;
+    font-weight: bold;
 }
 
-.tab-button {
-    border: 1px solid #ccc;
+
+/* MONITORED WEBSITES */
+
+.websites-section {
+    margin-top: 55px;
+    padding-top: 30px;
+    border-top: 2px solid #ddd;
+}
+
+.websites-section > h2 {
+    font-size: 26px;
+    margin-top: 0;
+    margin-bottom: 22px;
+}
+
+.website-card {
     background-color: white;
-    padding: 10px 18px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 15px;
+    padding: 25px;
+    margin-bottom: 20px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
 }
 
-.tab-button:hover {
+.website-card h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    overflow-wrap: anywhere;
+}
+
+.website-card h4 {
+    margin-top: 22px;
+    margin-bottom: 10px;
+}
+
+.website-summary {
+    margin-top: 10px;
+}
+
+.website-summary p {
+    margin: 7px 0;
+}
+
+
+/* EXISTING CRITICAL PAGES */
+
+.critical-page-list {
+    list-style: none;
+    padding: 0;
+    margin: 10px 0 20px;
+}
+
+.critical-page-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 15px;
+    padding: 10px 0;
+    border-bottom: 1px solid #eee;
+}
+
+.critical-page-list a {
+    overflow-wrap: anywhere;
+}
+
+
+/* ADD CRITICAL PAGE */
+
+.add-critical-page-form {
+    margin-top: 20px;
+}
+
+.add-critical-page-form label {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 7px;
+}
+
+.add-critical-page-form input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 11px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+.add-critical-page-form input:focus {
+    outline: 2px solid #aaa;
+    border-color: #777;
+}
+
+.add-critical-page-form button {
+    margin-top: 12px;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 6px;
+    background-color: #222;
+    color: white;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.add-critical-page-form button:hover {
+    background-color: #444;
+}
+
+
+/* ADD WEBSITE SECTION */
+
+.add-website-section {
+    margin-top: 35px;
+    margin-bottom: 60px;
+}
+
+.add-website-section > h2 {
+    font-size: 26px;
+    margin-bottom: 20px;
+}
+
+#add-website-form {
+    background-color: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 25px;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 7px;
+}
+
+.form-group label span {
+    color: #777;
+    font-weight: normal;
+    font-size: 13px;
+}
+
+#website-url,
+#website-user,
+.critical-page-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 11px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    background-color: white;
+}
+
+#website-url:focus,
+#website-user:focus,
+.critical-page-input:focus {
+    outline: 2px solid #aaa;
+    border-color: #777;
+}
+
+.critical-page-input {
+    display: block;
+    margin-bottom: 10px;
+}
+
+
+/* Add another critical page */
+
+#add-critical-page-input {
+    padding: 9px 13px;
+    border: 1px solid #bbb;
+    border-radius: 6px;
+    background-color: white;
+    color: #222;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+#add-critical-page-input:hover {
     background-color: #f0f0f0;
 }
 
-.tab-button.active {
+
+/* Main Add Website button */
+
+.submit-button {
+    padding: 11px 18px;
+    border: none;
+    border-radius: 6px;
     background-color: #222;
     color: white;
-    border-color: #222;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
 }
 
-.tab-content {
-    display: none;
+.submit-button:hover {
+    background-color: #444;
 }
 
-.tab-content.active {
-    display: block;
+
+/* DELETE BUTTONS */
+
+.delete-website-button,
+.delete-critical-page-button {
+    border: 1px solid #c62828;
+    background-color: white;
+    color: #c62828;
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.delete-website-button:hover,
+.delete-critical-page-button:hover {
+    background-color: #c62828;
+    color: white;
+}
+
+.delete-website-button {
+    margin-bottom: 10px;
+}
+
+
+/* FORM MESSAGES */
+
+#website-form-message,
+.critical-page-message {
+    margin-top: 12px;
+    margin-bottom: 0;
+    font-size: 14px;
+}
+
+
+/* MOBILE */
+
+@media (max-width: 700px) {
+    .dashboard-container {
+        width: 94%;
+        margin-top: 20px;
+    }
+
+    .change-record,
+    .website-card,
+    #add-website-form {
+        padding: 18px;
+    }
+
+    .critical-page-list li {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .comparison-table th,
+    .comparison-table td {
+        padding: 10px;
+    }
 }
