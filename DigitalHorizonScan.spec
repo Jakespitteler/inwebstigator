@@ -5,7 +5,10 @@ a = Analysis(
     ['run.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[
+        ('app/frontend/static', 'app/frontend/static'),
+        ('app/frontend/templates', 'app/frontend/templates'),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core.config import config
 from app.core.logging import setup_logging
+from app.core.paths import resource_path
 from app.db.core import Base, engine
 from app.db.errors import IntegrityError, NotFoundError
 from app.frontend.api import routers
@@ -12,7 +13,7 @@ setup_logging()
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title=config.app_name)
-app.mount("/static", StaticFiles(directory="app/frontend/static"), name="static")
+app.mount("/static", StaticFiles(directory=resource_path("app/frontend/static")), name="static",)
 
 
 @app.exception_handler(NotFoundError)

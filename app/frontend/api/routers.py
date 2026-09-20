@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 from httpx2 import AsyncClient
 
 from app.backend.web_scraper.engine import get_critical_page_state, get_website_state
+from app.core.paths import resource_path
 from app.db.errors import NotFoundError
 from app.db.models import critical_page_models, internal_link_models, website_models
 from app.db.services import critical_page_service, internal_link_service, website_service
@@ -15,7 +16,7 @@ from app.frontend.api.crud_router_factory import create_crud_router
 from app.frontend.api.dependencies import SessionDep
 from app.scanner import scan_website
 
-templates = Jinja2Templates(directory="app/frontend/templates")
+templates = Jinja2Templates(directory=resource_path("app/frontend/templates"))
 
 logger = logging.getLogger(__name__)
 
