@@ -133,12 +133,14 @@ def test_record(session: Session) -> DBTestTable:
 
 @pytest.fixture()
 def test_user(session: Session) -> user_models.UserRead:
-    return user_models.UserRead.model_validate(
+    user = user_models.UserRead.model_validate(
         _create_and_add(
             session,
             record=schema.DBUser(email="testUser@gmail.com", password=""),
         )
     )
+    config.user_id = user.id
+    return user
 
 
 @pytest.fixture()

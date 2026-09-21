@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import config
-from app.core.errors import IntegrityError, NotFoundError
+from app.core.errors import IntegrityError, InvalidCredentials, NotFoundError, NotLoggedInError, WebConnectionError
 from app.core.logging import setup_logging
 from app.db.core import engine
 from app.db.schema import Base
@@ -34,6 +34,24 @@ async def not_found_exception_handler(request: Request, exc: NotFoundError):
     )
 
 
+@app.exception_handler(WebConnectionError)
+async def web_connection_exception_handler(request: Request, exc: WebConnectionError):
+    """
+    Handles WebConnectionError exceptions by returning a 502 status.
+
+    Args:
+        request: The incoming request.
+        exc: The WebConnectionError exception.
+
+    Returns:
+        A JSONResponse with a 502 status.
+    """
+    return JSONResponse(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        content={"detail": str(exc)},
+    )
+
+
 @app.exception_handler(IntegrityError)
 async def integrity_error_handler(request: Request, exc: IntegrityError):
     """
@@ -48,6 +66,42 @@ async def integrity_error_handler(request: Request, exc: IntegrityError):
     """
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
+        content={"detail": str(exc)},
+    )
+
+
+@app.exception_handler(NotLoggedInError)
+async def not_logged_in_error_handler(request: Request, exc: NotLoggedInError):
+    """
+    Handles NotLoggedInError exceptions by returning a 400 status.
+
+    Args:
+        request: The incoming request.
+        exc: The NotLoggedInError exception.
+
+    Returns:
+        A JSONResponse with a 400 status.
+    """
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={"detail": str(exc)},
+    )
+
+
+@app.exception_handler(InvalidCredentials)
+async def invalid_credentials_error_handler(request: Request, exc: InvalidCredentials):
+    """
+    Handles InvalidCredentials exceptions by returning a 401 status.
+
+    Args:
+        request: The incoming request.
+        exc: The InvalidCredentials exception.
+
+    Returns:
+        A JSONResponse with a 401 status.
+    """
+    return JSONResponse(
+        status_code=status.HTTP_401_UNAUTHORIZED,
         content={"detail": str(exc)},
     )
 

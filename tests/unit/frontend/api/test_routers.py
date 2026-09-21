@@ -157,7 +157,7 @@ class TestUserRouter(TestCRUDRouters):
 class TestWebsiteRouter(TestCRUDRouters):
     __test__ = True
     prefix = routers.WEBSITE_ROUTER.prefix
-    model_create = website_models.WebsiteCreate(url="https://www.test_website.com", user_id=uuid.uuid4())
+    model_create = website_models.WebsiteCreate(url="https://www.test_website.com")
     model_update = website_models.WebsiteUpdate(url="https://www.updated_website.com")
     fixture_name = "test_website"
 

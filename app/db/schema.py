@@ -65,10 +65,11 @@ class DBWebsite(Base):
     url: Mapped[str] = mapped_column(String, nullable=False, index=True)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     user: Mapped[DBUser] = relationship(back_populates="websites")
-    recommended_delay: Mapped[float] = mapped_column(Float, nullable=False, index=True)
-    recommended_concurrent: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    recommended_delay: Mapped[float] = mapped_column(Float, nullable=False)
+    recommended_concurrent: Mapped[int] = mapped_column(Integer, nullable=False)
 
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    failed_attempts_at_min_speed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     on_cooldown_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     internal_links: Mapped[list[DBInternalLink]] = relationship(

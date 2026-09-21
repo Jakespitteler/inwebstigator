@@ -14,7 +14,6 @@ DEFAULT_CONCURRENT: int = config.web_crawler_default_concurrent
 
 class WebsiteCreate(BaseModel):
     url: URLString
-    user_id: uuid.UUID = Field(examples=[""])
     critical_pages: list[URLString] = Field(default_factory=list[URLString], examples=[[""]])
     recommended_delay: float = DEFAULT_DELAY
     recommended_concurrent: int = DEFAULT_CONCURRENT
@@ -32,6 +31,7 @@ class WebsiteRead(BaseModel):
     internal_links: list[InternalLinkRead]
 
     active: bool
+    failed_attempts_at_min_speed: int
     on_cooldown_until: datetime | None = None
 
     recent_added_internal_links: list[URLString] | None = None
@@ -44,6 +44,7 @@ class WebsiteUpdate(BaseModel):
     recommended_concurrent: int | None = None
     on_cooldown_until: datetime | None = None
     active: bool | None = None
+    failed_attempts_at_min_speed: int | None = None
     critical_page_updates: dict[uuid.UUID, CriticalPageUpdate] | None = None
     recent_added_internal_links: list[URLString] | None = None
     recent_removed_internal_links: list[URLString] | None = None
