@@ -1,0 +1,185 @@
+{
+    "headings": [
+        "Australian Bureau of Statistics",
+        "Population",
+        "Consumer price index",
+        "Gross domestic product",
+        "Average weekly earnings",
+        "Unemployment rate",
+        "ABS Data Strategy 2025-30",
+        "Valuing nature's contribution",
+        "Complete your Census now",
+        "Data by region",
+        "Media centre",
+        "Life Course Data Initiative",
+        "Articles",
+        "Wholesale and Retail Industries",
+        "Insights into Government Finance Statistics, June 2026",
+        "Labour Account modelled state and territory estimates by industry, 2026"
+    ],
+    "paragraph_details": [
+        {
+            "section": "No heading",
+            "type": "paragraph",
+            "text": "Welcome to the"
+        },
+        {
+            "section": "Population",
+            "type": "paragraph",
+            "text": "27,921,150"
+        },
+        {
+            "section": "Population",
+            "type": "paragraph",
+            "text": "31 March 2026"
+        },
+        {
+            "section": "Population",
+            "type": "paragraph",
+            "text": "Estimated resident population"
+        },
+        {
+            "section": "Consumer price index",
+            "type": "paragraph",
+            "text": "3.5%"
+        },
+        {
+            "section": "Consumer price index",
+            "type": "paragraph",
+            "text": "Annual change July 2026"
+        },
+        {
+            "section": "Consumer price index",
+            "type": "paragraph",
+            "text": "All groups, original"
+        },
+        {
+            "section": "Gross domestic product",
+            "type": "paragraph",
+            "text": "0.4%"
+        },
+        {
+            "section": "Gross domestic product",
+            "type": "paragraph",
+            "text": "Quarterly change Jun 2026"
+        },
+        {
+            "section": "Gross domestic product",
+            "type": "paragraph",
+            "text": "Chain volume measure, seasonally adjusted"
+        },
+        {
+            "section": "Average weekly earnings",
+            "type": "paragraph",
+            "text": "$2,083.70"
+        },
+        {
+            "section": "Average weekly earnings",
+            "type": "paragraph",
+            "text": "May 2026"
+        },
+        {
+            "section": "Average weekly earnings",
+            "type": "paragraph",
+            "text": "Full-time adults ordinary time"
+        },
+        {
+            "section": "Unemployment rate",
+            "type": "paragraph",
+            "text": "4.5%"
+        },
+        {
+            "section": "Unemployment rate",
+            "type": "paragraph",
+            "text": "July 2026"
+        },
+        {
+            "section": "Unemployment rate",
+            "type": "paragraph",
+            "text": "Seasonally Adjusted"
+        },
+        {
+            "section": "ABS Data Strategy 2025-30",
+            "type": "paragraph",
+            "text": "Explore the refreshed ABS Data Strategy"
+        },
+        {
+            "section": "Valuing nature's contribution",
+            "type": "paragraph",
+            "text": "Measuring the benefits nature provides to people and the economy"
+        },
+        {
+            "section": "Complete your Census now",
+            "type": "paragraph",
+            "text": "Census night was Tuesday 11 August. Support is available to help you do the Census."
+        },
+        {
+            "section": "Data by region",
+            "type": "paragraph",
+            "text": "Explore key statistics by geographical area"
+        },
+        {
+            "section": "Media centre",
+            "type": "paragraph",
+            "text": "Browse our media releases and find out the latest ABS news."
+        },
+        {
+            "section": "Life Course Data Initiative",
+            "type": "paragraph",
+            "text": "New insights on frequency, patterns and outcomes of children's residential moves"
+        },
+        {
+            "section": "Articles",
+            "type": "time",
+            "text": "18 September 2026"
+        },
+        {
+            "section": "Wholesale and Retail Industries",
+            "type": "time",
+            "text": "08 September 2026"
+        },
+        {
+            "section": "Insights into Government Finance Statistics, June 2026",
+            "type": "time",
+            "text": "04 September 2026"
+        },
+        {
+            "section": "Labour Account modelled state and territory estimates by industry, 2026",
+            "type": "paragraph",
+            "text": "The Australian Bureau of Statistics acknowledges the Traditional Owners and Custodians of Country throughout Australia and recognises their continuing connection to land, waters and community. We pay our respects to their cultures and Elders, past and present."
+        },
+        {
+            "section": "No heading",
+            "type": "text_block",
+            "text": "Release date and time"
+        },
+        {
+            "section": "No heading",
+            "type": "text_block",
+            "text": "Release date and time"
+        },
+        {
+            "section": "No heading",
+            "type": "text_block",
+            "text": "Release date and time"
+        }
+    ],
+    "links": [
+        "/statistics/people/population/national-state-and-territory-population/latest-release",
+        "/statistics/economy/price-indexes-and-inflation/consumer-price-index-australia/latest-release",
+        "/statistics/economy/national-accounts/australian-national-accounts-national-income-expenditure-and-product/latest-release",
+        "/statistics/labour/earnings-and-working-conditions/average-weekly-earnings-australia/latest-release",
+        "/statistics/labour/employment-and-unemployment/labour-force-australia/latest-release",
+        "https://www.abs.gov.au/about/our-organisation/our-commitments/abs-data-strategy-2025-2030",
+        "https://www.abs.gov.au/statistics/detailed-methodology-information/information-papers/valuing-natures-contribution-national-ecosystem-accounting-perspective",
+        "https://start.census.abs.gov.au/",
+        "https://www.abs.gov.au/databyregion",
+        "/media-centre",
+        "https://www.abs.gov.au/articles/understanding-child-mobility-australia-2006-2021",
+        "/articles/wholesale-and-retail-industries",
+        "/articles/insights-government-finance-statistics-june-2026",
+        "/articles/labour-account-modelled-state-and-territory-estimates-industry-2026",
+        "/articles",
+        "#"
+    ]
+}

@@ -584,7 +584,7 @@ async def diff_check(client, url):
 
 async def main():
 
-    test_urls = ["https://www.uwa.edu.au/news/article/2026/september/new-researcher-development-academy-to-strengthen-was-future-workforce?utm_source=chatgpt.com"]
+    test_urls = ["https://www.uwa.edu.au/news/article/2026/september/new-researcher-development-academy-to-strengthen-was-future-workforce?utm_source=chatgpt.com", "https://www.uwa.edu.au/study/explore-courses/study-areas/architecture-and-design"]
 
     async with httpx2.AsyncClient(headers=HEADERS, timeout=SECONDS_TIMEOUT) as client:
 
@@ -595,3 +595,5 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+#uv run py -m app.backend.diff_checker.v2.diff_check.diff_check_v2
