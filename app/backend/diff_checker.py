@@ -2,6 +2,7 @@ from difflib import SequenceMatcher
 
 from app.backend.utils.html_parser import ChangedBlock, ContentBlock, HTMLBlockType, PageContent
 from app.backend.utils.links import find_added_links, find_removed_links
+from app.core.config import config
 
 
 def _evaluate_replacements(
@@ -56,7 +57,7 @@ def _evaluate_replacements(
 def compare_page_content(
     old_content: PageContent,
     new_content: PageContent,
-    similarity_threshold: float = 0.60,  # TODO may have to drop to 0
+    similarity_threshold: float = config.text_similarity_threshold,
 ) -> tuple[list[ContentBlock], list[ContentBlock], list[ChangedBlock]]:
     """Compares two PageContent objects to identify added, removed, and modified content blocks.
 
