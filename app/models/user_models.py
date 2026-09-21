@@ -3,6 +3,7 @@ import uuid
 from pydantic import BaseModel, ConfigDict
 
 from app.db.utils.field_types import EmailString
+from app.models.website_models import WebsiteRead
 
 
 class UserCreate(BaseModel):
@@ -15,6 +16,7 @@ class UserRead(BaseModel):
     id: uuid.UUID
     email: EmailString
     password: str
+    websites: list[WebsiteRead]
 
 
 class UserUpdate(BaseModel):

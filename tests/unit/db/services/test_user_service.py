@@ -4,12 +4,11 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
-from app.db.schema import DBUser
 from app.db.services.user_service import UserService
 from app.models.user_models import UserCreate, UserRead, UserUpdate
 
 
-def test_get_all_users(session: Session, test_user: DBUser) -> None:
+def test_get_all_users(session: Session, test_user: UserRead) -> None:
     """
     Tests retrieving a list of all users.
 
@@ -23,7 +22,7 @@ def test_get_all_users(session: Session, test_user: DBUser) -> None:
     assert any(c.email == test_user.email for c in fetched_users)
 
 
-def test_get_user(session: Session, test_user: DBUser) -> None:
+def test_get_user(session: Session, test_user: UserRead) -> None:
     """
     Tests retrieving an existing user by ID.
 
@@ -55,7 +54,7 @@ def test_create_user(session: Session) -> None:
     assert fetched_user.email == user_details.email
 
 
-def test_update_user(session: Session, test_user: DBUser) -> None:
+def test_update_user(session: Session, test_user: UserRead) -> None:
     """
     Tests updating an existing user's details.
 
@@ -73,7 +72,7 @@ def test_update_user(session: Session, test_user: DBUser) -> None:
     assert fetched_user.email == model_update.email
 
 
-def test_delete_user(session: Session, test_user: DBUser) -> None:
+def test_delete_user(session: Session, test_user: UserRead) -> None:
     """
     Tests deleting an existing user and cascading its children.
 

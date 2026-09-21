@@ -1,10 +1,12 @@
 import logging
 import uuid
 from collections.abc import Sequence
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.core.errors import NotFoundError
+from app.core.config import config
+from app.core.errors import NotFoundError, NotLoggedInError
 from app.db import repository
 from app.db.schema import DBWebsite
 from app.db.services.critical_page_service import CriticalPageService
@@ -15,6 +17,8 @@ from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
 
 logger: logging.Logger = logging.getLogger(__name__)
 
+MAX_DELAY: float = config.web_crawler_max_delay
+
 
 class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
     def __init__(self, session: Session):
@@ -23,7 +27,11 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         Args:
             session: The SQLAlchemy database session object used for executing operations.
         """
-        self._db = session
+        self._db: Session = session
+
+        if not config.user_id:
+            raise NotLoggedInError()
+        self.user_id: uuid.UUID = config.user_id
 
     def get_all(self, skip: int = 0, limit: int = 100) -> Sequence[WebsiteRead]:
         """Retrieves a paginated list of website records from the database.
@@ -35,7 +43,14 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         Returns:
             A sequence of WebsiteRead models representing the retrieved records.
         """
-        website_records: Sequence[DBWebsite] = repository.get_list(self._db, table=DBWebsite, skip=skip, limit=limit)
+
+        website_records: Sequence[DBWebsite] = repository.get_list(
+            self._db,
+            table=DBWebsite,
+            skip=skip,
+            limit=limit,
+            attributes={"user_id": self.user_id},
+        )
         return [WebsiteRead.model_validate(website_record) for website_record in website_records]
 
     def get(self, id: uuid.UUID) -> WebsiteRead:
@@ -58,12 +73,11 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         )
         return WebsiteRead.model_validate(website_record)
 
-    def get_by_url(self, url: str, user_id: uuid.UUID) -> WebsiteRead:
+    def get_by_url(self, url: str) -> WebsiteRead:
         """Retrieves a single website record and its relationships matching a URL and user ID.
 
         Args:
             url: The target URL string of the website.
-            user_id: The UUID identifier of the owner user entity.
 
         Returns:
             The matching WebsiteRead data model instance populated with relationships.
@@ -74,7 +88,7 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         website_records: Sequence[DBWebsite] = repository.get_list(
             self._db,
             table=DBWebsite,
-            attributes={"url": url, "user_id": user_id},
+            attributes={"url": url, "user_id": self.user_id},
             relations=[
                 DBWebsite.internal_links,
                 DBWebsite.critical_pages,
@@ -99,7 +113,9 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         Raises:
             IntegrityError: If the record violates database constraints or already exists.
         """
-        website_record: DBWebsite = DBWebsite(**model_create.model_dump(exclude={"critical_pages"}))
+        website_record: DBWebsite = DBWebsite(
+            user_id=self.user_id, **model_create.model_dump(exclude={"critical_pages"})
+        )
         repository.add(self._db, record=website_record)
 
         if model_create.critical_pages:
@@ -130,8 +146,18 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
             IntegrityError: If updated attributes violate database constraints.
         """
         website_record: DBWebsite = repository.get(self._db, table=DBWebsite, id=id)
-        if model_update.url:
-            website_record = repository.update(self._db, record=website_record, updates={"url": model_update.url})
+
+        update_data = model_update.model_dump(
+            exclude_unset=True,
+            exclude={
+                "critical_page_updates",
+                "recent_added_internal_links",
+                "recent_removed_internal_links",
+            },
+        )
+
+        if update_data:
+            website_record = repository.update(self._db, record=website_record, updates=update_data)
 
         critical_page_service = CriticalPageService(self._db)
         if model_update.critical_page_updates:
@@ -164,3 +190,99 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         """
         repository.get(self._db, table=DBWebsite, id=id)  # Check if the record exists
         repository.delete(self._db, table=DBWebsite, id=id)
+
+    def set_cooldown(self, id: uuid.UUID, hours: int) -> WebsiteRead:
+        """Sets a cooldown expiration timestamp on a website record.
+
+        Args:
+            id: The UUID identifier of the target website record.
+            hours: The number of hours from now to keep the website on cooldown.
+
+        Returns:
+            The refreshed WebsiteRead data model instance reflecting the updated cooldown state.
+
+        Raises:
+            NotFoundError: If no website record matches the provided UUID.
+        """
+        on_cooldown_until = datetime.now() + timedelta(hours=hours)
+
+        website_record = repository.update(
+            self._db,
+            record=repository.get(self._db, table=DBWebsite, id=id),
+            updates=WebsiteUpdate(on_cooldown_until=on_cooldown_until).model_dump(exclude_unset=True),
+        )
+        logger.warning(f"Website {website_record.url} placed on cooldown until {on_cooldown_until}.")
+        return WebsiteRead.model_validate(website_record)
+
+    def throttle_and_cooldown(self, id: uuid.UUID, hours: int = 24) -> WebsiteRead:
+        """Increases crawler delay, decreases concurrency limits, and sets a cooldown period.
+
+        Args:
+            id: The UUID identifier of the target website record.
+            hours: The number of hours to keep the website on cooldown. Defaults to 24.
+
+        Returns:
+            The refreshed WebsiteRead data model instance reflecting updated throttling and cooldown settings.
+
+        Raises:
+            NotFoundError: If no website record matches the provided UUID.
+        """
+        website_record: DBWebsite = repository.get(self._db, table=DBWebsite, id=id)
+
+        new_delay: float = min(config.web_crawler_max_delay, website_record.recommended_delay + 0.5)
+        new_concurrent: int = max(config.web_crawler_min_concurrent, website_record.recommended_concurrent // 2)
+
+        on_cooldown_until = datetime.now() + timedelta(hours=hours)
+
+        updated_record = repository.update(
+            self._db,
+            record=website_record,
+            updates=WebsiteUpdate(
+                recommended_delay=new_delay,
+                recommended_concurrent=new_concurrent,
+                on_cooldown_until=on_cooldown_until,
+            ).model_dump(exclude_unset=True),
+        )
+
+        logger.warning(
+            f"Website {website_record.url} throttled ({new_delay=}s, {new_concurrent=}) "
+            f"and placed on cooldown until {on_cooldown_until}."
+        )
+        return WebsiteRead.model_validate(updated_record)
+
+    def handle_traffic_error(self, website: WebsiteRead) -> str:
+        """Encapsulates rate-limit policy, throttling, cool downs, and deactivation logic."""
+
+        is_at_min_speed: bool = (
+            website.recommended_concurrent <= config.web_crawler_min_concurrent
+            and website.recommended_delay >= config.web_crawler_max_delay
+        )
+
+        if not is_at_min_speed:
+            self.throttle_and_cooldown(id=website.id, hours=24)
+            return "Website throttled and placed on cooldown."
+
+        # At minimum speed, manage consecutive failures
+        self.set_cooldown(id=website.id, hours=24)
+
+        if website.failed_attempts_at_min_speed >= config.web_crawler_max_failed_attempts_at_min_speed:
+            self.update(id=website.id, model_update=WebsiteUpdate(active=False))
+            return f"Failed {website.failed_attempts_at_min_speed} times. Deactivating: {website.url}"
+
+        self.update(
+            id=website.id,
+            model_update=WebsiteUpdate(failed_attempts_at_min_speed=website.failed_attempts_at_min_speed + 1),
+        )
+        return "Website placed on cooldown."
+
+    def handle_connection_error(self, website_id: uuid.UUID) -> str:
+        """Handles unreachable site error by setting a standard cooldown."""
+        self.set_cooldown(id=website_id, hours=2)
+        return "Website placed on cooldown."
+
+    def reset_failed_attempts(self, id: uuid.UUID) -> None:
+        """On scan success the failed attempts are reset if they are not already 0."""
+        website: WebsiteRead = self.get(id)
+        if website.failed_attempts_at_min_speed > 0:
+            self.update(id, model_update=WebsiteUpdate(failed_attempts_at_min_speed=0))
+            logger.info(f"{website.url} has had its failed attempts reset")
