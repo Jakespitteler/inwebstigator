@@ -18,6 +18,7 @@ class UserRead(BaseModel):
     email: EmailString
     password: str
     last_scan_at: datetime | None = None
+    last_email_at: datetime | None = None
     websites: list[WebsiteRead]
 
 
@@ -25,3 +26,4 @@ class UserUpdate(BaseModel):
     email: EmailString | None = None
     password: str | None = None
     last_scan_at: datetime | None = None
+    last_email_at: datetime | None = None

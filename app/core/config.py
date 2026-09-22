@@ -30,7 +30,8 @@ class Config(BaseSettings):
     smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 465
 
-    hours_between_scans: int = 24
+    days_between_scans: int = 1
+    days_between_heath_checks: int = 7
 
     web_crawler_default_max_pages: int = 50000
     web_crawler_default_delay: float = 1

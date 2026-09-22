@@ -5,9 +5,13 @@ from httpx2 import AsyncClient
 
 from app.core.config import config
 from app.core.errors import NotLoggedInError
-from app.db.services import critical_page_service, user_service, website_service
+from app.db.services.critical_page_service import CriticalPageService
+from app.db.services.user_service import UserService
+from app.db.services.website_service import WebsiteService
 from app.frontend.api.db_router_factory import SessionDep, create_crud_router
-from app.models import critical_page_models, user_models, website_models
+from app.models.critical_page_models import CriticalPageCreate, CriticalPageUpdate
+from app.models.user_models import UserCreate, UserRead, UserUpdate
+from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
 from app.scanner import scan_user_websites, scan_website, send_notification
 
 ROOT_ROUTER = APIRouter()
@@ -43,38 +47,40 @@ SCANNER_ROUTER = APIRouter(prefix="/scanner", tags=["Scanner"])
 
 
 @SCANNER_ROUTER.post("/initial_scan", response_model=None)
-async def website_initial_scan(session: SessionDep, model_create: website_models.WebsiteCreate) -> None:
-    website: website_models.WebsiteRead = website_service.WebsiteService(session).create(model_create)
+async def website_initial_scan(session: SessionDep, model_create: WebsiteCreate) -> None:
+    website: WebsiteRead = WebsiteService(session).create(model_create)
 
     async with AsyncClient() as client:
         await scan_website(client, session, website)
 
 
-@SCANNER_ROUTER.post("/run", response_model=str)
+@SCANNER_ROUTER.post("/run", response_model=str | None)
 async def manually_scan_a_website(
     session: SessionDep,
     url: str = Form(...),
     max_pages: int | None = Form(None),
     delay: float | None = Form(None),
     concurrent: int | None = Form(None),
-) -> str:
-    website: website_models.WebsiteRead = website_service.WebsiteService(session).get_by_url(url)
+) -> str | None:
+    website: WebsiteRead = WebsiteService(session).get_by_url(url)
 
     async with AsyncClient() as client:
-        html_report = await scan_website(client, session, website, max_pages, delay, concurrent)
+        html_report: str | None = await scan_website(client, session, website, max_pages, delay, concurrent)
 
-    user: user_models.UserRead = user_service.UserService(session).get(id=website.user_id)
-    send_notification(user.email, html_report)
-    return html_report
+    if html_report:
+        user_service = UserService(session)
+        user: UserRead = user_service.get(id=website.user_id)
+        send_notification(session, user, html_report)
+        return html_report  # TODO maybe return "no changes found"
 
 
-@SCANNER_ROUTER.post("/run_all", response_model=str)
-async def scan_websites_for_a_user(session: SessionDep) -> str:
+@SCANNER_ROUTER.post("/run_all", response_model=str | None)
+async def scan_websites_for_a_user(session: SessionDep) -> str | None:
     if not config.user_id:
         raise NotLoggedInError()
 
-    user: user_models.UserRead = user_service.UserService(session).get(id=config.user_id)
-    return await scan_user_websites(session, user)
+    user: UserRead = UserService(session).get(id=config.user_id)
+    return await scan_user_websites(session, user)  # TODO maybe return "no changes found"
 
 
 # ======================
@@ -84,31 +90,31 @@ async def scan_websites_for_a_user(session: SessionDep) -> str:
 
 USER_ROUTER: APIRouter = create_crud_router(
     prefix="/users",
-    service_class=user_service.UserService,
-    create_class=user_models.UserCreate,
-    update_class=user_models.UserUpdate,
+    service_class=UserService,
+    create_class=UserCreate,
+    update_class=UserUpdate,
 )
 
 
 @USER_ROUTER.post("/log_in", response_model=str)
 async def log_in(session: SessionDep, email: str = Form(...), password: str = Form(...)) -> str:
-    return user_service.UserService(session).log_in(email, password)
+    return UserService(session).log_in(email, password)
 
 
 @USER_ROUTER.post("/log_out", response_model=str)
 async def log_out(session: SessionDep) -> str:
-    return user_service.UserService(session).log_out()
+    return UserService(session).log_out()
 
 
 CRITICAL_PAGE_ROUTER: APIRouter = create_crud_router(
     prefix="/critical_pages",
-    service_class=critical_page_service.CriticalPageService,
-    create_class=critical_page_models.CriticalPageCreate,
-    update_class=critical_page_models.CriticalPageUpdate,
+    service_class=CriticalPageService,
+    create_class=CriticalPageCreate,
+    update_class=CriticalPageUpdate,
 )
 WEBSITE_ROUTER: APIRouter = create_crud_router(
     prefix="/websites",
-    service_class=website_service.WebsiteService,
-    create_class=website_models.WebsiteCreate,
-    update_class=website_models.WebsiteUpdate,
+    service_class=WebsiteService,
+    create_class=WebsiteCreate,
+    update_class=WebsiteUpdate,
 )
