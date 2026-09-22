@@ -5,9 +5,9 @@ import pytest
 
 from app.backend.engine import get_critical_page_updates, get_website_updates
 from app.core.errors import TrafficError
-from app.models.critical_page_models import CriticalPageRead
+from app.models.critical_page_models import CriticalPageRead, CriticalPageUpdate
 from app.models.internal_link_models import InternalLinkRead
-from app.models.website_models import WebsiteRead
+from app.models.website_models import WebsiteRead, WebsiteUpdate
 from tests.conftest import RequestHandler
 
 # ======================================
@@ -29,8 +29,8 @@ async def test_get_critical_page_updates_with_changes(
         }
     )
     async with mock_client_factory(website_handler) as client:
-        updates = await get_critical_page_updates(client, initial_page)
-
+        updates: CriticalPageUpdate | None = await get_critical_page_updates(client, initial_page)
+    assert updates
     assert updates.url == initial_page.url
     assert updates.recent_links_added is not None
     assert updates.recent_links_removed == [f"{test_critical_page.url}old-link"]
@@ -46,9 +46,10 @@ async def test_get_critical_page_updates_no_changes(
     """Tests that idempotency prevents useless DB updates by syncing the model first."""
     async with mock_client_factory(website_handler) as client:
         # 1. Run once to extract the parsed target state from the mock HTML
-        initial_updates = await get_critical_page_updates(client, test_critical_page)
+        initial_updates: CriticalPageUpdate | None = await get_critical_page_updates(client, test_critical_page)
 
         # 2. Pre-populate our base model with that target state
+        assert initial_updates
         synced_page = test_critical_page.model_copy(
             update={
                 "text_body": initial_updates.text_body,
@@ -58,21 +59,8 @@ async def test_get_critical_page_updates_no_changes(
         )
 
         # 3. Re-run against synced state; zero diffs should be detected
-        second_updates = await get_critical_page_updates(client, synced_page)
-
-    assert second_updates.url == test_critical_page.url
-
-    # No diffs detected
-    assert not second_updates.recent_links_added
-    assert not second_updates.recent_links_removed
-    assert not second_updates.recent_text_changed
-    assert not second_updates.recent_documents_added
-    assert not second_updates.recent_documents_removed
-
-    # Base payload fields stay None to avoid redundant DB writes
-    assert second_updates.links is None
-    assert second_updates.documents is None
-    assert second_updates.text_body is None
+        second_updates: CriticalPageUpdate | None = await get_critical_page_updates(client, synced_page)
+    assert not second_updates
 
 
 # ======================================
@@ -104,10 +92,10 @@ async def test_get_website_updates_with_changes(
     )
 
     async with mock_client_factory(website_handler) as client:
-        updates = await get_website_updates(
+        updates: WebsiteUpdate | None = await get_website_updates(
             client=client, stored_website=initial_website, max_pages=10, delay=0, concurrent=2
         )
-
+    assert updates
     assert updates.url == initial_website.url
 
     # Crawler internal link diff assertions

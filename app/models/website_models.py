@@ -42,9 +42,9 @@ class WebsiteUpdate(BaseModel):
     url: URLString | None = None
     recommended_delay: float | None = None
     recommended_concurrent: int | None = None
-    on_cooldown_until: datetime | None = None
     active: bool | None = None
     failed_attempts_at_min_speed: int | None = None
+    on_cooldown_until: datetime | None = None
     critical_page_updates: dict[uuid.UUID, CriticalPageUpdate] | None = None
     recent_added_internal_links: list[URLString] | None = None
     recent_removed_internal_links: list[URLString] | None = None

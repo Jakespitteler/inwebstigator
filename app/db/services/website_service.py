@@ -34,7 +34,7 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         self.user_id: uuid.UUID = config.user_id
 
     def get_all(self, skip: int = 0, limit: int = 100) -> Sequence[WebsiteRead]:
-        """Retrieves a paginated list of website records from the database.
+        """Retrieves a paginated list of the users website records from the database.
 
         Args:
             skip: The number of initial records to skip for pagination. Defaults to 0.
@@ -251,7 +251,19 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         return WebsiteRead.model_validate(updated_record)
 
     def handle_traffic_error(self, website: WebsiteRead) -> str:
-        """Encapsulates rate-limit policy, throttling, cool downs, and deactivation logic."""
+        """Encapsulates rate-limit policy, throttling, cool downs, and deactivation logic.
+
+        If the crawler is operating above minimum speed limits, throttles requests and sets
+        a 24-hour cooldown. If already operating at minimum crawl speed, increments the
+        consecutive failure counter and sets a 24-hour cooldown, automatically deactivating
+        the website if the maximum failure threshold is reached.
+
+        Args:
+            website (WebsiteRead): The website record that encountered a traffic rate-limiting error.
+
+        Returns:
+            str: Status action message summarising the mitigation applied (throttled, cooldown, or deactivated).
+        """
 
         is_at_min_speed: bool = (
             website.recommended_concurrent <= config.web_crawler_min_concurrent
@@ -276,12 +288,26 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         return "Website placed on cooldown."
 
     def handle_connection_error(self, website_id: uuid.UUID) -> str:
-        """Handles unreachable site error by setting a standard cooldown."""
+        """Handles unreachable site errors by setting a standard 2-hour cooldown period.
+
+        Args:
+            website_id (uuid.UUID): Unique identifier of the unreachable website.
+
+        Returns:
+            str: Status action message confirming cooldown placement.
+        """
         self.set_cooldown(id=website_id, hours=2)
         return "Website placed on cooldown."
 
     def reset_failed_attempts(self, id: uuid.UUID) -> None:
-        """On scan success the failed attempts are reset if they are not already 0."""
+        """Resets the consecutive failed attempt counter to 0 upon a successful scan.
+
+        If the website's `failed_attempts_at_min_speed` is greater than 0, updates the
+        record in the database and logs the reset event.
+
+        Args:
+            id (uuid.UUID): Unique identifier of the website whose failure count should be reset.
+        """
         website: WebsiteRead = self.get(id)
         if website.failed_attempts_at_min_speed > 0:
             self.update(id, model_update=WebsiteUpdate(failed_attempts_at_min_speed=0))

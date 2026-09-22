@@ -20,7 +20,21 @@ DEFAULT_CONCURRENT: int = config.web_crawler_default_concurrent
 BATCH_402_THRESHOLD_SECONDS: int = config.web_crawler_batch_402_threshold_seconds
 
 
-async def get_critical_page_updates(client: AsyncClient, stored_page: CriticalPageRead) -> CriticalPageUpdate:
+def _critical_page_has_been_updated(critical_page_updates: CriticalPageUpdate) -> bool:
+    return any([critical_page_updates.links or critical_page_updates.documents or critical_page_updates.text_body])
+
+
+def _website_has_been_updated(website_updates: WebsiteUpdate) -> bool:
+    return any(
+        [
+            website_updates.critical_page_updates
+            or website_updates.recent_added_internal_links
+            or website_updates.recent_removed_internal_links
+        ]
+    )
+
+
+async def get_critical_page_updates(client: AsyncClient, stored_page: CriticalPageRead) -> CriticalPageUpdate | None:
     """Fetches the latest content for a critical page and computes the differences from its stored state.
 
     Analyses the fetched HTML to extract and categorise links (documents vs. regular links),
@@ -70,7 +84,8 @@ async def get_critical_page_updates(client: AsyncClient, stored_page: CriticalPa
     if updates.recent_text_added or updates.recent_text_removed or updates.recent_text_changed:
         updates.text_body = text_body
 
-    return updates
+    if _critical_page_has_been_updated(updates):
+        return updates
 
 
 async def get_website_updates(
@@ -79,7 +94,7 @@ async def get_website_updates(
     max_pages: int | None,
     delay: float | None,
     concurrent: int | None,
-) -> WebsiteUpdate:
+) -> WebsiteUpdate | None:
     """Crawls a website to detect changes in internal links and updates its monitored critical pages.
 
     Iterates through all associated critical pages to fetch their updates, and crawls the primary
@@ -102,8 +117,10 @@ async def get_website_updates(
     if stored_website.critical_pages:
         results = await asyncio.gather(*(get_critical_page_updates(client, cp) for cp in stored_website.critical_pages))
         updates.critical_page_updates = {
-            cp.id: update for cp, update in zip(stored_website.critical_pages, results, strict=False)
-        }
+            cp.id: update
+            for cp, update in zip(stored_website.critical_pages, results, strict=False)
+            if update is not None
+        } or None
 
     current_internal_links: list[str] = list(
         await crawl_site(
@@ -122,4 +139,6 @@ async def get_website_updates(
     )
     logger.info(f"{updates.recent_added_internal_links=}")
     logger.info(f"{updates.recent_removed_internal_links=}")
-    return updates
+
+    if _website_has_been_updated(updates):
+        return updates

@@ -22,6 +22,8 @@ class DBUser(Base):
 
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
     password: Mapped[str] = mapped_column(String, nullable=False)
+    last_scan_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_email_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     websites: Mapped[list["DBWebsite"]] = relationship(
         back_populates="user",

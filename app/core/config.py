@@ -17,6 +17,7 @@ class Config(BaseSettings):
 
     app_name: str = "inwebstigator"
     debug: bool = False
+    automatic_scans: bool = True
 
     user_id: uuid.UUID | None = None
 
@@ -28,6 +29,9 @@ class Config(BaseSettings):
     email_password: SecretStr = SecretStr("")
     smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 465
+
+    days_between_scans: int = 1
+    days_between_heath_checks: int = 7
 
     web_crawler_default_max_pages: int = 50000
     web_crawler_default_delay: float = 1
