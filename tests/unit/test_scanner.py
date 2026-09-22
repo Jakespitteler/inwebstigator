@@ -122,7 +122,7 @@ async def test_scan_website_traffic_error_handling(
 
 
 @pytest.mark.anyio
-async def test_scan_website_traffic_error_reraised_with_params(
+async def test_scan_website_traffic_error_re_raised_with_params(
     session: Session,
     populated_website: WebsiteRead,
     mocker: MockerFixture,
