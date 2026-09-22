@@ -34,7 +34,7 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         self.user_id: uuid.UUID = config.user_id
 
     def get_all(self, skip: int = 0, limit: int = 100) -> Sequence[WebsiteRead]:
-        """Retrieves a paginated list of website records from the database.
+        """Retrieves a paginated list of the users website records from the database.
 
         Args:
             skip: The number of initial records to skip for pagination. Defaults to 0.

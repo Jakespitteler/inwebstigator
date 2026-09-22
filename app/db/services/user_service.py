@@ -4,7 +4,8 @@ from collections.abc import Sequence
 
 from sqlalchemy.orm import Session
 
-from app.core.errors import NotFoundError
+from app.core.config import config
+from app.core.errors import InvalidCredentials, NotFoundError
 from app.db import repository
 from app.db.schema import DBUser
 from app.db.utils.interfaces import CRUDService
@@ -128,3 +129,16 @@ class UserService(CRUDService[UserRead, UserCreate, UserUpdate]):
         """
         repository.get(self._db, table=DBUser, id=id)  # Check if the record exists
         repository.delete(self._db, table=DBUser, id=id)
+
+    def log_in(self, email: str, password: str) -> str:
+        user = self.get_by_email(email)
+
+        if user.password != password:
+            raise InvalidCredentials("Password was incorrect")
+
+        config.user_id = user.id
+        return "Successfully logged in"
+
+    def log_out(self) -> str:
+        config.user_id = None
+        return "Successfully logged out"

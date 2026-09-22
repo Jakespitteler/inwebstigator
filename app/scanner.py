@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from email.message import EmailMessage
 
 from httpx2 import AsyncClient
@@ -10,8 +11,10 @@ from app.backend.engine import get_website_updates
 from app.backend.format_message import ScanStatus, generate_scan_report_html
 from app.core.config import config
 from app.core.errors import TrafficError, WebConnectionError
+from app.db.services.user_service import UserService
 from app.db.services.website_service import WebsiteService
 from app.db.utils.field_types import EmailString
+from app.models import user_models
 from app.models.website_models import WebsiteRead, WebsiteUpdate
 
 logger = logging.getLogger(__name__)
@@ -101,3 +104,34 @@ async def scan_website(
     scan_report_body: str = generate_scan_report_html(updated_website, status=ScanStatus.SUCCESS)
 
     return scan_report_body
+
+
+async def scan_user_websites(session: Session, user: user_models.UserRead) -> str:
+    reports: list[str] = []
+    async with AsyncClient() as client:
+        for website in user.websites:
+            if not website.active:
+                reports.append(
+                    generate_scan_report_html(
+                        website,
+                        status=ScanStatus.SKIPPED_DEACTIVATED,
+                        message="Website has been deactivated due to consecutive scan failures.",
+                    )
+                )
+                continue
+            if website.on_cooldown_until and website.on_cooldown_until > datetime.now():
+                reports.append(
+                    generate_scan_report_html(
+                        website,
+                        status=ScanStatus.SKIPPED_COOLDOWN,
+                        message=f"Cooldown active until {website.on_cooldown_until:%d %b %Y, %H:%M UTC}.",
+                    )
+                )
+                continue
+
+            reports.append(await scan_website(client, session, website))
+    joint_reports = f"<ul>{''.join(reports)}</ul>"
+
+    send_notification(user.email, joint_reports)
+    UserService(session).update(id=user.id, model_update=user_models.UserUpdate(last_scan_at=datetime.now()))
+    return joint_reports
