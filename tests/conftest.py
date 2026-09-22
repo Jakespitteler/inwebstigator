@@ -13,9 +13,12 @@ from tenacity import wait_none
 
 from app.backend.email_service import send_email
 from app.backend.site_crawler import fetch_internal_links_from_url
+from app.backend.utils.links import normalise_url
 from app.core.config import config
 from app.db import core, repository, schema
+from app.db.utils.field_types import URLString
 from app.main import app
+from app.models import critical_page_models, internal_link_models, user_models, website_models
 
 type RequestHandler = Callable[[httpx2.Request], httpx2.Response]
 
@@ -101,6 +104,12 @@ def disable_retry_wait():
 # ==========================
 
 
+@pytest.fixture
+def test_url() -> URLString:
+    """Provides a standard test URL matching test_website domain."""
+    return normalise_url("https://www.test_website.com/")
+
+
 def _create_and_add[DBRecord: schema.Base](session: Session, record: DBRecord) -> DBRecord:
     """
     Creates a temporary record for testing.
@@ -123,40 +132,52 @@ def test_record(session: Session) -> DBTestTable:
 
 
 @pytest.fixture()
-def test_user(session: Session) -> schema.DBUser:
-    return _create_and_add(
-        session,
-        record=schema.DBUser(email="testUser@gmail.com", password=""),
+def test_user(session: Session) -> user_models.UserRead:
+    user = user_models.UserRead.model_validate(
+        _create_and_add(
+            session,
+            record=schema.DBUser(email="testUser@gmail.com", password=""),
+        )
+    )
+    config.user_id = user.id
+    return user
+
+
+@pytest.fixture()
+def test_website(session: Session, test_user: schema.DBUser, test_url: URLString) -> website_models.WebsiteRead:
+    return website_models.WebsiteRead.model_validate(
+        _create_and_add(
+            session,
+            record=schema.DBWebsite(
+                url=test_url,
+                user_id=test_user.id,
+                recommended_delay=0,
+                recommended_concurrent=20,
+            ),
+        )
     )
 
 
 @pytest.fixture()
-def test_website(session: Session, test_user: schema.DBUser) -> schema.DBWebsite:
-    return _create_and_add(
-        session,
-        record=schema.DBWebsite(url="https://www.test_website.com", user_id=test_user.id),
+def test_critical_page(session: Session, test_website: schema.DBWebsite) -> critical_page_models.CriticalPageRead:
+    return critical_page_models.CriticalPageRead.model_validate(
+        _create_and_add(
+            session,
+            record=schema.DBCriticalPage(
+                url=f"{test_website.url}test_critical_page",
+                website_id=test_website.id,
+            ),
+        )
     )
 
 
 @pytest.fixture()
-def test_critical_page(session: Session, test_website: schema.DBWebsite) -> schema.DBCriticalPage:
-    return _create_and_add(
-        session,
-        record=schema.DBCriticalPage(
-            url=f"{test_website.url}/test_critical_page",
-            links=[],
-            documents=[],
-            text_body="",
-            website_id=test_website.id,
-        ),
-    )
-
-
-@pytest.fixture()
-def test_internal_link(session: Session, test_website: schema.DBWebsite) -> schema.DBInternalLink:
-    return _create_and_add(
-        session,
-        record=schema.DBInternalLink(url=f"{test_website.url}/test_internal_link", website_id=test_website.id),
+def test_internal_link(session: Session, test_website: schema.DBWebsite) -> internal_link_models.InternalLinkRead:
+    return internal_link_models.InternalLinkRead.model_validate(
+        _create_and_add(
+            session,
+            record=schema.DBInternalLink(url=f"{test_website.url}test_internal_link", website_id=test_website.id),
+        )
     )
 
 
@@ -166,19 +187,13 @@ def test_internal_link(session: Session, test_website: schema.DBWebsite) -> sche
 
 
 @pytest.fixture
-def test_url() -> str:
-    """Provides a standard test URL fixture."""
-    return "https://example.com/"
-
-
-@pytest.fixture
-def test_html_content() -> str:
+def test_html_content(test_url: URLString) -> str:
     """Provides a mock HTML string containing various link structures."""
-    return """
+    return f"""
     <html>
         <body>
             <a href="/about">About Us</a>
-            <a href="https://example.com/contact">Contact</a>
+            <a href="{test_url}contact">Contact</a>
             <a href="https://external.com/page">External Site</a>
             <a href="/page1.html">Page 1</a>
             <a href="/404-page.html">Dead</a>
@@ -193,10 +208,10 @@ def test_html_content() -> str:
 
 
 @pytest.fixture
-def mock_client_factory() -> Callable[[RequestHandler], httpx2.AsyncClient]:
+def mock_client_factory(test_url: URLString) -> Callable[[RequestHandler], httpx2.AsyncClient]:
     """Fixture factory to easily create an AsyncClient with a MockTransport."""
 
-    def _create_client(handler: RequestHandler, base_url: str = "https://mocksite.com") -> httpx2.AsyncClient:
+    def _create_client(handler: RequestHandler, base_url: str = test_url) -> httpx2.AsyncClient:
         return httpx2.AsyncClient(transport=httpx2.MockTransport(handler), base_url=base_url)
 
     return _create_client
@@ -215,6 +230,19 @@ def website_handler(test_url: str, test_html_content: str) -> RequestHandler:
         url: str = str(request.url)
         if url == test_url:
             return httpx2.Response(200, text=test_html_content)
+        elif url == f"{test_url}test_critical_page":
+            return httpx2.Response(
+                200,
+                text="""
+                <html>
+                    <body>
+                        <p>Updated Critical Page Content</p>
+                        <a href="/about">About Us</a>
+                        <a href="/new-link">New Link</a>
+                    </body>
+                </html>
+                """,
+            )
         elif url == f"{test_url}page1.html":
             return httpx2.Response(200, text='<a href="/page2.html">Page 2</a> <a href="/">Home</a>')
         elif url == f"{test_url}page2.html":
@@ -227,12 +255,12 @@ def website_handler(test_url: str, test_html_content: str) -> RequestHandler:
 
 
 @pytest.fixture
-def redirect_handler() -> RequestHandler:
+def redirect_handler(test_url: URLString) -> RequestHandler:
     """Provides a mock request handler simulating an HTTP redirect."""
 
     def handler(request: httpx2.Request) -> httpx2.Response:
-        if str(request.url) == "https://example.com/initial":
-            return httpx2.Response(301, headers={"Location": "https://example.com/final"})
+        if str(request.url) == f"{test_url}initial":
+            return httpx2.Response(301, headers={"Location": f"{test_url}final"})
         return httpx2.Response(200, text="Final Destination Content")
 
     return handler

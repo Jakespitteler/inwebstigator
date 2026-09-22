@@ -1,90 +1,104 @@
 import html
 from datetime import UTC, datetime
+from enum import StrEnum
 
 from app.models.website_models import WebsiteRead
 
 
+class ScanStatus(StrEnum):
+    SUCCESS = "success"
+    TRAFFIC_ERROR = "traffic_error"
+    CONNECTION_ERROR = "connection_error"
+    SKIPPED_DEACTIVATED = "skipped_deactivated"
+    SKIPPED_COOLDOWN = "skipped_cooldown"
+
+
 def _safe(text: str) -> str:
-    """Escapes scraped text for safe insertion into HTML strings.
-
-    Args:
-        text: The raw input string to escape.
-
-    Returns:
-        The HTML-escaped string with double and single quotes sanitised.
-    """
     return html.escape(text, quote=True)
 
 
 def _link(url: str) -> str:
-    """Generates an HTML hyperlink or fallback text node based on URL protocol validity.
-
-    Args:
-        url: The target URL string to format into HTML.
-
-    Returns:
-        An HTML string containing either an anchor tag with the `link-active` CSS class
-        for HTTP(S) links or a span tag with the `link-inactive` CSS class for non-web links.
-    """
     safe_url = _safe(url)
     if url.lower().startswith(("http://", "https://")):
         return f'<a href="{safe_url}" class="link-active">{safe_url}</a>'
     return f'<span class="link-inactive">{safe_url}</span>'
 
 
-def generate_scan_report_html(Website: WebsiteRead) -> str:
-    """Generates a complete inline-styled HTML scan report for email notifications.
-
-    Parses the provided WebsiteRead instance for added/removed site-wide internal links
-    and tracked critical page changes (including links, documents, added/removed text blocks,
-    and side-by-side text diffs).
-
-    Args:
-        Website: The WebsiteRead data model holding state and scan results.
-
-    Returns:
-        A standalone string of HTML ready to be dispatched via email.
-    """
+def generate_scan_report_html(
+    website: WebsiteRead,
+    status: ScanStatus = ScanStatus.SUCCESS,
+    message: str | None = None,
+) -> str:
+    """Generates a complete inline-styled HTML report for any scan state or error."""
     now: datetime = datetime.now(UTC)
+    safe_url = _safe(website.url)
+
+    # 1. Determine Title and Color Styles Based on Status
+    status_config = {
+        ScanStatus.SUCCESS: ("Website monitoring report", "#1f2328"),
+        ScanStatus.TRAFFIC_ERROR: ("Traffic / Rate Limit Error", "#cf222e"),
+        ScanStatus.CONNECTION_ERROR: ("Connection Failure Report", "#cf222e"),
+        ScanStatus.SKIPPED_DEACTIVATED: ("Scan Skipped (Deactivated)", "#9a6700"),
+        ScanStatus.SKIPPED_COOLDOWN: ("Scan Skipped (Cooldown Active)", "#9a6700"),
+    }
+    title_prefix, header_color = status_config.get(status, ("Website Report", "#1f2328"))
 
     out = [
-        '<div class="email-container" style="font-family: system-ui, -apple-system, \'Segoe UI\', Roboto, Helvetica, Arial, sans-serif; background-color: #f6f8fa; color: #1f2328; line-height: 1.5; padding: 20px; max-width: 800px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); border: 1px solid #d0d7de;">',
-        f'<h2 class="header-title" style="margin-top: 0; font-size: 20px; color: #1f2328; border-bottom: 1px solid #d0d7de; padding-bottom: 8px;">Website monitoring report for {_safe(Website.url)}</h2>',
+        '<div class="email-container" style="font-family: system-ui, -apple-system, \'Segoe UI\', Roboto, Helvetica, Arial, sans-serif; background-color: #ffffff; color: #1f2328; line-height: 1.5; padding: 20px; max-width: 800px; margin: 0 auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); border: 1px solid #d0d7de;">',
+        f'<h2 class="header-title" style="margin-top: 0; font-size: 20px; color: {header_color}; border-bottom: 1px solid #d0d7de; padding-bottom: 8px;">{title_prefix} for {safe_url}</h2>',
         f'<p class="header-meta" style="margin: 0 0 16px; color: #57606a; font-size: 13px;">Checked {now:%d %b %Y, %H:%M UTC}</p>',
     ]
 
+    # 2. Render Status Alert Box for Non-Success States
+    if status != ScanStatus.SUCCESS:
+        alert_bg = "#ffeceb" if "error" in status else "#fff8c5"
+        alert_border = "rgba(255, 129, 130, 0.4)" if "error" in status else "rgba(212, 167, 44, 0.4)"
+        alert_title_color = "#cf222e" if "error" in status else "#9a6700"
+
+        out.extend(
+            [
+                f'<div style="background-color: {alert_bg}; padding: 12px; border-radius: 6px; border: 1px solid {alert_border}; margin-bottom: 16px;">',
+                f'<strong style="display: block; margin-bottom: 4px; color: {alert_title_color};">{title_prefix}</strong>',
+                f'<span style="color: #1f2328; font-size: 14px;">{_safe(message or "No further details available.")}</span>',
+                "</div>",
+                '<hr style="border: 0; height: 1px; background: #d0d7de; margin: 25px 0;">',
+                '<p class="footer-text" style="color: #57606a; font-size: 12px; margin: 0;">This is an automated message.</p>',
+                "</div>",
+            ]
+        )
+        return "".join(out)
+
+    # 3. Render Changes Diff (Success State)
     has_changes = False
 
-    # --- 1. Site-wide Internal Links ---
-    if Website.recent_added_internal_links:
+    if website.recent_added_internal_links:
         has_changes = True
         out.append(
-            f'<h3 class="section-title" style="font-size: 18px; color: #1f2328; margin-top: 25px;">New Internal Links ({len(Website.recent_added_internal_links)})</h3>'
+            f'<h3 class="section-title" style="font-size: 18px; color: #1f2328; margin-top: 25px;">New Internal Links ({len(website.recent_added_internal_links)})</h3>'
         )
         out.append('<ul class="change-list" style="padding-left: 20px; margin: 0 0 15px 0;">')
-        for link in Website.recent_added_internal_links:
+        for link in website.recent_added_internal_links:
             out.append(
                 f'<li style="margin-bottom: 4px;"><span class="badge added" style="padding: 2px 6px; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; background-color: #eaffee; color: #1f2328;">+ {_safe(link)}</span></li>'
             )
         out.append("</ul>")
 
-    if Website.recent_removed_internal_links:
+    if website.recent_removed_internal_links:
         has_changes = True
         out.append(
-            f'<h3 class="section-title" style="font-size: 18px; color: #1f2328; margin-top: 25px;">Removed Internal Links ({len(Website.recent_removed_internal_links)})</h3>'
+            f'<h3 class="section-title" style="font-size: 18px; color: #1f2328; margin-top: 25px;">Removed Internal Links ({len(website.recent_removed_internal_links)})</h3>'
         )
         out.append('<ul class="change-list" style="padding-left: 20px; margin: 0 0 15px 0;">')
-        for link in Website.recent_removed_internal_links:
+        for link in website.recent_removed_internal_links:
             out.append(
                 f'<li style="margin-bottom: 4px;"><span class="badge removed" style="padding: 2px 6px; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; background-color: #ffeceb; color: #1f2328;">- {_safe(link)}</span></li>'
             )
         out.append("</ul>")
 
-    # --- 2. Critical Pages ---
-    if Website.critical_pages:
+    if website.critical_pages:
         changed_pages = [
             cp
-            for cp in Website.critical_pages
+            for cp in website.critical_pages
             if any(
                 [
                     cp.recent_links_added,
@@ -110,7 +124,6 @@ def generate_scan_report_html(Website: WebsiteRead) -> str:
                 )
                 out.append('<div class="page-changes-container" style="margin-bottom: 20px;">')
 
-                # Links & Documents
                 for label, items, badge_class, symbol in [
                     ("Links Added", cp.recent_links_added, "added", "+"),
                     ("Links Removed", cp.recent_links_removed, "removed", "-"),
@@ -128,7 +141,6 @@ def generate_scan_report_html(Website: WebsiteRead) -> str:
                             )
                         out.append("</ul>")
 
-                # Text Added / Removed
                 for label, blocks, badge_class, symbol in [
                     ("Text Added", cp.recent_text_added, "added", "+"),
                     ("Text Removed", cp.recent_text_removed, "removed", "-"),
@@ -145,7 +157,6 @@ def generate_scan_report_html(Website: WebsiteRead) -> str:
                             )
                         out.append("</ul>")
 
-                # Text Changed (Side-by-Side Table)
                 if cp.recent_text_changed:
                     out.append(
                         '<p class="change-label" style="margin: 8px 0 4px; font-weight: 600; color: #57606a;">Text Changed:</p>'
@@ -165,7 +176,6 @@ def generate_scan_report_html(Website: WebsiteRead) -> str:
                             out.append(
                                 f'<tr><td colspan="2" class="diff-heading-row" style="background-color: #f6f8fa; padding: 6px 8px; font-size: 12px; color: #57606a; border-bottom: 1px solid #d0d7de;">{heading}</td></tr>'
                             )
-
                         out.append("<tr>")
                         out.append(
                             f'<td class="diff-cell removed" style="padding: 8px; vertical-align: top; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.45; border-right: 1px solid #d0d7de; background-color: #ffeceb; color: #1f2328;">- {_safe(change.old_block.text)}</td>'
@@ -176,10 +186,8 @@ def generate_scan_report_html(Website: WebsiteRead) -> str:
                         out.append("</tr>")
 
                     out.append("</table>")
+                out.append("</div>")
 
-                out.append("</div>")  # Close page container
-
-    # --- 3. Handle No Changes ---
     if not has_changes:
         out[2] = (
             f'<p class="header-meta" style="margin: 0 0 16px; color: #57606a; font-size: 13px;">Checked {now:%d %b %Y, %H:%M UTC} &middot; No changes detected since the last scan.</p>'

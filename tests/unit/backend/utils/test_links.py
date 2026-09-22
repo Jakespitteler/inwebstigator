@@ -40,7 +40,7 @@ def test_find_removed_links_no_changes() -> None:
 @pytest.mark.parametrize(
     "url",
     [
-        "https://example.com/document.pdf",
+        "{test_url}document.pdf",
         "http://example.com/folder/file.DOCX",
         "/downloads/report.xls?download=true",
         "file.ZIP",
@@ -53,10 +53,10 @@ def test_is_document_true(url: str) -> None:
 @pytest.mark.parametrize(
     "url",
     [
-        "https://example.com/page.html",
+        "{test_url}page.html",
         "http://example.com/pdf-viewer",
         "/about-us",
-        "https://example.com/document.pdf.html",
+        "{test_url}document.pdf.html",
     ],
 )
 def test_is_document_false(url: str) -> None:
@@ -65,15 +65,15 @@ def test_is_document_false(url: str) -> None:
 
 def test_separate_document_links() -> None:
     links: list[str] = [
-        "https://example.com/index.html",
-        "https://example.com/resume.pdf",
+        "{test_url}index.html",
+        "{test_url}resume.pdf",
         "/contact",
         "/docs/manual.docx",
     ]
     docs, non_docs = separate_document_links(links)
 
-    assert set(docs) == {"https://example.com/resume.pdf", "/docs/manual.docx"}
-    assert set(non_docs) == {"https://example.com/index.html", "/contact"}
+    assert set(docs) == {"{test_url}resume.pdf", "/docs/manual.docx"}
+    assert set(non_docs) == {"{test_url}index.html", "/contact"}
 
 
 # =============================
@@ -83,33 +83,33 @@ def test_separate_document_links() -> None:
 
 def test_extract_links_from_html_basic_and_relative(test_url: str) -> None:
     """Test standard absolute, relative links, alphabetical sorting, and uniqueness."""
-    html_content: str = """
+    html_content: str = f"""
     <html>
         <body>
-            <a href="https://example.com/about">About</a>
+            <a href="{test_url}about">About</a>
             <a href="/contact">Contact</a>
             <a href="/contact">Contact Duplicate</a>
-            <a href="https://example.com/services">Services</a>
+            <a href="{test_url}services">Services</a>
         </body>
     </html>
     """
     result: list[str] = extract_links_from_html(test_url, html_content, internal_only=False)
 
     expected: list[str] = [
-        "https://example.com/about",
-        "https://example.com/contact",
-        "https://example.com/services",
+        f"{test_url}about",
+        f"{test_url}contact",
+        f"{test_url}services",
     ]
     assert result == expected
 
 
 def test_extract_links_from_html_internal_only(test_url: str) -> None:
     """Test filtering for internal links only when internal_only=True."""
-    html_content: str = """
+    html_content: str = f"""
     <html>
         <body>
             <a href="/internal-page">Internal Relative</a>
-            <a href="https://example.com/another-internal">Internal Absolute</a>
+            <a href="{test_url}another-internal">Internal Absolute</a>
             <a href="https://external.com/page">External Link</a>
             <a href="/policy/policy.pdf">PDF Document</a>
         </body>
@@ -118,8 +118,8 @@ def test_extract_links_from_html_internal_only(test_url: str) -> None:
     result: list[str] = extract_links_from_html(test_url, html_content, internal_only=True)
 
     expected: list[str] = [
-        "https://example.com/another-internal",
-        "https://example.com/internal-page",
+        f"{test_url}another-internal",
+        f"{test_url}internal-page",
     ]
     assert result == expected
 
@@ -140,7 +140,7 @@ def test_extract_links_from_html_skips_non_navigational(test_url: str) -> None:
     """
     result: list[str] = extract_links_from_html(test_url, html_content)
 
-    expected: list[str] = ["https://example.com/valid-page"]
+    expected: list[str] = [f"{test_url}valid-page"]
     assert result == expected
 
 
@@ -158,7 +158,7 @@ def test_extract_links_from_html_fragment_stripping(test_url: str) -> None:
     result: list[str] = extract_links_from_html(test_url, html_content)
 
     # All variations should collapse to the same clean URL and de-duplicate
-    expected: list[str] = ["https://example.com/page"]
+    expected: list[str] = [f"{test_url}page"]
     assert result == expected
 
 
@@ -184,5 +184,5 @@ def test_extract_links_from_html_skips_missing_href(test_url: str) -> None:
     """
     result: list[str] = extract_links_from_html(test_url, html_content)
 
-    expected: list[str] = ["https://example.com/valid"]
+    expected: list[str] = [f"{test_url}valid"]
     assert result == expected

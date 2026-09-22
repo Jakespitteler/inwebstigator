@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String, UniqueConstraint, text
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, text
 from sqlalchemy import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -22,6 +22,8 @@ class DBUser(Base):
 
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
     password: Mapped[str] = mapped_column(String, nullable=False)
+    last_scan_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_email_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     websites: Mapped[list["DBWebsite"]] = relationship(
         back_populates="user",
@@ -65,6 +67,13 @@ class DBWebsite(Base):
     url: Mapped[str] = mapped_column(String, nullable=False, index=True)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     user: Mapped[DBUser] = relationship(back_populates="websites")
+    recommended_delay: Mapped[float] = mapped_column(Float, nullable=False)
+    recommended_concurrent: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    failed_attempts_at_min_speed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    on_cooldown_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     internal_links: Mapped[list[DBInternalLink]] = relationship(
         back_populates="website",
         cascade="all, delete-orphan",

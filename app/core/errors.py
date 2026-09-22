@@ -59,10 +59,16 @@ class TrafficError(WebCrawlerError):
         status_code: The HTTP status code returned by the server (e.g., 429, 403, 503).
     """
 
-    def __init__(self, url: str, status_code: int) -> None:
+    def __init__(self, url: str, status_code: int, message: str | None = None) -> None:
         self.url: str = url
         self.status_code: int = status_code
-        super().__init__(f"Traffic issue ({status_code}) at {url=}. Crawler is overwhelming the server..")
+        self.message: str | None = message
+
+        error_message: str = f"Traffic issue ({status_code}) at {url=}. Crawler is overwhelming the server.."
+        if message:
+            error_message += message
+
+        super().__init__(error_message)
 
 
 class WebConnectionError(WebCrawlerError):
@@ -74,3 +80,31 @@ class WebConnectionError(WebCrawlerError):
 
     def __init__(self, url: str) -> None:
         super().__init__(f"Network traffic issue (Timeout/Connection drop) reaching {url=}.")
+
+
+class UserError(Exception):
+    """Base class for all custom user exceptions in the application."""
+
+    ...
+
+
+class NotLoggedInError(UserError):
+    """Exception raised when we try and perform an operation and a user is not logged.
+
+    Attributes:
+        args: Positional argument tuple containing the standard error message string.
+    """
+
+    def __init__(self) -> None:
+        super().__init__("User not logged in")
+
+
+class InvalidCredentials(UserError):
+    """Exception raised when we try to log in with the wrong credentials.
+
+    Attributes:
+        args: Positional argument tuple containing the standard error message string.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(f"Invalid credentials: {message}")

@@ -5,16 +5,16 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
-from app.db.schema import DBInternalLink, DBWebsite
 from app.db.services.internal_link_service import InternalLinkService
 from app.models.internal_link_models import (
     InternalLinkCreate,
     InternalLinkRead,
     InternalLinkUpdate,
 )
+from app.models.website_models import WebsiteRead
 
 
-def test_get_all_internal_links(session: Session, test_internal_link: DBInternalLink) -> None:
+def test_get_all_internal_links(session: Session, test_internal_link: InternalLinkRead) -> None:
     """
     Tests retrieving a list of all internal_links.
 
@@ -28,7 +28,7 @@ def test_get_all_internal_links(session: Session, test_internal_link: DBInternal
     assert any(c.url == test_internal_link.url for c in fetched_internal_links)
 
 
-def test_get_internal_link(session: Session, test_internal_link: DBInternalLink) -> None:
+def test_get_internal_link(session: Session, test_internal_link: InternalLinkRead) -> None:
     """
     Tests retrieving an existing critical page by ID.
 
@@ -43,7 +43,7 @@ def test_get_internal_link(session: Session, test_internal_link: DBInternalLink)
     assert fetched_internal_link.url == test_internal_link.url
 
 
-def test_get_internal_link_by_url(session: Session, test_internal_link: DBInternalLink) -> None:
+def test_get_internal_link_by_url(session: Session, test_internal_link: InternalLinkRead) -> None:
     """
     Tests retrieving an existing internal_link by its URL.
 
@@ -71,7 +71,7 @@ def test_get_internal_link_by_url_not_found(session: Session) -> None:
         InternalLinkService(session).get_by_url(url=non_existent_url)
 
 
-def test_create_internal_link(session: Session, test_website: DBWebsite) -> None:
+def test_create_internal_link(session: Session, test_website: WebsiteRead) -> None:
     """
     Tests creating a new critical page with basic details.
 
@@ -91,7 +91,7 @@ def test_create_internal_link(session: Session, test_website: DBWebsite) -> None
     assert fetched_internal_link.url == internal_link_details.url
 
 
-def test_create_batch_internal_links(session: Session, test_website: DBWebsite) -> None:
+def test_create_batch_internal_links(session: Session, test_website: WebsiteRead) -> None:
     """
     Tests creating multiple internal_links in batch using a shared website ID.
 
@@ -115,7 +115,7 @@ def test_create_batch_internal_links(session: Session, test_website: DBWebsite) 
         assert fetched_link.url == url
 
 
-def test_update_internal_link(session: Session, test_internal_link: DBInternalLink) -> None:
+def test_update_internal_link(session: Session, test_internal_link: InternalLinkRead) -> None:
     """
     Tests updating an existing internal_link's details.
 
@@ -135,7 +135,7 @@ def test_update_internal_link(session: Session, test_internal_link: DBInternalLi
     assert fetched_internal_link.url == model_update.url
 
 
-def test_delete_internal_link(session: Session, test_internal_link: DBInternalLink) -> None:
+def test_delete_internal_link(session: Session, test_internal_link: InternalLinkRead) -> None:
     """
     Tests deleting an existing internal_link.
 
@@ -150,7 +150,7 @@ def test_delete_internal_link(session: Session, test_internal_link: DBInternalLi
         InternalLinkService(session).get(id=test_internal_link.id)
 
 
-def test_delete_batch_internal_links(session: Session, test_website: DBWebsite) -> None:
+def test_delete_batch_internal_links(session: Session, test_website: WebsiteRead) -> None:
     """
     Tests deleting multiple internal_links in batch.
 
@@ -175,7 +175,7 @@ def test_delete_batch_internal_links(session: Session, test_website: DBWebsite) 
             service.get_by_url(url)
 
 
-def test_delete_batch_empty_urls(session: Session, test_website: DBWebsite) -> None:
+def test_delete_batch_empty_urls(session: Session, test_website: WebsiteRead) -> None:
     """
     Tests that calling delete_batch with an empty sequence executes without error.
 
