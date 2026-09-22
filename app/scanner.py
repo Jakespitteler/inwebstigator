@@ -23,16 +23,13 @@ APP_PASSWORD: SecretStr = config.email_password
 
 
 def send_notification(session: Session, user: UserRead, report: str):
-    """
-    Builds and sends an HTML email notification containing a website scan report.
+    """Builds and sends an HTML email notification containing a website scan report
+    and updates the user's `last_email_at` timestamp.
 
     Args:
-        user (UserRead): The user to send the notification to
+        session (Session): The SQLAlchemy database session.
+        user (UserRead): The target user recipient.
         report (str): The HTML formatted scan report to include in the email body.
-
-    Returns:
-        str | None: Returns an error message string if the email fails to send,
-        otherwise returns None on success.
     """
 
     msg: EmailMessage = build_message(
@@ -40,13 +37,8 @@ def send_notification(session: Session, user: UserRead, report: str):
         recipients=[user.email],
         html_body=report,
     )
-    try:
-        send_email(msg)
-        UserService(session).update(id=user.id, model_update=UserUpdate(last_email_at=datetime.now()))
-    except Exception as e:
-        logger.error(f"Sending the update email to {user.email} failed: {e}")
-        # TODO Decide what to do when email fails (db doesn't roll back rn)
-        return "Email failed to send."
+    send_email(msg)
+    UserService(session).update(id=user.id, model_update=UserUpdate(last_email_at=datetime.now()))
 
 
 async def scan_website(
@@ -57,8 +49,7 @@ async def scan_website(
     delay: float | None = None,
     concurrent: int | None = None,
 ) -> str | None:
-    """
-    Asynchronously scans a website for updates, updates the database record, and
+    """Asynchronously scans a website for updates, updates the database record, and
     generates an HTML scan report.
 
     Automatically handles rate limits and unreachable sites by applying database
@@ -73,7 +64,11 @@ async def scan_website(
         concurrent (int | None, optional): Maximum number of concurrent connections. Defaults to None.
 
     Returns:
-        str | None: A `html_report` string if changes are found, otherwise None.
+        str | None: An HTML scan report string if updates or errors were recorded,
+        otherwise None if no changes were found.
+
+    Raises:
+        TrafficError: Re-raised if custom delay/concurrent parameters were set during a rate-limited scan.
     """
     website_service = WebsiteService(session)
     try:
@@ -104,6 +99,19 @@ async def scan_website(
 
 
 async def scan_user_websites(session: Session, user: UserRead) -> str | None:
+    """Asynchronously scans all active, non-cooldown websites registered to a user.
+
+    Updates the user's `last_scan_at` metadata and dispatches an HTML email notification
+    if any scan reports were generated.
+
+    Args:
+        session (Session): The SQLAlchemy database session.
+        user (UserRead): The user whose registered websites will be scanned.
+
+    Returns:
+        str | None: Consolidated HTML list of scan reports if updates/errors occurred,
+        otherwise None.
+    """
     reports: list[str] = []
     async with AsyncClient() as client:
         for website in user.websites:

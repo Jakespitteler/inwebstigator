@@ -23,13 +23,23 @@ scheduler = AsyncIOScheduler()
 db_context = contextmanager(get_db_session)
 
 
-async def scan_with_fresh_db_session(user: UserRead) -> None:
-    """Wrapper to instantiate a fresh database session for each scheduled run."""
+async def _scan_with_fresh_db_session(user: UserRead) -> None:
+    """Instantiates a fresh database session context and executes website scans for a user.
+
+    Args:
+        user (UserRead): The target user recipient for the scheduled scan.
+    """
     with db_context() as session:
         await scan_user_websites(session, user)
 
 
-def send_heath_check_if_no_change(user: UserRead) -> None:
+def _send_health_check_if_no_change(user: UserRead) -> None:
+    """Dispatches a health check notification to a user if no email notification
+    has been sent within the designated health check threshold.
+
+    Args:
+        user (UserRead): The target user to check and notify.
+    """
     if not user.last_email_at or (datetime.now() - user.last_email_at) > timedelta(days=DAYS_BETWEEN_HEALTH_CHECKS):
         with db_context() as session:
             send_notification(session, user, report="No changes have been found since the last notification")
@@ -37,6 +47,16 @@ def send_heath_check_if_no_change(user: UserRead) -> None:
 
 @asynccontextmanager
 async def schedule_scans(app: FastAPI) -> AsyncGenerator[None]:
+    """FastAPI lifespan context manager that initialises administrative metadata,
+    executes catch-up scans on startup for overdue intervals, schedules recurring
+    website scans and health checks, and manages the APScheduler lifecycle.
+
+    Args:
+        app (FastAPI): The application instance.
+
+    Yields:
+        None: Yields control back to FastAPI while the scheduler is active.
+    """
     if not config.user_id:
         config.user_id = ADMIN_ID
 
@@ -46,12 +66,12 @@ async def schedule_scans(app: FastAPI) -> AsyncGenerator[None]:
             if not user.last_scan_at or (datetime.now() - user.last_scan_at) > timedelta(days=DAYS_BETWEEN_SCANS):
                 logger.info("Missed scan interval detected. Running scan immediately on startup...")
                 await scan_user_websites(session, user)
-            send_heath_check_if_no_change(user)
+            _send_health_check_if_no_change(user)
 
     for user in users:
-        scheduler.add_job(scan_with_fresh_db_session, "interval", days=DAYS_BETWEEN_SCANS, args=[user])  # pyright: ignore[reportUnknownMemberType]
+        scheduler.add_job(_scan_with_fresh_db_session, "interval", days=DAYS_BETWEEN_SCANS, args=[user])  # pyright: ignore[reportUnknownMemberType]
         scheduler.add_job(  # pyright: ignore[reportUnknownMemberType]
-            send_heath_check_if_no_change, "interval", days=DAYS_BETWEEN_HEALTH_CHECKS, args=[user]
+            _send_health_check_if_no_change, "interval", days=DAYS_BETWEEN_HEALTH_CHECKS, args=[user]
         )
 
     scheduler.start()
