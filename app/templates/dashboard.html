@@ -18,27 +18,10 @@
 
         <h1>Website Changes</h1>
 
-        <div class="tab-buttons">
-            <button
-                class="tab-button active"
-                data-tab="daily-tab"
-            >
-                Daily Changes
-            </button>
+        <h2>Daily Changes</h2>
 
-            <button
-                class="tab-button"
-                data-tab="weekly-tab"
-            >
-                Weekly Changes
-            </button>
-        </div>
-
-        <!-- DAILY TAB -->
-        <section
-            id="daily-tab"
-            class="tab-content active"
-        >
+        <!-- DAILY CHANGES -->
+        <section id="daily-changes">
             <p class="week-range">
                 {% if daily_date %}
                     Latest detected changes: {{ daily_date }}
@@ -289,171 +272,6 @@
         </section>
 
 
-        <!-- WEEKLY TAB -->
-        <section
-            id="weekly-tab"
-            class="tab-content"
-        >
-            <p class="week-range">
-                {{ week_start }} – {{ week_end }}
-            </p>
-
-            {% if weekly_records %}
-
-                {% for record in weekly_records %}
-
-                    <section class="change-record">
-
-                        <p class="page-url">
-                            {{ record.url }}
-                        </p>
-
-                        <!-- Changed content -->
-                        {% for change in record.changed %}
-                            <div class="change-section">
-
-                                {% if change.old_section != change.new_section %}
-
-                                    <h2>Section changed</h2>
-
-                                    <table class="comparison-table">
-
-                                        <thead>
-                                            <tr>
-                                                <th>Before</th>
-                                                <th>After</th>
-                                            </tr>
-                                        </thead>
-
-                                        <tbody>
-                                            <tr>
-                                                <td>
-                                                    {{ change.old_section }}
-                                                </td>
-
-                                                <td>
-                                                    {{ change.new_section }}
-                                                </td>
-                                            </tr>
-                                        </tbody>
-
-                                    </table>
-
-                                {% endif %}
-
-                                {% if change.old != change.new %}
-
-                                    <h2>Content changed</h2>
-
-                                    <table class="comparison-table">
-
-                                        <thead>
-                                            <tr>
-                                                <th>Before</th>
-                                                <th>After</th>
-                                            </tr>
-                                        </thead>
-
-                                        <tbody>
-                                            <tr>
-                                                <td>
-                                                    {{ change.old_html | safe }}
-                                                </td>
-
-                                                <td>
-                                                    {{ change.new_html | safe }}
-                                                </td>
-                                            </tr>
-                                        </tbody>
-
-                                    </table>
-
-                                {% endif %}
-
-                            </div>
-                        {% endfor %}
-
-                        <!-- Added text -->
-                        {% for item in record.added %}
-                            <div class="change-section">
-
-                                {% if item is mapping %}
-
-                                    <h2>
-                                        {{ item.section }}
-                                    </h2>
-
-                                    <p>
-                                        {{ item.text }}
-
-                                        <span class="added-label">
-                                            — Added
-                                        </span>
-                                    </p>
-
-                                {% else %}
-
-                                    <p>
-                                        {{ item }}
-
-                                        <span class="added-label">
-                                            — Added
-                                        </span>
-                                    </p>
-
-                                {% endif %}
-
-                            </div>
-                        {% endfor %}
-
-                        <!-- Removed text -->
-                        {% for item in record.removed %}
-                            <div class="change-section">
-
-                                {% if item is mapping %}
-
-                                    <h2>
-                                        {{ item.section }}
-                                    </h2>
-
-                                    <p>
-                                        {{ item.text }}
-
-                                        <span class="removed-label">
-                                            — Removed
-                                        </span>
-                                    </p>
-
-                                {% else %}
-
-                                    <p>
-                                        {{ item }}
-
-                                        <span class="removed-label">
-                                            — Removed
-                                        </span>
-                                    </p>
-
-                                {% endif %}
-
-                            </div>
-                        {% endfor %}
-
-                    </section>
-
-                {% endfor %}
-
-            {% else %}
-
-                <p>
-                    No changes were detected this week.
-                </p>
-
-            {% endif %}
-
-        </section>
-
-
         <!-- MONITORED WEBSITES -->
         <section class="websites-section">
 
@@ -684,36 +502,6 @@
 
 
     <script>
-        // Daily / Weekly tabs
-        const tabButtons =
-            document.querySelectorAll(".tab-button");
-
-        const tabContents =
-            document.querySelectorAll(".tab-content");
-
-        tabButtons.forEach((button) => {
-            button.addEventListener("click", () => {
-
-                tabButtons.forEach((item) => {
-                    item.classList.remove("active");
-                });
-
-                tabContents.forEach((item) => {
-                    item.classList.remove("active");
-                });
-
-                button.classList.add("active");
-
-                const selectedTab =
-                    document.getElementById(
-                        button.dataset.tab
-                    );
-
-                selectedTab.classList.add("active");
-            });
-        });
-
-
         // Add extra critical-page fields when creating a website
         const addCriticalPageButton =
             document.getElementById(

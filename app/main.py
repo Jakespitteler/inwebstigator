@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from difflib import SequenceMatcher
 from pathlib import Path
 
@@ -198,11 +198,7 @@ def get_dashboard(request: Request):
             with sample_file.open("r", encoding="utf-8") as file:
                 records = json.load(file)
 
-    today = datetime.now().astimezone()
-    week_start = today - timedelta(days=6)
-
     daily_records = []
-    weekly_records = []
 
     latest_date = None
 
@@ -225,10 +221,6 @@ def get_dashboard(request: Request):
         if latest_date and detected_at.date() == latest_date:
             daily_records.append(record)
 
-        # Weekly = last 7 days
-        if week_start.date() <= detected_at.date() <= today.date():
-            weekly_records.append(record)
-
         # Build word-level highlighting for changed text
         for change in record.get("changed", []):
             old_text = change.get("old")
@@ -250,11 +242,6 @@ def get_dashboard(request: Request):
         reverse=True,
     )
 
-    weekly_records.sort(
-        key=lambda record: record.get("detected_at", ""),
-        reverse=True,
-    )
-
     with SessionLocal() as session:
         website_service = WebsiteService(session)
         website_summaries = website_service.get_all()
@@ -272,14 +259,11 @@ def get_dashboard(request: Request):
         name="dashboard.html",
         context={
             "daily_records": daily_records,
-            "weekly_records": weekly_records,
             "daily_date": (
                 latest_date.strftime("%d %b %Y")
                 if latest_date
                 else None
             ),
-            "week_start": week_start.strftime("%d %b %Y"),
-            "week_end": today.strftime("%d %b %Y"),
             "websites": websites,
             "users": users,
         },
