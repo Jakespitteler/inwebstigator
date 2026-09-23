@@ -1,7 +1,7 @@
 from difflib import SequenceMatcher
 
 from fastapi import FastAPI, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
@@ -188,6 +188,11 @@ def get_signup(request: Request):
 
 @app.get("/dashboard")
 def get_dashboard(request: Request):
+    if config.user_id is None:
+        return RedirectResponse(
+            url="/login",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
     with SessionLocal() as session:
         website_service = WebsiteService(session)
         website_summaries = website_service.get_all()
