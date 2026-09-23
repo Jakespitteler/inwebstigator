@@ -523,6 +523,19 @@
                                     aria-live="polite"
                                 ></p>
 
+                                <button
+                                    type="button"
+                                    class="run-scan-button"
+                                    data-website-url="{{ website.url }}"
+                                >
+                                    Run Scan Now
+                                </button>
+
+                                <p
+                                    class="run-scan-message"
+                                    aria-live="polite"
+                                ></p>
+
                             </form>
 
                         </details>
@@ -1073,6 +1086,70 @@
             );
         });
 
+        // Run a scan manually for an existing website
+        const runScanButtons =
+            document.querySelectorAll(
+                ".run-scan-button"
+            );
+
+        runScanButtons.forEach((button) => {
+
+            button.addEventListener(
+                "click",
+                async () => {
+
+                    const websiteUrl =
+                        button.dataset.websiteUrl;
+
+                    const message =
+                        button.parentElement.querySelector(
+                            ".run-scan-message"
+                        );
+
+                    button.disabled = true;
+                    message.textContent =
+                        "Running scan...";
+
+                    const formData =
+                        new FormData();
+
+                    formData.append(
+                        "url",
+                        websiteUrl
+                    );
+
+                    try {
+
+                        const response =
+                            await fetch(
+                                "/scanner/run",
+                                {
+                                    method: "POST",
+                                    body: formData
+                                }
+                            );
+
+                        if (!response.ok) {
+                            throw new Error(
+                                "Unable to complete scan."
+                            );
+                        }
+
+                        message.textContent =
+                            "Scan completed.";
+
+                        window.location.reload();
+
+                    } catch (error) {
+
+                        message.textContent =
+                            error.message;
+
+                        button.disabled = false;
+                    }
+                }
+            );
+        });
 
     </script>
 
