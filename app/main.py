@@ -205,11 +205,7 @@ def get_dashboard(request: Request):
         user_service = UserService(session)
         users = user_service.get_all()
 
-        current_user = None
-        if websites:
-            current_user = user_service.get(id=websites[0].user_id)
-        elif len(users) == 1:
-            current_user = users[0]
+        current_user = user_service.get(id=config.user_id)
 
         daily_records = []
 
@@ -308,6 +304,7 @@ def get_dashboard(request: Request):
             "daily_date": daily_date,
             "websites": websites,
             "users": users,
+            "current_user": current_user,
         },
     )
 

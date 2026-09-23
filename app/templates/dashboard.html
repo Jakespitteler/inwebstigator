@@ -299,7 +299,6 @@
 
         </section>
 
-
         <!-- MONITORED WEBSITES -->
         <section class="websites-section">
 
@@ -428,6 +427,7 @@
                             <form
                                 class="scan-settings-form"
                                 data-website-id="{{ website.id }}"
+                                data-user-id="{{ current_user.id }}"
                             >
 
                                 <div class="scan-setting-row">
@@ -478,7 +478,41 @@
                                     >
 
                                 </div>
+                                
+                                <div class="scan-setting-row">
 
+                                    <label>
+                                        Days between scans
+                                    </label>
+
+                                    <input
+                                        type="number"
+                                        class="days-between-scans"
+                                        value="{{ current_user.days_between_scans }}"
+                                        min="1"
+                                        step="1"
+                                        required
+                                    >
+
+                                </div>
+
+
+                                <div class="scan-setting-row">
+
+                                    <label>
+                                        Days between no-change notifications
+                                    </label>
+
+                                    <input
+                                        type="number"
+                                        class="days-between-health-checks"
+                                        value="{{ current_user.days_between_heath_checks }}"
+                                        min="1"
+                                        step="1"
+                                        required
+                                    >
+
+                                </div>
 
                                 <button type="submit">
                                     Save Settings
@@ -929,6 +963,9 @@
                     const websiteId =
                         form.dataset.websiteId;
 
+                    const userId =
+                        form.dataset.userId;
+
                     const active =
                         form.querySelector(
                             ".scan-active"
@@ -949,6 +986,22 @@
                             10
                         );
 
+                    const daysBetweenScans =
+                        parseInt(
+                            form.querySelector(
+                                ".days-between-scans"
+                            ).value,
+                            10
+                        );
+
+                    const daysBetweenHealthChecks =
+                        parseInt(
+                            form.querySelector(
+                                ".days-between-health-checks"
+                            ).value,
+                            10
+                        );
+
                     const message =
                         form.querySelector(
                             ".scan-settings-message"
@@ -959,7 +1012,7 @@
 
                     try {
 
-                        const response =
+                        const websiteResponse =
                             await fetch(
                                 `/websites/${websiteId}`,
                                 {
@@ -978,9 +1031,33 @@
                                 }
                             );
 
-                        if (!response.ok) {
+                        if (!websiteResponse.ok) {
                             throw new Error(
-                                "Unable to save scan settings."
+                                "Unable to save website settings."
+                            );
+                        }
+
+                        const userResponse =
+                            await fetch(
+                                `/users/${userId}`,
+                                {
+                                    method: "PATCH",
+                                    headers: {
+                                        "Content-Type":
+                                            "application/json"
+                                    },
+                                    body: JSON.stringify({
+                                        days_between_scans:
+                                            daysBetweenScans,
+                                        days_between_heath_checks:
+                                            daysBetweenHealthChecks
+                                    })
+                                }
+                            );
+
+                        if (!userResponse.ok) {
+                            throw new Error(
+                                "Unable to save schedule settings."
                             );
                         }
 
