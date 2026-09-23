@@ -5,6 +5,8 @@ from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, Stri
 from sqlalchemy import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from app.core.config import config
+
 
 class Base(DeclarativeBase):
     id: Mapped[uuid.UUID] = mapped_column(PG_UUID(), primary_key=True, default=uuid.uuid4)
@@ -22,6 +24,8 @@ class DBUser(Base):
 
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
     password: Mapped[str] = mapped_column(String, nullable=False)
+    days_between_scans: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    days_between_heath_checks: Mapped[int] = mapped_column(Integer, nullable=False, default=7)
     last_scan_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_email_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -35,7 +39,7 @@ class DBInternalLink(Base):
     __tablename__ = "internal_links"
 
     url: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
-    website_id: Mapped[int] = mapped_column(ForeignKey("websites.id", ondelete="CASCADE"), nullable=False)
+    website_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("websites.id", ondelete="CASCADE"), nullable=False)
     website: Mapped["DBWebsite"] = relationship(back_populates="internal_links")
 
 
@@ -48,7 +52,7 @@ class DBCriticalPage(Base):
     documents: Mapped[list[str]] = mapped_column(JSON, nullable=True)
     text_body: Mapped[str] = mapped_column(String, nullable=True)
 
-    website_id: Mapped[int] = mapped_column(ForeignKey("websites.id", ondelete="CASCADE"), nullable=False)
+    website_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("websites.id", ondelete="CASCADE"), nullable=False)
     website: Mapped["DBWebsite"] = relationship(back_populates="critical_pages")
 
     recent_links_added: Mapped[list[str]] = mapped_column(JSON, nullable=True)
@@ -67,8 +71,12 @@ class DBWebsite(Base):
     url: Mapped[str] = mapped_column(String, nullable=False, index=True)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     user: Mapped[DBUser] = relationship(back_populates="websites")
-    recommended_delay: Mapped[float] = mapped_column(Float, nullable=False)
-    recommended_concurrent: Mapped[int] = mapped_column(Integer, nullable=False)
+    recommended_delay: Mapped[float] = mapped_column(Float, nullable=False, default=config.web_crawler_default_delay)
+    recommended_concurrent: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=config.web_crawler_default_concurrent,
+    )
 
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     failed_attempts_at_min_speed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

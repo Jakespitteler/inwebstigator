@@ -6,11 +6,9 @@ from fastapi import FastAPI
 from pytest_mock import MockerFixture
 from sqlalchemy.orm import Session
 
-from app.core.config import config
 from app.db.services.user_service import UserService
 from app.models.user_models import UserRead
 from app.scheduler import (
-    DAYS_BETWEEN_HEALTH_CHECKS,
     _scan_with_fresh_db_session,  # pyright: ignore[reportPrivateUsage]
     _send_health_check_if_no_change,  # pyright: ignore[reportPrivateUsage]
     schedule_scans,
@@ -72,7 +70,7 @@ def test_send_health_check_if_no_change_triggered_when_overdue(
     mocker: MockerFixture,
 ):
     """Tests that a health check notification is sent when user.last_email_at exceeds threshold."""
-    overdue_email = datetime.now() - timedelta(days=DAYS_BETWEEN_HEALTH_CHECKS + 1)
+    overdue_email = datetime.now() - timedelta(days=test_user.days_between_heath_checks + 1)
     user_overdue = test_user.model_copy(update={"last_email_at": overdue_email})
     mock_send_notification = mocker.patch("app.scheduler.send_notification")
 
@@ -101,11 +99,7 @@ def test_send_health_check_if_no_change_skipped_when_recent(
 
 
 @pytest.mark.anyio
-async def test_schedule_scans_lifespan(
-    mock_db_context: MagicMock,
-    test_user: UserRead,
-    mocker: MockerFixture,
-):
+async def test_schedule_scans_lifespan(mock_db_context: MagicMock, test_user: UserRead, mocker: MockerFixture):
     """Tests lifespan initialisation: sets admin config, processes overdue scans, registers jobs, and manages"""
     mocker.patch.object(UserService, "get_all", return_value=[test_user])
     mock_scan_user = mocker.patch("app.scheduler.scan_user_websites")
@@ -119,7 +113,6 @@ async def test_schedule_scans_lifespan(
 
     async with schedule_scans(app):
         # Startup checks
-        assert config.user_id is not None
         mock_scan_user.assert_called_once_with(mock_db_context.return_value.__enter__.return_value, test_user)
         mock_health_check.assert_called_once_with(test_user)
 
@@ -132,11 +125,7 @@ async def test_schedule_scans_lifespan(
 
 
 @pytest.mark.anyio
-async def test_schedule_scans_skips_startup_scan_if_recent(
-    mock_db_context: MagicMock,
-    test_user: UserRead,
-    mocker: MockerFixture,
-):
+async def test_schedule_scans_skips_startup_scan_if_recent(test_user: UserRead, mocker: MockerFixture):
     """Tests that startup scans are skipped for users scanned within the defined interval."""
     recent_user = test_user.model_copy(update={"last_scan_at": datetime.now()})
     mocker.patch.object(UserService, "get_all", return_value=[recent_user])

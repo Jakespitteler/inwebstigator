@@ -2,10 +2,13 @@ import logging
 import uuid
 from collections.abc import Sequence
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import config
+from app.core.errors import NotLoggedInError
 from app.db import repository
-from app.db.schema import DBCriticalPage
+from app.db.schema import DBCriticalPage, DBWebsite
 from app.db.utils.interfaces import CRUDService
 from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead, CriticalPageUpdate
 
@@ -21,6 +24,10 @@ class CriticalPageService(CRUDService[CriticalPageRead, CriticalPageCreate, Crit
         """
         self._db = session
 
+        if not config.user_id:
+            raise NotLoggedInError()
+        self.user_id: uuid.UUID = config.user_id
+
     def get_all(self, skip: int = 0, limit: int = 100) -> Sequence[CriticalPageRead]:
         """Retrieves a paginated list of critical page records from the database.
 
@@ -31,12 +38,16 @@ class CriticalPageService(CRUDService[CriticalPageRead, CriticalPageCreate, Crit
         Returns:
             A sequence of CriticalPageRead models representing the retrieved records.
         """
-        critical_page_records: Sequence[DBCriticalPage] = repository.get_list(
-            self._db,
-            table=DBCriticalPage,
-            skip=skip,
-            limit=limit,
+        statement = (
+            select(DBCriticalPage)
+            .join(DBWebsite, DBCriticalPage.website_id == DBWebsite.id)
+            .where(DBWebsite.user_id == self.user_id)
+            .offset(skip)
+            .limit(limit)
         )
+
+        critical_page_records = self._db.scalars(statement).all()
+
         return [CriticalPageRead.model_validate(critical_page_record) for critical_page_record in critical_page_records]
 
     def get(self, id: uuid.UUID) -> CriticalPageRead:
