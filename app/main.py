@@ -172,6 +172,19 @@ async def invalid_credentials_error_handler(
         content={"detail": str(exc)},
     )
 
+@app.get("/login")
+def get_login(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="login.html",
+    )
+
+@app.get("/signup")
+def get_signup(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="signup.html",
+    )
 
 @app.get("/dashboard")
 def get_dashboard(request: Request):

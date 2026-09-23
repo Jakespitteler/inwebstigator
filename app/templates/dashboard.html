@@ -17,7 +17,17 @@
 
     <main class="dashboard-container">
 
-        <h1>Website Changes</h1>
+        <div class="dashboard-header">
+            <h1>Website Changes</h1>
+
+            <button
+                type="button"
+                id="logout-button"
+                class="logout-button"
+            >
+                Log Out
+            </button>
+        </div>
 
         <h2>Daily Changes</h2>
 
@@ -525,30 +535,6 @@
 
                     <div class="form-group">
 
-                        <label for="website-user">
-                            User
-                        </label>
-
-                        <select
-                            id="website-user"
-                            required
-                        >
-
-                            {% for user in users %}
-
-                                <option value="{{ user.id }}">
-                                    {{ user.email }}
-                                </option>
-
-                            {% endfor %}
-
-                        </select>
-
-                    </div>
-
-
-                    <div class="form-group">
-
                         <label>
                             Critical Pages
                             <span>(optional)</span>
@@ -603,6 +589,38 @@
 
     <script>
 
+        // Log out the current user
+        const logoutButton =
+            document.getElementById("logout-button");
+
+        logoutButton.addEventListener(
+            "click",
+            async () => {
+
+                try {
+                    const response =
+                        await fetch(
+                            "/users/log_out",
+                            {
+                                method: "POST"
+                            }
+                        );
+
+                    if (!response.ok) {
+                        throw new Error(
+                            "Unable to log out."
+                        );
+                    }
+
+                    window.location.href =
+                        "/login";
+
+                } catch (error) {
+                    alert(error.message);
+                }
+            }
+        );
+
         // Add extra critical-page fields when creating a website
         const addCriticalPageButton =
             document.getElementById(
@@ -653,11 +671,6 @@
                             "website-url"
                         ).value.trim();
 
-                    const userId =
-                        document.getElementById(
-                            "website-user"
-                        ).value;
-
                     const criticalPages =
                         Array.from(
                             document.querySelectorAll(
@@ -692,7 +705,6 @@
                                     },
                                     body: JSON.stringify({
                                         url: websiteUrl,
-                                        user_id: userId,
                                         critical_pages:
                                             criticalPages
                                     })
