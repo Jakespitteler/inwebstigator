@@ -1,7 +1,4 @@
-import json
-from datetime import datetime
 from difflib import SequenceMatcher
-from pathlib import Path
 
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
@@ -178,70 +175,6 @@ async def invalid_credentials_error_handler(
 
 @app.get("/dashboard")
 def get_dashboard(request: Request):
-    history_dir = Path(
-        "app/backend/diff_checker/v2/diff_check/change_history"
-    )
-
-    records = []
-    if history_dir.exists():
-        for history_file in history_dir.glob("*.json"):
-            with history_file.open("r", encoding="utf-8") as file:
-                file_records = json.load(file)
-
-                if isinstance(file_records, list):
-                    records.extend(file_records)
-
-    else:
-        sample_file = Path("data/sample_change_history.json")
-
-        if sample_file.exists():
-            with sample_file.open("r", encoding="utf-8") as file:
-                records = json.load(file)
-
-    daily_records = []
-
-    latest_date = None
-
-    if records:
-        latest_date = max(
-            datetime.fromisoformat(record["detected_at"]).date()
-            for record in records
-            if "detected_at" in record
-        )
-
-    for record in records:
-        detected_at_raw = record.get("detected_at")
-
-        if not detected_at_raw:
-            continue
-
-        detected_at = datetime.fromisoformat(detected_at_raw)
-
-        # Daily = latest available scan/change date
-        if latest_date and detected_at.date() == latest_date:
-            daily_records.append(record)
-
-        # Build word-level highlighting for changed text
-        for change in record.get("changed", []):
-            old_text = change.get("old")
-            new_text = change.get("new")
-
-            if old_text is None or new_text is None:
-                continue
-
-            old_html, new_html = build_word_diff(
-                old_text,
-                new_text,
-            )
-
-            change["old_html"] = old_html
-            change["new_html"] = new_html
-
-    daily_records.sort(
-        key=lambda record: record.get("detected_at", ""),
-        reverse=True,
-    )
-
     with SessionLocal() as session:
         website_service = WebsiteService(session)
         website_summaries = website_service.get_all()
@@ -254,16 +187,107 @@ def get_dashboard(request: Request):
         user_service = UserService(session)
         users = user_service.get_all()
 
+        current_user = None
+        if websites:
+            current_user = user_service.get(id=websites[0].user_id)
+        elif len(users) == 1:
+            current_user = users[0]
+
+        daily_records = []
+
+        for website in websites:
+            for critical_page in website.critical_pages:
+                changed = []
+                added = []
+                removed = []
+
+                for change in critical_page.recent_text_changed or []:
+                    old_html, new_html = build_word_diff(
+                        change.old_block.text,
+                        change.new_block.text,
+                    )
+
+                    changed.append(
+                        {
+                            "old_section": change.old_block.parent_heading,
+                            "new_section": change.new_block.parent_heading,
+                            "old": change.old_block.text,
+                            "new": change.new_block.text,
+                            "old_html": old_html,
+                            "new_html": new_html,
+                            "similarity": change.similarity,
+                        }
+                    )
+
+                for block in critical_page.recent_text_added or []:
+                    added.append(
+                        {
+                            "section": block.parent_heading,
+                            "text": block.text,
+                            "block_type": block.block_type.value,
+                        }
+                    )
+
+                for block in critical_page.recent_text_removed or []:
+                    removed.append(
+                        {
+                            "section": block.parent_heading,
+                            "text": block.text,
+                            "block_type": block.block_type.value,
+                        }
+                    )
+
+                links_added = list(
+                    critical_page.recent_links_added or []
+                )
+                links_removed = list(
+                    critical_page.recent_links_removed or []
+                )
+                documents_added = list(
+                    critical_page.recent_documents_added or []
+                )
+                documents_removed = list(
+                    critical_page.recent_documents_removed or []
+                )
+
+                has_changes = any(
+                    [
+                        changed,
+                        added,
+                        removed,
+                        links_added,
+                        links_removed,
+                        documents_added,
+                        documents_removed,
+                    ]
+                )
+
+                if has_changes:
+                    daily_records.append(
+                        {
+                            "url": critical_page.url,
+                            "website_url": website.url,
+                            "changed": changed,
+                            "added": added,
+                            "removed": removed,
+                            "links_added": links_added,
+                            "links_removed": links_removed,
+                            "documents_added": documents_added,
+                            "documents_removed": documents_removed,
+                        }
+                    )
+
+        daily_date = None
+
+        if current_user and current_user.last_scan_at:
+            daily_date = current_user.last_scan_at.strftime("%d %b %Y")
+
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
         context={
             "daily_records": daily_records,
-            "daily_date": (
-                latest_date.strftime("%d %b %Y")
-                if latest_date
-                else None
-            ),
+            "daily_date": daily_date,
             "websites": websites,
             "users": users,
         },
