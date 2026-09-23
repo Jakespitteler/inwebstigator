@@ -1,3 +1,7 @@
+from app.core.config import config
+
+config.automatic_scans = False
+
 import time
 import uuid
 from collections.abc import Callable, Iterator
@@ -14,7 +18,6 @@ from tenacity import wait_none
 from app.backend.email_service import send_email
 from app.backend.site_crawler import fetch_internal_links_from_url
 from app.backend.utils.links import normalise_url
-from app.core.config import config
 from app.db import core, repository, schema
 from app.db.utils.field_types import URLString
 from app.main import app
@@ -26,7 +29,6 @@ type RequestHandler = Callable[[httpx2.Request], httpx2.Response]
 # ==========================
 #  Database & Schema Setup
 # ==========================
-
 
 test_metadata = MetaData()
 TestBase = declarative_base(metadata=test_metadata)
