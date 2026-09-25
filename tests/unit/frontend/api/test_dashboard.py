@@ -37,6 +37,7 @@ def test_dashboard_loads_when_logged_in(
 
     assert response.status_code == 200
 
+
 def test_dashboard_updates_website_scan_settings(
     api_client: TestClient,
     test_website,
@@ -79,3 +80,29 @@ def test_dashboard_updates_schedule_settings(
 
     assert updated_user["days_between_scans"] == 2
     assert updated_user["days_between_heath_checks"] == 5
+
+
+def test_dashboard_runs_manual_scan(
+    api_client: TestClient,
+    test_website,
+    mocker,
+) -> None:
+    """Tests manually running a website scan from the dashboard."""
+    mock_scan_website = mocker.patch(
+        "app.frontend.api.routers.scan_website",
+        return_value="<p>Website Updated</p>",
+    )
+    mock_send_notification = mocker.patch(
+        "app.frontend.api.routers.send_notification",
+    )
+
+    response = api_client.post(
+        "/scanner/run",
+        data={"url": test_website.url},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == "<p>Website Updated</p>"
+
+    mock_scan_website.assert_awaited_once()
+    mock_send_notification.assert_called_once()
