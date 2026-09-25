@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 from app.db.services.user_service import UserService
 from app.models.user_models import UserRead
 from app.scheduler import (
-    _scan_with_fresh_db_session,  # pyright: ignore[reportPrivateUsage]
     _send_health_check_if_no_change,  # pyright: ignore[reportPrivateUsage]
     schedule_scans,
     scheduler,
@@ -32,17 +31,6 @@ def mock_db_context(mocker: MockerFixture, session: Session):
 # ======================================
 # Background Helper Function Tests
 # ======================================
-
-
-@pytest.mark.anyio
-async def test_scan_with_fresh_db_session(mock_db_context: MagicMock, test_user: UserRead, mocker: MockerFixture):
-    """Tests that _scan_with_fresh_db_session opens a DB session and invokes scan_user_websites."""
-    mock_scan_user = mocker.patch("app.scheduler.scan_user_websites")
-
-    await _scan_with_fresh_db_session(test_user)  # pyright: ignore[reportPrivateUsage]
-
-    mock_db_context.assert_called_once()
-    mock_scan_user.assert_called_once_with(mock_db_context.return_value.__enter__.return_value, test_user)
 
 
 def test_send_health_check_if_no_change_triggered_when_never_emailed(
