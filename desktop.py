@@ -3,16 +3,21 @@
 Runs the existing FastAPI app on a private local port in a background thread
 and shows it in a native window with pywebview.
 
-The application can be hidden to the Windows system tray. Closing the window
-does not stop the server; it hides the window instead. Use the tray's Quit
-option to fully exit the application.
+Features:
+- Only one instance of Inwebstigator can run at a time.
+- Closing the window hides it to the Windows system tray.
+- The tray's Open option shows the application again.
+- The tray's Hide option hides the application.
+- The tray's Quit option completely exits the application.
 """
 
+import ctypes
 import os
 import socket
 import sys
 import threading
 import time
+from ctypes import wintypes
 from pathlib import Path
 
 import app.main
@@ -63,31 +68,110 @@ ICON_PATH = resource_path(
 PAGE_STYLE = """
 <style>
   html, body { height: 100%; margin: 0; }
-  body { display: grid; place-items: center; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
-         color: #1d2433; background: #f5f7fa; }
-  @media (prefers-color-scheme: dark) { body { color: #e6e9ef; background: #141821; } }
-  main { max-width: 46ch; text-align: center; padding: 24px; }
-  h1 { font-size: 22px; font-weight: 600; margin: 0 0 8px; }
-  p { margin: 0; opacity: .75; }
+
+  body {
+    display: grid;
+    place-items: center;
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: #1d2433;
+    background: #f5f7fa;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    body {
+      color: #e6e9ef;
+      background: #141821;
+    }
+  }
+
+  main {
+    max-width: 46ch;
+    text-align: center;
+    padding: 24px;
+  }
+
+  h1 {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0 0 8px;
+  }
+
+  p {
+    margin: 0;
+    opacity: .75;
+  }
 </style>
 """
 
 LOADING_HTML = PAGE_STYLE + """
 <main>
   <h1>Starting Inwebstigator</h1>
-  <p>If a scheduled scan is overdue it runs now, before the dashboard opens.
-     This can take a few minutes for large websites.</p>
+  <p>
+    If a scheduled scan is overdue it runs now, before the dashboard opens.
+    This can take a few minutes for large websites.
+  </p>
 </main>
 """
 
 ERROR_HTML = PAGE_STYLE + """
 <main>
   <h1>Inwebstigator couldn't start</h1>
-  <p>The local server stopped before it was ready. The terminal window shows the error.
-     Close this window, fix the problem, then run desktop.py again.</p>
+  <p>
+    The local server stopped before it was ready. The terminal window shows
+    the error. Close this window, fix the problem, then run desktop.py again.
+  </p>
 </main>
 """
 
+def ensure_single_instance() -> bool:
+    """Prevent multiple instances of Inwebstigator from running on Windows."""
+
+    kernel32 = ctypes.WinDLL(
+        "kernel32",
+        use_last_error=True,
+    )
+
+    CreateMutexW = kernel32.CreateMutexW
+
+    CreateMutexW.argtypes = [
+        wintypes.LPVOID,
+        wintypes.BOOL,
+        wintypes.LPCWSTR,
+    ]
+
+    CreateMutexW.restype = wintypes.HANDLE
+
+    ERROR_ALREADY_EXISTS = 183
+
+    mutex = CreateMutexW(
+        None,
+        False,
+        "Global\\Inwebstigator_SingleInstance",
+    )
+
+    if not mutex:
+        raise ctypes.WinError(
+            ctypes.get_last_error()
+        )
+
+    # Windows sets the last-error value to ERROR_ALREADY_EXISTS
+    # when another process already owns this named mutex.
+    if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
+        ctypes.windll.user32.MessageBoxW(
+            None,
+            "Inwebstigator is already running.\n\n"
+            "Check the system tray for the Inwebstigator icon.",
+            "Inwebstigator",
+            0x40,  # MB_ICONINFORMATION
+        )
+
+        return False
+
+    # Keep the mutex handle alive for the lifetime of this process.
+    # If the handle were garbage-collected, the mutex could be released.
+    ensure_single_instance.mutex = mutex
+
+    return True
 
 def find_free_port() -> int:
     """Ask the OS for an unused port so the app never clashes with another server."""
@@ -152,10 +236,15 @@ class BackgroundServer:
 def main() -> None:
     global ALLOW_CLOSE
 
-    server = BackgroundServer(find_free_port())
+    server = BackgroundServer(
+        find_free_port()
+    )
+
     server.start()
 
-    webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
+    webview.settings[
+        "OPEN_EXTERNAL_LINKS_IN_BROWSER"
+    ] = True
 
     window = webview.create_window(
         "Inwebstigator",
@@ -254,8 +343,12 @@ def main() -> None:
     # ---------------------------------------------------------
 
     def show_app_when_ready() -> None:
-        if server.wait_until_ready(STARTUP_TIMEOUT_SECONDS):
-            window.load_url(server.url + START_PATH)
+        if server.wait_until_ready(
+            STARTUP_TIMEOUT_SECONDS
+        ):
+            window.load_url(
+                server.url + START_PATH
+            )
         else:
             window.load_html(ERROR_HTML)
 
@@ -272,16 +365,17 @@ def main() -> None:
     # Cleanup
     # ---------------------------------------------------------
 
-    # Normally this won't happen when the user clicks X because
-    # on_window_closing() intercepts it and hides the window.
+    # Normally clicking X does not reach this point because
+    # on_window_closing() intercepts the close and hides the window.
     #
-    # It can still happen if pywebview exits for another reason.
-    if not ALLOW_CLOSE:
-        ALLOW_CLOSE = True
+    # If pywebview exits for another reason, make sure everything
+    # is shut down cleanly.
+    ALLOW_CLOSE = True
 
     tray.stop()
     server.stop()
 
 
 if __name__ == "__main__":
-    main()
+    if ensure_single_instance():
+        main()
