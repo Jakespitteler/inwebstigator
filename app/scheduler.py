@@ -75,7 +75,10 @@ async def schedule_scans(app: FastAPI) -> AsyncGenerator[None]:
     for user in users:
         scheduler.add_job(scan_user_websites, "interval", days=user.days_between_scans, args=[user])  # pyright: ignore[reportUnknownMemberType]
         scheduler.add_job(  # pyright: ignore[reportUnknownMemberType]
-            _send_health_check_if_no_change, "interval", days=user.days_between_heath_checks, args=[user]
+            _send_health_check_if_no_change,
+            "interval",
+            days=user.days_between_heath_checks,
+            args=[user],
         )
 
     scheduler.start()
