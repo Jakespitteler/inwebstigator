@@ -15,6 +15,7 @@ from app.core.errors import (
     WebConnectionError,
 )
 from app.core.logging import setup_logging
+from app.core.paths import resource_path
 from app.db.core import SessionLocal, engine
 from app.db.schema import Base
 from app.db.services.user_service import UserService
@@ -33,11 +34,13 @@ else:
 
 app.mount(
     "/static",
-    StaticFiles(directory="app/frontend/static"),
+    StaticFiles(directory=resource_path("app", "frontend", "static")),
     name="static",
 )
 
-templates = Jinja2Templates(directory="app/templates")
+templates = Jinja2Templates(
+    directory=resource_path("app", "templates")
+)
 
 
 def build_word_diff(old_text: str, new_text: str) -> tuple[Markup, Markup]:
