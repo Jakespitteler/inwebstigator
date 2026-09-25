@@ -1,15 +1,10 @@
 """Desktop launcher for Inwebstigator.
 
 Runs the existing FastAPI app on a private local port in a background thread
-and shows it in a native window with pywebview. The web app itself is
-unchanged: the login page, dashboard, scanner routes and scheduler all work
-exactly as they do under `uvicorn app.main:app`.
+and shows it in a native window with pywebview.
 
-Usage, from the project root:
-
-    uv add pywebview          # first time only
-    uv run python desktop.py
-    uv run python desktop.py --debug    # adds right-click > Inspect dev tools
+The application can be hidden to the Windows system tray. Closing the window
+does not stop the server; use the tray's Quit option to fully exit.
 """
 
 import os
@@ -20,21 +15,25 @@ import time
 from pathlib import Path
 
 # The app loads templates, static files and the SQLite database through paths
-# relative to the working directory, so always run from the project root no
-# matter where this script was launched from.
+# relative to the working directory, so always run from the project root.
 ROOT = Path(__file__).resolve().parent
 os.chdir(ROOT)
 sys.path.insert(0, str(ROOT))
 
 import uvicorn  # noqa: E402
 import webview  # noqa: E402
+import pystray  # noqa: E402
+from PIL import Image  # noqa: E402
+
 
 HOST = "127.0.0.1"
-START_PATH = "/dashboard"  # the dashboard redirects to /login when nobody is logged in
+START_PATH = "/dashboard"
 
-# Startup can take a while: with automatic_scans on, the scheduler's lifespan
-# runs any overdue scans before the server starts accepting requests.
 STARTUP_TIMEOUT_SECONDS = 15 * 60
+
+# Application icon used by the system tray.
+ICON_PATH = ROOT / "app" / "frontend" / "static" / "favicon.ico"
+
 
 PAGE_STYLE = """
 <style>
@@ -77,13 +76,24 @@ class BackgroundServer:
 
     def __init__(self, port: int) -> None:
         self.port = port
-        self.server = uvicorn.Server(uvicorn.Config("app.main:app", host=HOST, port=port, log_level="info"))
-        self.thread = threading.Thread(target=self._run, name="uvicorn", daemon=True)
+        self.server = uvicorn.Server(
+            uvicorn.Config(
+                "app.main:app",
+                host=HOST,
+                port=port,
+                log_level="info",
+            )
+        )
+        self.thread = threading.Thread(
+            target=self._run,
+            name="uvicorn",
+            daemon=True,
+        )
 
     def _run(self) -> None:
         try:
             self.server.run()
-        except BaseException:  # uvicorn calls sys.exit() on startup failure; the error is already logged
+        except BaseException:
             pass
 
     @property
@@ -95,16 +105,20 @@ class BackgroundServer:
 
     def wait_until_ready(self, timeout: float) -> bool:
         deadline = time.monotonic() + timeout
+
         while time.monotonic() < deadline:
             if self.server.started:
                 return True
+
             if not self.thread.is_alive():
                 return False
+
             time.sleep(0.1)
+
         return False
 
     def stop(self) -> None:
-        """Ask uvicorn to shut down cleanly, which also runs the scheduler's shutdown."""
+        """Ask uvicorn to shut down cleanly."""
         self.server.should_exit = True
         self.thread.join(timeout=10)
 
@@ -113,7 +127,6 @@ def main() -> None:
     server = BackgroundServer(find_free_port())
     server.start()
 
-    # Links with target="_blank" (monitored pages, documents) open in the normal browser.
     webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
 
     window = webview.create_window(
@@ -124,14 +137,82 @@ def main() -> None:
         min_size=(900, 600),
     )
 
+    # ---------------------------------------------------------
+    # System tray
+    # ---------------------------------------------------------
+
+    if not ICON_PATH.exists():
+        raise FileNotFoundError(
+            f"Tray icon not found: {ICON_PATH}"
+        )
+
+    tray_image = Image.open(ICON_PATH)
+
+    def show_window(icon, item):
+        window.show()
+
+    def hide_window(icon, item):
+        window.hide()
+
+    def quit_application(icon, item):
+        """Fully shut down the application."""
+        icon.stop()
+        server.stop()
+
+        try:
+            window.destroy()
+        except Exception:
+            pass
+
+    tray_menu = pystray.Menu(
+        pystray.MenuItem(
+            "Open",
+            show_window,
+            default=True,
+        ),
+        pystray.MenuItem(
+            "Hide",
+            hide_window,
+        ),
+        pystray.MenuItem(
+            "Quit",
+            quit_application,
+        ),
+    )
+
+    tray = pystray.Icon(
+        "Digital Horizon Scan",
+        tray_image,
+        "Digital Horizon Scan",
+        tray_menu,
+    )
+
+    # pystray.run() blocks, so run it separately.
+    tray_thread = threading.Thread(
+        target=tray.run,
+        name="system-tray",
+        daemon=True,
+    )
+    tray_thread.start()
+
+    # ---------------------------------------------------------
+    # Start the web application when Uvicorn is ready
+    # ---------------------------------------------------------
+
     def show_app_when_ready() -> None:
         if server.wait_until_ready(STARTUP_TIMEOUT_SECONDS):
             window.load_url(server.url + START_PATH)
         else:
             window.load_html(ERROR_HTML)
 
-    # webview.start() blocks until the window closes; show_app_when_ready runs in its own thread.
-    webview.start(show_app_when_ready, debug="--debug" in sys.argv)
+    # Start pywebview.
+    webview.start(
+        show_app_when_ready,
+        debug="--debug" in sys.argv,
+    )
+
+    # If pywebview exits, stop the tray and server.
+    tray.stop()
     server.stop()
 
 
