@@ -1,3 +1,6 @@
+import sys
+from pathlib import Path
+
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,7 +21,13 @@ if config.automatic_scans:
     app = FastAPI(title=config.app_name, lifespan=schedule_scans)
 else:
     app = FastAPI(title=config.app_name)
-app.mount("/static", StaticFiles(directory="app/frontend/static"), name="static")
+
+
+bundle_dir = getattr(sys, "_MEIPASS", None)
+static_dir_base = Path("app/frontend/static")
+static_dir = Path(bundle_dir) / static_dir_base if bundle_dir else static_dir_base
+
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
 @app.exception_handler(NotFoundError)

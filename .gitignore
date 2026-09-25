@@ -22,3 +22,4 @@ wheels/
 # Also ignore a plain .env (the *.env rule above misses it)
 .env
 !.env.example
+*.spec
