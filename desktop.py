@@ -4,7 +4,8 @@ Runs the existing FastAPI app on a private local port in a background thread
 and shows it in a native window with pywebview.
 
 The application can be hidden to the Windows system tray. Closing the window
-does not stop the server; use the tray's Quit option to fully exit.
+does not stop the server; it hides the window instead. Use the tray's Quit
+option to fully exit the application.
 """
 
 import os
@@ -13,11 +14,13 @@ import sys
 import threading
 import time
 from pathlib import Path
+
 import app.main
 
 # The app loads templates, static files and the SQLite database through paths
 # relative to the working directory, so always run from the project root.
 ROOT = Path(__file__).resolve().parent
+
 
 def resource_path(*parts: str) -> Path:
     """Return the path to a bundled application resource."""
@@ -27,6 +30,7 @@ def resource_path(*parts: str) -> Path:
         base = ROOT
 
     return base.joinpath(*parts)
+
 
 os.chdir(ROOT)
 sys.path.insert(0, str(ROOT))
@@ -41,6 +45,12 @@ HOST = "127.0.0.1"
 START_PATH = "/dashboard"
 
 STARTUP_TIMEOUT_SECONDS = 15 * 60
+
+# Controls whether the pywebview window is allowed to actually close.
+#
+# False = clicking X hides the window and keeps the application running.
+# True = the application is intentionally shutting down.
+ALLOW_CLOSE = False
 
 # Application icon used by the system tray.
 ICON_PATH = resource_path(
@@ -99,6 +109,7 @@ class BackgroundServer:
                 log_level="info",
             )
         )
+
         self.thread = threading.Thread(
             target=self._run,
             name="uvicorn",
@@ -139,6 +150,8 @@ class BackgroundServer:
 
 
 def main() -> None:
+    global ALLOW_CLOSE
+
     server = BackgroundServer(find_free_port())
     server.start()
 
@@ -153,6 +166,20 @@ def main() -> None:
     )
 
     # ---------------------------------------------------------
+    # Window close handling
+    # ---------------------------------------------------------
+
+    def on_window_closing():
+        """Hide the window instead of closing the application."""
+        if not ALLOW_CLOSE:
+            window.hide()
+            return False
+
+        return True
+
+    window.events.closing += on_window_closing
+
+    # ---------------------------------------------------------
     # System tray
     # ---------------------------------------------------------
 
@@ -164,16 +191,27 @@ def main() -> None:
     tray_image = Image.open(ICON_PATH)
 
     def show_window(icon, item):
+        """Show the main application window."""
         window.show()
 
     def hide_window(icon, item):
+        """Hide the main application window."""
         window.hide()
 
     def quit_application(icon, item):
         """Fully shut down the application."""
+        global ALLOW_CLOSE
+
+        # Allow the window to actually close now.
+        ALLOW_CLOSE = True
+
+        # Stop the tray icon.
         icon.stop()
+
+        # Stop the FastAPI/Uvicorn server.
         server.stop()
 
+        # Destroy the pywebview window.
         try:
             window.destroy()
         except Exception:
@@ -196,9 +234,9 @@ def main() -> None:
     )
 
     tray = pystray.Icon(
-        "Digital Horizon Scan",
+        "Inwebstigator",
         tray_image,
-        "Digital Horizon Scan",
+        "Inwebstigator",
         tray_menu,
     )
 
@@ -208,6 +246,7 @@ def main() -> None:
         name="system-tray",
         daemon=True,
     )
+
     tray_thread.start()
 
     # ---------------------------------------------------------
@@ -220,13 +259,26 @@ def main() -> None:
         else:
             window.load_html(ERROR_HTML)
 
-    # Start pywebview.
+    # ---------------------------------------------------------
+    # Start pywebview
+    # ---------------------------------------------------------
+
     webview.start(
         show_app_when_ready,
         debug="--debug" in sys.argv,
     )
 
-    # If pywebview exits, stop the tray and server.
+    # ---------------------------------------------------------
+    # Cleanup
+    # ---------------------------------------------------------
+
+    # Normally this won't happen when the user clicks X because
+    # on_window_closing() intercepts it and hides the window.
+    #
+    # It can still happen if pywebview exits for another reason.
+    if not ALLOW_CLOSE:
+        ALLOW_CLOSE = True
+
     tray.stop()
     server.stop()
 
