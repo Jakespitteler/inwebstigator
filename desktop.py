@@ -13,10 +13,21 @@ import sys
 import threading
 import time
 from pathlib import Path
+import app.main
 
 # The app loads templates, static files and the SQLite database through paths
 # relative to the working directory, so always run from the project root.
 ROOT = Path(__file__).resolve().parent
+
+def resource_path(*parts: str) -> Path:
+    """Return the path to a bundled application resource."""
+    if getattr(sys, "frozen", False):
+        base = Path(sys._MEIPASS)
+    else:
+        base = ROOT
+
+    return base.joinpath(*parts)
+
 os.chdir(ROOT)
 sys.path.insert(0, str(ROOT))
 
@@ -32,8 +43,12 @@ START_PATH = "/dashboard"
 STARTUP_TIMEOUT_SECONDS = 15 * 60
 
 # Application icon used by the system tray.
-ICON_PATH = ROOT / "app" / "frontend" / "static" / "favicon.ico"
-
+ICON_PATH = resource_path(
+    "app",
+    "frontend",
+    "static",
+    "favicon.ico",
+)
 
 PAGE_STYLE = """
 <style>
@@ -78,7 +93,7 @@ class BackgroundServer:
         self.port = port
         self.server = uvicorn.Server(
             uvicorn.Config(
-                "app.main:app",
+                app.main.app,
                 host=HOST,
                 port=port,
                 log_level="info",
