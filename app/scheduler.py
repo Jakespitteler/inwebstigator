@@ -37,9 +37,17 @@ def _send_health_check_if_no_change(user: UserRead) -> None:
     Args:
         user (UserRead): The target user to check and notify.
     """
-    if not user.last_email_at or (datetime.now() - user.last_email_at) > timedelta(days=user.days_between_heath_checks):
-        with db_context() as session:
-            send_notification(session, user, report="No changes have been found since the last notification")
+    with db_context() as session:
+        current_user = UserService(session).get(id=user.id)
+
+        if not current_user.last_email_at or (
+            datetime.now() - current_user.last_email_at
+        ) > timedelta(days=current_user.days_between_heath_checks):
+            send_notification(
+                session,
+                current_user,
+                report="No changes have been found since the last notification",
+            )
 
 
 @asynccontextmanager
@@ -59,17 +67,31 @@ async def schedule_scans(app: FastAPI) -> AsyncGenerator[None]:
 
     with db_context() as session:
         users = UserService(session).get_all()
+
         for user in users:
-            if not user.last_scan_at or (datetime.now() - user.last_scan_at) > timedelta(days=user.days_between_scans):
-                logger.info("Missed scan interval detected. Running scan immediately on startup...")
+            if not user.last_scan_at or (
+                datetime.now() - user.last_scan_at
+            ) > timedelta(days=user.days_between_scans):
+                logger.info(
+                    "Missed scan interval detected. Running scan immediately on startup..."
+                )
                 await scan_user_websites(session, user)
-            else:
-                _send_health_check_if_no_change(user)
 
     for user in users:
-        scheduler.add_job(_scan_with_fresh_db_session, "interval", days=user.days_between_scans, args=[user])  # pyright: ignore[reportUnknownMemberType]
+        _send_health_check_if_no_change(user)
+
+    for user in users:
         scheduler.add_job(  # pyright: ignore[reportUnknownMemberType]
-            _send_health_check_if_no_change, "interval", days=user.days_between_heath_checks, args=[user]
+            _scan_with_fresh_db_session,
+            "interval",
+            days=user.days_between_scans,
+            args=[user],
+        )
+        scheduler.add_job(  # pyright: ignore[reportUnknownMemberType]
+            _send_health_check_if_no_change,
+            "interval",
+            days=user.days_between_heath_checks,
+            args=[user],
         )
 
     scheduler.start()
