@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Website Changes</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', path='dashboard.css') }}"
+    >
+</head>
+
+<body>
+
+    <main class="dashboard-container">
+
+        <div class="dashboard-header">
+            <h1>Website Changes</h1>
+
+            <button
+                type="button"
+                id="logout-button"
+                class="logout-button"
+            >
+                Log Out
+            </button>
+        </div>
+
+        <h2>Daily Changes</h2>
+
+        <!-- DAILY CHANGES -->
+        <section id="daily-changes">
+
+            {% if daily_date %}
+                <p class="week-range">
+                    Latest scan: {{ daily_date }}
+                </p>
+            {% endif %}
+
+            {% if daily_records %}
+
+                {% for record in daily_records %}
+
+                    <section class="change-record">
+
+                        <p class="page-url">
+                            {{ record.url }}
+                        </p>
+
+                        <!-- Changed content -->
+                        {% for change in record.changed %}
+
+                            <div class="change-section">
+
+                                {% if change.old_section != change.new_section %}
+
+                                    <h2>Section changed</h2>
+
+                                    <table class="comparison-table">
+
+                                        <thead>
+                                            <tr>
+                                                <th>Before</th>
+                                                <th>After</th>
+                                            </tr>
+                                        </thead>
+
+                                        <tbody>
+                                            <tr>
+                                                <td>
+                                                    {{ change.old_section }}
+                                                </td>
+
+                                                <td>
+                                                    {{ change.new_section }}
+                                                </td>
+                                            </tr>
+                                        </tbody>
+
+                                    </table>
+
+                                {% endif %}
+
+                                {% if change.old != change.new %}
+
+                                    <h2>Content changed</h2>
+
+                                    <table class="comparison-table">
+
+                                        <thead>
+                                            <tr>
+                                                <th>Before</th>
+                                                <th>After</th>
+                                            </tr>
+                                        </thead>
+
+                                        <tbody>
+                                            <tr>
+                                                <td>
+                                                    {{ change.old_html | safe }}
+                                                </td>
+
+                                                <td>
+                                                    {{ change.new_html | safe }}
+                                                </td>
+                                            </tr>
+                                        </tbody>
+
+                                    </table>
+
+                                {% endif %}
+
+                            </div>
+
+                        {% endfor %}
+
+
+                        <!-- Added text -->
+                        {% for item in record.added %}
+
+                            <div class="change-section">
+
+                                {% if item is mapping %}
+
+                                    <h2>
+                                        {{ item.section }}
+                                    </h2>
+
+                                    <p>
+                                        {{ item.text }}
+
+                                        <span class="added-label">
+                                            — Added
+                                        </span>
+                                    </p>
+
+                                {% else %}
+
+                                    <p>
+                                        {{ item }}
+
+                                        <span class="added-label">
+                                            — Added
+                                        </span>
+                                    </p>
+
+                                {% endif %}
+
+                            </div>
+
+                        {% endfor %}
+
+
+                        <!-- Removed text -->
+                        {% for item in record.removed %}
+
+                            <div class="change-section">
+
+                                {% if item is mapping %}
+
+                                    <h2>
+                                        {{ item.section }}
+                                    </h2>
+
+                                    <p>
+                                        {{ item.text }}
+
+                                        <span class="removed-label">
+                                            — Removed
+                                        </span>
+                                    </p>
+
+                                {% else %}
+
+                                    <p>
+                                        {{ item }}
+
+                                        <span class="removed-label">
+                                            — Removed
+                                        </span>
+                                    </p>
+
+                                {% endif %}
+
+                            </div>
+
+                        {% endfor %}
+
+
+                        <!-- Added / removed links -->
+                        {% if record.links_added or record.links_removed %}
+
+                            <div class="change-section">
+
+                                <h2>Links</h2>
+
+                                {% for link in record.links_added %}
+
+                                    <p>
+                                        <a
+                                            href="{{ link }}"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                        >
+                                            {{ link }}
+                                        </a>
+
+                                        <span class="added-label">
+                                            — Added
+                                        </span>
+                                    </p>
+
+                                {% endfor %}
+
+                                {% for link in record.links_removed %}
+
+                                    <p>
+                                        <a
+                                            href="{{ link }}"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                        >
+                                            {{ link }}
+                                        </a>
+
+                                        <span class="removed-label">
+                                            — Removed
+                                        </span>
+                                    </p>
+
+                                {% endfor %}
+
+                            </div>
+
+                        {% endif %}
+
+
+                        <!-- Added / removed documents -->
+                        {% if record.documents_added or record.documents_removed %}
+
+                            <div class="change-section">
+
+                                <h2>Documents</h2>
+
+                                {% for document in record.documents_added %}
+
+                                    <p>
+                                        <a
+                                            href="{{ document }}"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                        >
+                                            {{ document.split('/')[-1] }}
+                                        </a>
+
+                                        <span class="added-label">
+                                            — Added
+                                        </span>
+                                    </p>
+
+                                {% endfor %}
+
+                                {% for document in record.documents_removed %}
+
+                                    <p>
+                                        <a
+                                            href="{{ document }}"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                        >
+                                            {{ document.split('/')[-1] }}
+                                        </a>
+
+                                        <span class="removed-label">
+                                            — Removed
+                                        </span>
+                                    </p>
+
+                                {% endfor %}
+
+                            </div>
+
+                        {% endif %}
+
+                    </section>
+
+                {% endfor %}
+
+            {% else %}
+
+                <p>
+                    No changes were detected in the latest scan.
+                </p>
+
+            {% endif %}
+
+        </section>
+
+        <!-- MONITORED WEBSITES -->
+        <section class="websites-section">
+
+            <h2>Monitored Websites</h2>
+
+            {% if websites %}
+
+                {% for website in websites %}
+
+                    <div class="website-card">
+
+                        <h3>
+                            <a
+                                href="{{ website.url }}"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                {{ website.url }}
+                            </a>
+                        </h3>
+
+                        <button
+                            type="button"
+                            class="delete-website-button"
+                            data-website-id="{{ website.id }}"
+                            data-website-url="{{ website.url }}"
+                        >
+                            Delete Website
+                        </button>
+
+
+                        <div class="website-summary">
+
+                            <p>
+                                <strong>Critical pages:</strong>
+                                {{ website.critical_pages | length
+                                   if website.critical_pages else 0 }}
+                            </p>
+
+                            <p>
+                                <strong>Internal pages:</strong>
+                                {{ website.internal_links | length
+                                   if website.internal_links else 0 }}
+                            </p>
+
+                        </div>
+
+
+                        <h4>Critical Pages</h4>
+
+                        {% if website.critical_pages %}
+
+                            <ul class="critical-page-list">
+
+                                {% for page in website.critical_pages %}
+
+                                    <li>
+
+                                        <a
+                                            href="{{ page.url }}"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                        >
+                                            {{ page.url }}
+                                        </a>
+
+                                        <button
+                                            type="button"
+                                            class="delete-critical-page-button"
+                                            data-page-id="{{ page.id }}"
+                                        >
+                                            Delete
+                                        </button>
+
+                                    </li>
+
+                                {% endfor %}
+
+                            </ul>
+
+                        {% else %}
+
+                            <p>
+                                No critical pages have been added.
+                            </p>
+
+                        {% endif %}
+
+
+                        <!-- Add a critical page later -->
+                        <form
+                            class="add-critical-page-form"
+                            data-website-id="{{ website.id }}"
+                        >
+
+                            <label>
+                                Add Critical Page
+                            </label>
+
+                            <input
+                                type="url"
+                                class="new-critical-page-url"
+                                placeholder="https://example.com/page"
+                                required
+                            >
+
+                            <button type="submit">
+                                Add Critical Page
+                            </button>
+
+                            <p
+                                class="critical-page-message"
+                                aria-live="polite"
+                            ></p>
+
+                        </form>
+
+
+                        <!-- Scan settings -->
+                        <details class="scan-settings">
+
+                            <summary>
+                                Scan Settings
+                            </summary>
+
+                            <form
+                                class="scan-settings-form"
+                                data-website-id="{{ website.id }}"
+                                data-user-id="{{ current_user.id }}"
+                            >
+
+                                <div class="scan-setting-row">
+
+                                    <label>
+                                        <input
+                                            type="checkbox"
+                                            class="scan-active"
+                                            {% if website.active %}checked{% endif %}
+                                        >
+                                        Active
+                                    </label>
+
+                                </div>
+
+
+                                <div class="scan-setting-row">
+
+                                    <label>
+                                        Request delay (seconds)
+                                    </label>
+
+                                    <input
+                                        type="number"
+                                        class="scan-delay"
+                                        value="{{ website.recommended_delay }}"
+                                        min="0"
+                                        step="0.1"
+                                        required
+                                    >
+
+                                </div>
+
+
+                                <div class="scan-setting-row">
+
+                                    <label>
+                                        Concurrent requests
+                                    </label>
+
+                                    <input
+                                        type="number"
+                                        class="scan-concurrent"
+                                        value="{{ website.recommended_concurrent }}"
+                                        min="1"
+                                        step="1"
+                                        required
+                                    >
+
+                                </div>
+                                
+                                <div class="scan-setting-row">
+
+                                    <label>
+                                        Days between scans
+                                    </label>
+
+                                    <input
+                                        type="number"
+                                        class="days-between-scans"
+                                        value="{{ current_user.days_between_scans }}"
+                                        min="1"
+                                        step="1"
+                                        required
+                                    >
+
+                                </div>
+
+
+                                <div class="scan-setting-row">
+
+                                    <label>
+                                        Days between no-change notifications
+                                    </label>
+
+                                    <input
+                                        type="number"
+                                        class="days-between-health-checks"
+                                        value="{{ current_user.days_between_heath_checks }}"
+                                        min="1"
+                                        step="1"
+                                        required
+                                    >
+
+                                </div>
+
+                                <button type="submit">
+                                    Save Settings
+                                </button>
+
+                                <p
+                                    class="scan-settings-message"
+                                    aria-live="polite"
+                                ></p>
+
+                                <button
+                                    type="button"
+                                    class="run-scan-button"
+                                    data-website-url="{{ website.url }}"
+                                >
+                                    Run Scan Now
+                                </button>
+
+                                <p
+                                    class="run-scan-message"
+                                    aria-live="polite"
+                                ></p>
+
+                            </form>
+
+                        </details>
+
+                    </div>
+
+                {% endfor %}
+
+            {% else %}
+
+                <p>
+                    No websites are currently being monitored.
+                </p>
+
+            {% endif %}
+
+        </section>
+
+
+        <!-- ADD WEBSITE -->
+        <section class="add-website-section">
+
+            <h2>Add Website</h2>
+
+            {% if users %}
+
+                <form id="add-website-form">
+
+                    <div class="form-group">
+
+                        <label for="website-url">
+                            Website URL
+                        </label>
+
+                        <input
+                            type="url"
+                            id="website-url"
+                            placeholder="https://example.com"
+                            required
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label>
+                            Critical Pages
+                            <span>(optional)</span>
+                        </label>
+
+                        <div id="critical-page-inputs">
+
+                            <input
+                                type="url"
+                                class="critical-page-input"
+                                placeholder="https://example.com/critical-page"
+                            >
+
+                        </div>
+
+                        <button
+                            type="button"
+                            id="add-critical-page-input"
+                        >
+                            + Add another critical page
+                        </button>
+
+                    </div>
+
+
+                    <button
+                        type="submit"
+                        class="submit-button"
+                    >
+                        Add Website
+                    </button>
+
+                    <p
+                        id="website-form-message"
+                        aria-live="polite"
+                    ></p>
+
+                </form>
+
+            {% else %}
+
+                <p>
+                    A user must exist before a website can be added.
+                </p>
+
+            {% endif %}
+
+        </section>
+
+    </main>
+
+
+    <script>
+
+        // Log out the current user
+        const logoutButton =
+            document.getElementById("logout-button");
+
+        logoutButton.addEventListener(
+            "click",
+            async () => {
+
+                try {
+                    const response =
+                        await fetch(
+                            "/users/log_out",
+                            {
+                                method: "POST"
+                            }
+                        );
+
+                    if (!response.ok) {
+                        throw new Error(
+                            "Unable to log out."
+                        );
+                    }
+
+                    window.location.href =
+                        "/login";
+
+                } catch (error) {
+                    alert(error.message);
+                }
+            }
+        );
+
+        // Add extra critical-page fields when creating a website
+        const addCriticalPageButton =
+            document.getElementById(
+                "add-critical-page-input"
+            );
+
+        if (addCriticalPageButton) {
+
+            addCriticalPageButton.addEventListener(
+                "click",
+                () => {
+
+                    const input =
+                        document.createElement("input");
+
+                    input.type = "url";
+                    input.className =
+                        "critical-page-input";
+                    input.placeholder =
+                        "https://example.com/critical-page";
+
+                    document
+                        .getElementById(
+                            "critical-page-inputs"
+                        )
+                        .appendChild(input);
+                }
+            );
+        }
+
+
+        // Add a new website
+        const addWebsiteForm =
+            document.getElementById(
+                "add-website-form"
+            );
+
+        if (addWebsiteForm) {
+
+            addWebsiteForm.addEventListener(
+                "submit",
+                async (event) => {
+
+                    event.preventDefault();
+
+                    const websiteUrl =
+                        document.getElementById(
+                            "website-url"
+                        ).value.trim();
+
+                    const criticalPages =
+                        Array.from(
+                            document.querySelectorAll(
+                                ".critical-page-input"
+                            )
+                        )
+                            .map((input) =>
+                                input.value.trim()
+                            )
+                            .filter((url) =>
+                                url.length > 0
+                            );
+
+                    const message =
+                        document.getElementById(
+                            "website-form-message"
+                        );
+
+                    message.textContent =
+                        "Adding website...";
+
+                    try {
+
+                        const response =
+                            await fetch(
+                                "/websites/",
+                                {
+                                    method: "POST",
+                                    headers: {
+                                        "Content-Type":
+                                            "application/json"
+                                    },
+                                    body: JSON.stringify({
+                                        url: websiteUrl,
+                                        critical_pages:
+                                            criticalPages
+                                    })
+                                }
+                            );
+
+                        if (!response.ok) {
+                            throw new Error(
+                                "Unable to add website."
+                            );
+                        }
+
+                        window.location.reload();
+
+                    } catch (error) {
+
+                        message.textContent =
+                            error.message;
+                    }
+                }
+            );
+        }
+
+
+        // Add a critical page to an existing website
+        const criticalPageForms =
+            document.querySelectorAll(
+                ".add-critical-page-form"
+            );
+
+        criticalPageForms.forEach((form) => {
+
+            form.addEventListener(
+                "submit",
+                async (event) => {
+
+                    event.preventDefault();
+
+                    const websiteId =
+                        form.dataset.websiteId;
+
+                    const input =
+                        form.querySelector(
+                            ".new-critical-page-url"
+                        );
+
+                    const message =
+                        form.querySelector(
+                            ".critical-page-message"
+                        );
+
+                    const pageUrl =
+                        input.value.trim();
+
+                    message.textContent =
+                        "Adding critical page...";
+
+                    try {
+
+                        const response =
+                            await fetch(
+                                "/critical_pages/",
+                                {
+                                    method: "POST",
+                                    headers: {
+                                        "Content-Type":
+                                            "application/json"
+                                    },
+                                    body: JSON.stringify({
+                                        url: pageUrl,
+                                        website_id:
+                                            websiteId
+                                    })
+                                }
+                            );
+
+                        if (!response.ok) {
+                            throw new Error(
+                                "Unable to add critical page."
+                            );
+                        }
+
+                        window.location.reload();
+
+                    } catch (error) {
+
+                        message.textContent =
+                            error.message;
+                    }
+                }
+            );
+        });
+
+
+        // Delete an existing critical page
+        const deleteCriticalPageButtons =
+            document.querySelectorAll(
+                ".delete-critical-page-button"
+            );
+
+        deleteCriticalPageButtons.forEach(
+            (button) => {
+
+                button.addEventListener(
+                    "click",
+                    async () => {
+
+                        const pageId =
+                            button.dataset.pageId;
+
+                        const confirmed =
+                            window.confirm(
+                                "Delete this critical page?"
+                            );
+
+                        if (!confirmed) {
+                            return;
+                        }
+
+                        try {
+
+                            const response =
+                                await fetch(
+                                    `/critical_pages/${pageId}`,
+                                    {
+                                        method: "DELETE"
+                                    }
+                                );
+
+                            if (!response.ok) {
+                                throw new Error(
+                                    "Unable to delete critical page."
+                                );
+                            }
+
+                            window.location.reload();
+
+                        } catch (error) {
+
+                            window.alert(
+                                error.message
+                            );
+                        }
+                    }
+                );
+            }
+        );
+
+
+        // Delete an existing website
+        const deleteWebsiteButtons =
+            document.querySelectorAll(
+                ".delete-website-button"
+            );
+
+        deleteWebsiteButtons.forEach(
+            (button) => {
+
+                button.addEventListener(
+                    "click",
+                    async () => {
+
+                        const websiteId =
+                            button.dataset.websiteId;
+
+                        const websiteUrl =
+                            button.dataset.websiteUrl;
+
+                        const confirmed =
+                            window.confirm(
+                                `Delete ${websiteUrl}?`
+                            );
+
+                        if (!confirmed) {
+                            return;
+                        }
+
+                        try {
+
+                            const response =
+                                await fetch(
+                                    `/websites/${websiteId}`,
+                                    {
+                                        method: "DELETE"
+                                    }
+                                );
+
+                            if (!response.ok) {
+                                throw new Error(
+                                    "Unable to delete website."
+                                );
+                            }
+
+                            window.location.reload();
+
+                        } catch (error) {
+
+                            window.alert(
+                                error.message
+                            );
+                        }
+                    }
+                );
+            }
+        );
+
+
+        // Update scan settings for an existing website
+        const scanSettingsForms =
+            document.querySelectorAll(
+                ".scan-settings-form"
+            );
+
+        scanSettingsForms.forEach((form) => {
+
+            form.addEventListener(
+                "submit",
+                async (event) => {
+
+                    event.preventDefault();
+
+                    const websiteId =
+                        form.dataset.websiteId;
+
+                    const userId =
+                        form.dataset.userId;
+
+                    const active =
+                        form.querySelector(
+                            ".scan-active"
+                        ).checked;
+
+                    const delay =
+                        parseFloat(
+                            form.querySelector(
+                                ".scan-delay"
+                            ).value
+                        );
+
+                    const concurrent =
+                        parseInt(
+                            form.querySelector(
+                                ".scan-concurrent"
+                            ).value,
+                            10
+                        );
+
+                    const daysBetweenScans =
+                        parseInt(
+                            form.querySelector(
+                                ".days-between-scans"
+                            ).value,
+                            10
+                        );
+
+                    const daysBetweenHealthChecks =
+                        parseInt(
+                            form.querySelector(
+                                ".days-between-health-checks"
+                            ).value,
+                            10
+                        );
+
+                    const message =
+                        form.querySelector(
+                            ".scan-settings-message"
+                        );
+
+                    message.textContent =
+                        "Saving settings...";
+
+                    try {
+
+                        const websiteResponse =
+                            await fetch(
+                                `/websites/${websiteId}`,
+                                {
+                                    method: "PATCH",
+                                    headers: {
+                                        "Content-Type":
+                                            "application/json"
+                                    },
+                                    body: JSON.stringify({
+                                        active: active,
+                                        recommended_delay:
+                                            delay,
+                                        recommended_concurrent:
+                                            concurrent
+                                    })
+                                }
+                            );
+
+                        if (!websiteResponse.ok) {
+                            throw new Error(
+                                "Unable to save website settings."
+                            );
+                        }
+
+                        const userResponse =
+                            await fetch(
+                                `/users/${userId}`,
+                                {
+                                    method: "PATCH",
+                                    headers: {
+                                        "Content-Type":
+                                            "application/json"
+                                    },
+                                    body: JSON.stringify({
+                                        days_between_scans:
+                                            daysBetweenScans,
+                                        days_between_heath_checks:
+                                            daysBetweenHealthChecks
+                                    })
+                                }
+                            );
+
+                        if (!userResponse.ok) {
+                            throw new Error(
+                                "Unable to save schedule settings."
+                            );
+                        }
+
+                        message.textContent =
+                            "Settings saved.";
+
+                    } catch (error) {
+
+                        message.textContent =
+                            error.message;
+                    }
+                }
+            );
+        });
+
+        // Run a scan manually for an existing website
+        const runScanButtons =
+            document.querySelectorAll(
+                ".run-scan-button"
+            );
+
+        runScanButtons.forEach((button) => {
+
+            button.addEventListener(
+                "click",
+                async () => {
+
+                    const websiteUrl =
+                        button.dataset.websiteUrl;
+
+                    const message =
+                        button.parentElement.querySelector(
+                            ".run-scan-message"
+                        );
+
+                    button.disabled = true;
+                    message.textContent =
+                        "Running scan...";
+
+                    const formData =
+                        new FormData();
+
+                    formData.append(
+                        "url",
+                        websiteUrl
+                    );
+
+                    try {
+
+                        const response =
+                            await fetch(
+                                "/scanner/run",
+                                {
+                                    method: "POST",
+                                    body: formData
+                                }
+                            );
+
+                        if (!response.ok) {
+                            throw new Error(
+                                "Unable to complete scan."
+                            );
+                        }
+
+                        message.textContent =
+                            "Scan completed.";
+
+                        window.location.reload();
+
+                    } catch (error) {
+
+                        message.textContent =
+                            error.message;
+
+                        button.disabled = false;
+                    }
+                }
+            );
+        });
+
+    </script>
+
+</body>
+
+</html>

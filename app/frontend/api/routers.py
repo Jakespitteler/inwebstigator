@@ -57,9 +57,10 @@ async def website_initial_scan(session: SessionDep, model_create: WebsiteCreate)
         model_create (WebsiteCreate): Payload containing details to create the website record.
     """
     website: WebsiteRead = WebsiteService(session).create(model_create)
+    session.commit()
 
     async with AsyncClient() as client:
-        await scan_website(client, session, website)
+        await scan_website(client, website)
 
 
 @SCANNER_ROUTER.post("/run", response_model=str | None)
@@ -86,15 +87,16 @@ async def manually_scan_a_website(
         str | None: HTML formatted scan report if changes/errors occurred, otherwise None.
     """
     website: WebsiteRead = WebsiteService(session).get_by_url(url)
+    user_service = UserService(session)
+    user: UserRead = user_service.get(id=website.user_id)
+    session.commit()
 
     async with AsyncClient() as client:
-        html_report: str | None = await scan_website(client, session, website, max_pages, delay, concurrent)
+        html_report: str | None = await scan_website(client, website, max_pages, delay, concurrent)
 
     if html_report:
-        user_service = UserService(session)
-        user: UserRead = user_service.get(id=website.user_id)
-        send_notification(session, user, html_report)
-        return html_report  # TODO maybe return "no changes found"
+        send_notification(user, html_report)
+        return html_report  # TODO maybe return "no changes found" if no changes are found
 
 
 @SCANNER_ROUTER.post("/run_all", response_model=str | None)
@@ -115,7 +117,8 @@ async def scan_logged_in_user_websites(session: SessionDep) -> str | None:
         raise NotLoggedInError()
 
     user: UserRead = UserService(session).get(id=config.user_id)
-    return await scan_user_websites(session, user)  # TODO maybe return "no changes found"
+    session.commit()
+    return await scan_user_websites(user)  # TODO maybe return "no changes found" if no changes are found
 
 
 # ======================

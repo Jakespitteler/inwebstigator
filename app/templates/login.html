@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Login | Inwebstigator</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', path='login.css') }}"
+    >
+    <link
+        rel="icon"
+        type="image/x-icon"
+        href="{{ url_for('static', path='favicon.ico') }}" 
+    >
+</head>
+
+<body>
+
+    <main class="login-container">
+
+        <div class="login-card">
+
+            <h1>Inwebstigator</h1>
+
+            <p class="login-subtitle">
+                Log in to access your dashboard
+            </p>
+
+            <form id="login-form">
+
+                <div class="form-group">
+                    <label for="email">
+                        Email
+                    </label>
+
+                    <input
+                        type="email"
+                        id="email"
+                        name="email"
+                        required
+                        autocomplete="email"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="password">
+                        Password
+                    </label>
+
+                    <input
+                        type="password"
+                        id="password"
+                        name="password"
+                        required
+                        autocomplete="current-password"
+                    >
+                </div>
+
+                <button type="submit">
+                    Log In
+                </button>
+
+                <p
+                    id="login-message"
+                    class="login-message"
+                    aria-live="polite"
+                ></p>
+
+            </form>
+
+            <p class="account-link">
+                Don't have an account?
+                <a href="/signup">Sign Up</a>
+            </p>
+
+        </div>
+
+    </main>
+
+    <script>
+        const loginForm =
+            document.getElementById("login-form");
+
+        const loginMessage =
+            document.getElementById("login-message");
+
+        loginForm.addEventListener(
+            "submit",
+            async (event) => {
+
+                event.preventDefault();
+
+                loginMessage.textContent =
+                    "Logging in...";
+
+                const formData =
+                    new FormData(loginForm);
+
+                try {
+                    const response =
+                        await fetch(
+                            "/users/log_in",
+                            {
+                                method: "POST",
+                                body: formData
+                            }
+                        );
+
+                    if (!response.ok) {
+                        loginMessage.textContent =
+                            "Incorrect email or password.";
+                        return;
+                    }
+
+                    window.location.href =
+                        "/dashboard";
+
+                } catch (error) {
+                    loginMessage.textContent =
+                        "Unable to log in. Please try again.";
+                }
+            }
+        );
+    </script>
+
+</body>
+
+</html>

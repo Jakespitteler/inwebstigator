@@ -1,11 +1,21 @@
+import sys
 import uuid
 
 from dotenv import load_dotenv
+from pathlib import Path
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 
 load_dotenv()
 
+def get_database_path(db_name: str) -> Path:
+    """Return the writable database path for the current environment."""
+    if getattr(sys, "frozen", False):
+        app_data = Path.home() / "AppData" / "Local" / "Inwebstigator"
+        app_data.mkdir(parents=True, exist_ok=True)
+        return app_data / db_name
+    
+    return Path.cwd() / db_name
 
 class Config(BaseSettings):
     """Application settings and environment configuration manager.
@@ -51,7 +61,7 @@ class Config(BaseSettings):
 
     @property
     def db_url(self) -> str:
-        return f"sqlite:///./{self.db_name}"
+        return f"sqlite:///{get_database_path(self.db_name).as_posix()}"
 
     @property
     def test_db_url(self) -> str:

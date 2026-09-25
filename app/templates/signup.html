@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Sign Up | Inwebstigator</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', path='login.css') }}"
+    >
+    <link
+        rel="icon"
+        type="image/x-icon"
+        href="{{ url_for('static', path='favicon.ico') }}" 
+    >
+</head>
+
+<body>
+
+    <main class="login-container">
+
+        <div class="login-card">
+
+            <h1>Inwebstigator</h1>
+
+            <p class="login-subtitle">
+                Create an account
+            </p>
+
+            <form id="signup-form">
+
+                <div class="form-group">
+                    <label for="email">
+                        Email
+                    </label>
+
+                    <input
+                        type="email"
+                        id="email"
+                        name="email"
+                        required
+                        autocomplete="email"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="password">
+                        Password
+                    </label>
+
+                    <input
+                        type="password"
+                        id="password"
+                        name="password"
+                        required
+                        autocomplete="new-password"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="confirm-password">
+                        Confirm Password
+                    </label>
+
+                    <input
+                        type="password"
+                        id="confirm-password"
+                        required
+                        autocomplete="new-password"
+                    >
+                </div>
+
+                <button type="submit">
+                    Create Account
+                </button>
+
+                <p
+                    id="signup-message"
+                    class="login-message"
+                    aria-live="polite"
+                ></p>
+
+            </form>
+
+            <p class="account-link">
+                Already have an account?
+                <a href="/login">Log In</a>
+            </p>
+
+        </div>
+
+    </main>
+
+    <script>
+        const signupForm =
+            document.getElementById("signup-form");
+
+        const signupMessage =
+            document.getElementById("signup-message");
+
+        signupForm.addEventListener(
+            "submit",
+            async (event) => {
+
+                event.preventDefault();
+
+                const email =
+                    document.getElementById("email").value;
+
+                const password =
+                    document.getElementById("password").value;
+
+                const confirmPassword =
+                    document.getElementById(
+                        "confirm-password"
+                    ).value;
+
+                if (password !== confirmPassword) {
+                    signupMessage.textContent =
+                        "Passwords do not match.";
+                    return;
+                }
+
+                signupMessage.textContent =
+                    "Creating account...";
+
+                try {
+                    const response =
+                        await fetch(
+                            "/users/",
+                            {
+                                method: "POST",
+                                headers: {
+                                    "Content-Type":
+                                        "application/json"
+                                },
+                                body: JSON.stringify({
+                                    email: email,
+                                    password: password
+                                })
+                            }
+                        );
+
+                    if (!response.ok) {
+                        signupMessage.textContent =
+                            "Unable to create account.";
+                        return;
+                    }
+
+                    window.location.href =
+                        "/login";
+
+                } catch (error) {
+                    signupMessage.textContent =
+                        "Unable to create account. Please try again.";
+                }
+            }
+        );
+    </script>
+
+</body>
+
+</html>
