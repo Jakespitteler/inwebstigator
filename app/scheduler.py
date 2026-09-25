@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 from collections.abc import AsyncGenerator
@@ -20,16 +21,6 @@ db_context = contextmanager(get_db_session)
 ADMIN_ID: uuid.UUID = uuid.uuid4()
 
 
-async def _scan_with_fresh_db_session(user: UserRead) -> None:
-    """Instantiates a fresh database session context and executes website scans for a user.
-
-    Args:
-        user (UserRead): The target user recipient for the scheduled scan.
-    """
-    with db_context() as session:
-        await scan_user_websites(session, user)
-
-
 def _send_health_check_if_no_change(user: UserRead) -> None:
     """Dispatches a health check notification to a user if no email notification
     has been sent within the designated health check threshold.
@@ -37,9 +28,30 @@ def _send_health_check_if_no_change(user: UserRead) -> None:
     Args:
         user (UserRead): The target user to check and notify.
     """
-    if not user.last_email_at or (datetime.now() - user.last_email_at) > timedelta(days=user.days_between_heath_checks):
-        with db_context() as session:
-            send_notification(session, user, report="No changes have been found since the last notification")
+    if user.last_email_at and (datetime.now() - user.last_email_at) > timedelta(days=user.days_between_heath_checks):
+        send_notification(user, report="No changes have been found since the last notification")
+
+
+async def _run_startup_scans_in_background() -> None:
+    """Runs missed startup scans and health checks asynchronously in the background
+    so they do not block the application startup sequence or UI load.
+    """
+    # Small grace period to let the window render and server finish initialising
+    await asyncio.sleep(1)
+    if not config.user_id:
+        config.user_id = ADMIN_ID
+
+    with db_context() as session:
+        users = UserService(session).get_all()
+
+    for user in users:
+        if not user.last_scan_at or (datetime.now() - user.last_scan_at) > timedelta(days=user.days_between_scans):
+            logger.info("Missed scan interval detected. Running scan immediately in background...")
+            with db_context() as session:
+                await scan_user_websites(user)
+            _send_health_check_if_no_change(user)
+
+    config.user_id = None
 
 
 @asynccontextmanager
@@ -59,20 +71,15 @@ async def schedule_scans(app: FastAPI) -> AsyncGenerator[None]:
 
     with db_context() as session:
         users = UserService(session).get_all()
-        for user in users:
-            if not user.last_scan_at or (datetime.now() - user.last_scan_at) > timedelta(days=user.days_between_scans):
-                logger.info("Missed scan interval detected. Running scan immediately on startup...")
-                await scan_user_websites(session, user)
-            else:
-                _send_health_check_if_no_change(user)
 
     for user in users:
-        scheduler.add_job(_scan_with_fresh_db_session, "interval", days=user.days_between_scans, args=[user])  # pyright: ignore[reportUnknownMemberType]
+        scheduler.add_job(scan_user_websites, "interval", days=user.days_between_scans, args=[user])  # pyright: ignore[reportUnknownMemberType]
         scheduler.add_job(  # pyright: ignore[reportUnknownMemberType]
             _send_health_check_if_no_change, "interval", days=user.days_between_heath_checks, args=[user]
         )
 
     scheduler.start()
+    asyncio.create_task(_run_startup_scans_in_background())
     config.user_id = None
     yield
     scheduler.shutdown()
