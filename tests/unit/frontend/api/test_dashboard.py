@@ -85,6 +85,7 @@ def test_dashboard_updates_schedule_settings(
 def test_dashboard_runs_manual_scan(
     api_client: TestClient,
     test_website,
+    session: Session,
     mocker,
 ) -> None:
     """Tests manually running a website scan from the dashboard."""
@@ -95,6 +96,7 @@ def test_dashboard_runs_manual_scan(
     mock_send_notification = mocker.patch(
         "app.frontend.api.routers.send_notification",
     )
+    mocker.patch.object(session, "commit")
 
     response = api_client.post(
         "/scanner/run",
