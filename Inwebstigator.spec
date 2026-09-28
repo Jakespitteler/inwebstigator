@@ -19,7 +19,7 @@ datas = [
 ]
 
 a = Analysis(
-    ["desktop.py"],
+    ["inwebstigator.py"],
     pathex=[str(ROOT)],
     binaries=[],
     datas=datas,
