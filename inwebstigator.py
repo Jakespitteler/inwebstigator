@@ -20,26 +20,14 @@ import time
 from ctypes import wintypes
 from pathlib import Path
 
-import app.main
-
-# The app loads templates, static files and the SQLite database through paths
-# relative to the working directory, so always run from the project root.
-ROOT = Path(__file__).resolve().parent
+from app.core.paths import resource_path
 
 
-def resource_path(*parts: str) -> Path:
-    """Return the path to a bundled application resource."""
-    if getattr(sys, "frozen", False):
-        base = Path(sys._MEIPASS)
-    else:
-        base = ROOT
-
-    return base.joinpath(*parts)
-
-
+ROOT = resource_path()
 os.chdir(ROOT)
 sys.path.insert(0, str(ROOT))
 
+import app.main
 import uvicorn  # noqa: E402
 import webview  # noqa: E402
 import pystray  # noqa: E402
@@ -201,10 +189,8 @@ class BackgroundServer:
         )
 
     def _run(self) -> None:
-        try:
-            self.server.run()
-        except BaseException:
-            pass
+        self.server.run()
+
 
     @property
     def url(self) -> str:

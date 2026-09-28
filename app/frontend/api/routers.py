@@ -1,10 +1,14 @@
+from difflib import SequenceMatcher
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from httpx2 import AsyncClient
+from markupsafe import Markup, escape
 
 from app.core.config import config
 from app.core.errors import NotLoggedInError
+from app.core.paths import resource_path
+from app.db.core import SessionLocal
 from app.db.services.critical_page_service import CriticalPageService
 from app.db.services.user_service import UserService
 from app.db.services.website_service import WebsiteService
@@ -15,31 +19,199 @@ from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
 from app.scanner import scan_user_websites, scan_website, send_notification
 
 ROOT_ROUTER = APIRouter()
-templates = Jinja2Templates(directory="app/frontend/templates")
+templates = Jinja2Templates(
+    directory=resource_path("app", "frontend", "templates")
+)
 
+def build_word_diff(old_text: str, new_text: str) -> tuple[Markup, Markup]:
+    old_words = old_text.split()
+    new_words = new_text.split()
+
+    matcher = SequenceMatcher(
+        None,
+        old_words,
+        new_words,
+        autojunk=False,
+    )
+
+    old_parts = []
+    new_parts = []
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            old_parts.extend(escape(word) for word in old_words[i1:i2])
+            new_parts.extend(escape(word) for word in new_words[j1:j2])
+
+        elif tag == "delete":
+            old_parts.extend(
+                Markup(f'<span class="removed-word">{escape(word)}</span>')
+                for word in old_words[i1:i2]
+            )
+
+        elif tag == "insert":
+            new_parts.extend(
+                Markup(f'<span class="added-word">{escape(word)}</span>')
+                for word in new_words[j1:j2]
+            )
+
+        elif tag == "replace":
+            old_parts.extend(
+                Markup(f'<span class="removed-word">{escape(word)}</span>')
+                for word in old_words[i1:i2]
+            )
+
+            new_parts.extend(
+                Markup(f'<span class="added-word">{escape(word)}</span>')
+                for word in new_words[j1:j2]
+            )
+
+    return (
+        Markup(" ").join(old_parts),
+        Markup(" ").join(new_parts),
+    )
 
 # ======================
 # Views
 # ======================
 
 
-@ROOT_ROUTER.get("/", response_model=str)
-def get_root(request: Request) -> HTMLResponse:
-    """Renders and returns the application homepage HTML template.
+@ROOT_ROUTER.get("/dashboard")
+def get_dashboard(request: Request):
+    if config.user_id is None:
+        return RedirectResponse(
+            url="/login",
+            status_code=303,
+        )
 
-    Args:
-        request (Request): The incoming FastAPI HTTP request instance.
+    with SessionLocal() as session:
+        website_service = WebsiteService(session)
+        website_summaries = website_service.get_all()
 
-    Returns:
-        HTMLResponse: Rendered `index.html` template populated with header context.
-    """
-    context: dict[str, str] = {
-        "title": "HomePage",
-        "heading": "Inwebstigator",
-        "message": "Server is Running.",
-    }
-    return templates.TemplateResponse(request=request, name="index.html", context=context)
+        websites = [
+            website_service.get(website.id)
+            for website in website_summaries
+        ]
 
+        user_service = UserService(session)
+        users = user_service.get_all()
+
+        current_user = user_service.get(id=config.user_id)
+
+        daily_records = []
+
+        for website in websites:
+            for critical_page in website.critical_pages:
+                changed = []
+                added = []
+                removed = []
+
+                for change in critical_page.recent_text_changed or []:
+                    old_html, new_html = build_word_diff(
+                        change.old_block.text,
+                        change.new_block.text,
+                    )
+
+                    changed.append(
+                        {
+                            "old_section": change.old_block.parent_heading,
+                            "new_section": change.new_block.parent_heading,
+                            "old": change.old_block.text,
+                            "new": change.new_block.text,
+                            "old_html": old_html,
+                            "new_html": new_html,
+                            "similarity": change.similarity,
+                        }
+                    )
+
+                for block in critical_page.recent_text_added or []:
+                    added.append(
+                        {
+                            "section": block.parent_heading,
+                            "text": block.text,
+                            "block_type": block.block_type.value,
+                        }
+                    )
+
+                for block in critical_page.recent_text_removed or []:
+                    removed.append(
+                        {
+                            "section": block.parent_heading,
+                            "text": block.text,
+                            "block_type": block.block_type.value,
+                        }
+                    )
+
+                links_added = list(
+                    critical_page.recent_links_added or []
+                )
+                links_removed = list(
+                    critical_page.recent_links_removed or []
+                )
+                documents_added = list(
+                    critical_page.recent_documents_added or []
+                )
+                documents_removed = list(
+                    critical_page.recent_documents_removed or []
+                )
+
+                has_changes = any(
+                    [
+                        changed,
+                        added,
+                        removed,
+                        links_added,
+                        links_removed,
+                        documents_added,
+                        documents_removed,
+                    ]
+                )
+
+                if has_changes:
+                    daily_records.append(
+                        {
+                            "url": critical_page.url,
+                            "website_url": website.url,
+                            "changed": changed,
+                            "added": added,
+                            "removed": removed,
+                            "links_added": links_added,
+                            "links_removed": links_removed,
+                            "documents_added": documents_added,
+                            "documents_removed": documents_removed,
+                        }
+                    )
+
+        daily_date = None
+
+        if current_user and current_user.last_scan_at:
+            daily_date = current_user.last_scan_at.strftime("%d %b %Y")
+
+    return templates.TemplateResponse(
+        request=request,
+        name="dashboard.html",
+        context={
+            "daily_records": daily_records,
+            "daily_date": daily_date,
+            "websites": websites,
+            "users": users,
+            "current_user": current_user,
+        },
+    )
+
+@ROOT_ROUTER.get("/login")
+def get_login(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="login.html",
+    )
+
+
+@ROOT_ROUTER.get("/signup")
+def get_signup(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="signup.html",
+    )
 
 # ======================
 # Crawler
