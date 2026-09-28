@@ -21,7 +21,7 @@ from app.backend.utils.links import normalise_url
 from app.db import core, repository, schema
 from app.db.utils.field_types import URLString
 from app.main import app
-from app.models import critical_page_models, internal_link_models, user_models, website_models
+from app.models import critical_page_models, internal_link_models, recipient_models, website_models
 
 type RequestHandler = Callable[[httpx2.Request], httpx2.Response]
 
@@ -134,25 +134,26 @@ def test_record(session: Session) -> DBTestTable:
 
 
 @pytest.fixture()
-def test_user(session: Session) -> user_models.UserRead:
-    user = user_models.UserRead.model_validate(
+def test_recipient(session: Session) -> recipient_models.RecipientRead:
+    recipient = recipient_models.RecipientRead.model_validate(
         _create_and_add(
             session,
-            record=schema.DBUser(email="testUser@gmail.com", password=""),
+            record=schema.DBRecipient(email="testRecipient@gmail.com"),
         )
     )
-    config.user_id = user.id
-    return user
+    return recipient
 
 
 @pytest.fixture()
-def test_website(session: Session, test_user: schema.DBUser, test_url: URLString) -> website_models.WebsiteRead:
+def test_website(
+    session: Session, test_recipient: recipient_models.RecipientRead, test_url: URLString
+) -> website_models.WebsiteRead:
     return website_models.WebsiteRead.model_validate(
         _create_and_add(
             session,
             record=schema.DBWebsite(
                 url=test_url,
-                user_id=test_user.id,
+                recipients=[repository.get(session, table=schema.DBRecipient, id=test_recipient.id)],
                 recommended_delay=0,
                 recommended_concurrent=20,
             ),
