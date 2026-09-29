@@ -28,10 +28,17 @@ app.mount(
 
 
 @app.exception_handler(NotFoundError)
-async def not_found_exception_handler(
-    request: Request,
-    exc: NotFoundError,
-):
+async def not_found_exception_handler(request: Request, exc: NotFoundError):
+    """
+    Handles NotFoundError exceptions by returning a 404 status.
+
+    Args:
+        request: The incoming request.
+        exc: The NotFoundError exception.
+
+    Returns:
+        A JSONResponse with a 404 status.
+    """
     return JSONResponse(
         status_code=status.HTTP_404_NOT_FOUND,
         content={"detail": str(exc)},
@@ -39,10 +46,7 @@ async def not_found_exception_handler(
 
 
 @app.exception_handler(WebConnectionError)
-async def web_connection_exception_handler(
-    request: Request,
-    exc: WebConnectionError,
-):
+async def web_connection_exception_handler(request: Request, exc: WebConnectionError):
     """
     Handles WebConnectionError exceptions by returning a 502 status.
 
@@ -60,10 +64,17 @@ async def web_connection_exception_handler(
 
 
 @app.exception_handler(IntegrityError)
-async def integrity_error_handler(
-    request: Request,
-    exc: IntegrityError,
-):
+async def integrity_error_handler(request: Request, exc: IntegrityError):
+    """
+    Handles IntegrityError exceptions by returning a 400 status.
+
+    Args:
+        request: The incoming request.
+        exc: The IntegrityError exception.
+
+    Returns:
+        A JSONResponse with a 400 status.
+    """
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
         content={"detail": str(exc)},
