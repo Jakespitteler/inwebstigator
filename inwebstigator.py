@@ -11,6 +11,7 @@ Features:
 - The tray's Quit option completely exits the application.
 """
 
+import contextlib
 import ctypes
 import os
 import socket
@@ -18,40 +19,36 @@ import sys
 import threading
 import time
 from ctypes import wintypes
+from pathlib import Path
+
+import pystray
+import uvicorn
+import webview
+from PIL import Image
 
 from app.core.paths import resource_path
 
-ROOT = resource_path()
+ROOT: Path = resource_path()
 os.chdir(ROOT)
 sys.path.insert(0, str(ROOT))
 
-import pystray  # noqa: E402
-import uvicorn  # noqa: E402
-import webview  # noqa: E402
-from PIL import Image  # noqa: E402
-
 import app.main
 
-HOST = "127.0.0.1"
-START_PATH = "/dashboard"
+DEFAULT_HOST: str = "127.0.0.1"
+START_PATH: str = "/"
 
-STARTUP_TIMEOUT_SECONDS = 15 * 60
+STARTUP_TIMEOUT_SECONDS: int = 15 * 60
 
 # Controls whether the pywebview window is allowed to actually close.
 #
 # False = clicking X hides the window and keeps the application running.
 # True = the application is intentionally shutting down.
-ALLOW_CLOSE = False
+allow_close: bool = False
 
 # Application icon used by the system tray.
-ICON_PATH = resource_path(
-    "app",
-    "frontend",
-    "static",
-    "favicon.ico",
-)
+ICON_PATH: Path = resource_path("app", "frontend", "static", "favicon.ico")
 
-PAGE_STYLE = """
+PAGE_STYLE: str = """
 <style>
   html, body { height: 100%; margin: 0; }
 
@@ -89,7 +86,7 @@ PAGE_STYLE = """
 </style>
 """
 
-LOADING_HTML = (
+LOADING_HTML: str = (
     PAGE_STYLE
     + """
 <main>
@@ -102,7 +99,7 @@ LOADING_HTML = (
 """
 )
 
-ERROR_HTML = (
+ERROR_HTML: str = (
     PAGE_STYLE
     + """
 <main>
@@ -119,28 +116,15 @@ ERROR_HTML = (
 def ensure_single_instance() -> bool:
     """Prevent multiple instances of Inwebstigator from running on Windows."""
 
-    kernel32 = ctypes.WinDLL(
-        "kernel32",
-        use_last_error=True,
-    )
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
     CreateMutexW = kernel32.CreateMutexW
-
-    CreateMutexW.argtypes = [
-        wintypes.LPVOID,
-        wintypes.BOOL,
-        wintypes.LPCWSTR,
-    ]
-
+    CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
     CreateMutexW.restype = wintypes.HANDLE
 
     ERROR_ALREADY_EXISTS = 183
 
-    mutex = CreateMutexW(
-        None,
-        False,
-        "Global\\Inwebstigator_SingleInstance",
-    )
+    mutex = CreateMutexW(None, False, "Global\\Inwebstigator_SingleInstance")
 
     if not mutex:
         raise ctypes.WinError(ctypes.get_last_error())
@@ -152,7 +136,7 @@ def ensure_single_instance() -> bool:
             None,
             "Inwebstigator is already running.\n\nCheck the system tray for the Inwebstigator icon.",
             "Inwebstigator",
-            0x40,  # MB_ICONINFORMATION
+            0x40,  # MB_ICON_INFORMATION
         )
 
         return False
@@ -167,7 +151,7 @@ def ensure_single_instance() -> bool:
 def find_free_port() -> int:
     """Ask the OS for an unused port so the app never clashes with another server."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind((HOST, 0))
+        s.bind((DEFAULT_HOST, 0))
         return s.getsockname()[1]
 
 
@@ -176,27 +160,15 @@ class BackgroundServer:
 
     def __init__(self, port: int) -> None:
         self.port = port
-        self.server = uvicorn.Server(
-            uvicorn.Config(
-                app.main.app,
-                host=HOST,
-                port=port,
-                log_level="info",
-            )
-        )
-
-        self.thread = threading.Thread(
-            target=self._run,
-            name="uvicorn",
-            daemon=True,
-        )
+        self.server = uvicorn.Server(uvicorn.Config(app.main.app, host=DEFAULT_HOST, port=port, log_level="info"))
+        self.thread = threading.Thread(target=self._run, name="uvicorn", daemon=True)
 
     def _run(self) -> None:
         self.server.run()
 
     @property
     def url(self) -> str:
-        return f"http://{HOST}:{self.port}"
+        return f"http://{DEFAULT_HOST}:{self.port}"
 
     def start(self) -> None:
         self.thread.start()
@@ -222,21 +194,21 @@ class BackgroundServer:
 
 
 def main() -> None:
-    global ALLOW_CLOSE
-
+    global allow_close
     server = BackgroundServer(find_free_port())
-
     server.start()
 
     webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
 
-    window = webview.create_window(
+    window: webview.Window | None = webview.create_window(
         "Inwebstigator",
         html=LOADING_HTML,
         width=1280,
         height=820,
         min_size=(900, 600),
     )
+    if not window:
+        raise Exception("Window failed to open")
 
     # ---------------------------------------------------------
     # Window close handling
@@ -244,7 +216,7 @@ def main() -> None:
 
     def on_window_closing():
         """Hide the window instead of closing the application."""
-        if not ALLOW_CLOSE:
+        if not allow_close:
             window.hide()
             return False
 
@@ -271,10 +243,10 @@ def main() -> None:
 
     def quit_application(icon, item):
         """Fully shut down the application."""
-        global ALLOW_CLOSE
+        global allow_close
 
         # Allow the window to actually close now.
-        ALLOW_CLOSE = True
+        allow_close = True
 
         # Stop the tray icon.
         icon.stop()
@@ -283,10 +255,8 @@ def main() -> None:
         server.stop()
 
         # Destroy the pywebview window.
-        try:
+        with contextlib.suppress(Exception):
             window.destroy()
-        except Exception:
-            pass
 
     tray_menu = pystray.Menu(
         pystray.MenuItem(
@@ -348,7 +318,7 @@ def main() -> None:
     #
     # If pywebview exits for another reason, make sure everything
     # is shut down cleanly.
-    ALLOW_CLOSE = True
+    allow_close = True
 
     tray.stop()
     server.stop()
