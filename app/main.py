@@ -3,13 +3,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import config
-from app.core.errors import (
-    IntegrityError,
-    InvalidCredentials,
-    NotFoundError,
-    NotLoggedInError,
-    WebConnectionError,
-)
+from app.core.errors import IntegrityError, NotFoundError, WebConnectionError
 from app.core.logging import setup_logging
 from app.core.paths import resource_path
 from app.db.core import engine
@@ -31,6 +25,7 @@ app.mount(
     StaticFiles(directory=resource_path("app", "frontend", "static")),
     name="static",
 )
+
 
 @app.exception_handler(NotFoundError)
 async def not_found_exception_handler(
@@ -75,50 +70,9 @@ async def integrity_error_handler(
     )
 
 
-@app.exception_handler(NotLoggedInError)
-async def not_logged_in_error_handler(
-    request: Request,
-    exc: NotLoggedInError,
-):
-    """
-    Handles NotLoggedInError exceptions by returning a 400 status.
-
-    Args:
-        request: The incoming request.
-        exc: The NotLoggedInError exception.
-
-    Returns:
-        A JSONResponse with a 400 status.
-    """
-    return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        content={"detail": str(exc)},
-    )
-
-
-@app.exception_handler(InvalidCredentials)
-async def invalid_credentials_error_handler(
-    request: Request,
-    exc: InvalidCredentials,
-):
-    """
-    Handles InvalidCredentials exceptions by returning a 401 status.
-
-    Args:
-        request: The incoming request.
-        exc: The InvalidCredentials exception.
-
-    Returns:
-        A JSONResponse with a 401 status.
-    """
-    return JSONResponse(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        content={"detail": str(exc)},
-    )
-
 # Register routes
 app.include_router(routers.ROOT_ROUTER)
 app.include_router(routers.SCANNER_ROUTER)
-app.include_router(routers.USER_ROUTER)
+app.include_router(routers.RECIPIENT_ROUTER)
 app.include_router(routers.WEBSITE_ROUTER)
 app.include_router(routers.CRITICAL_PAGE_ROUTER)

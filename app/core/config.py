@@ -1,21 +1,11 @@
-import sys
-import uuid
+from pathlib import Path
 
 from dotenv import load_dotenv
-from pathlib import Path
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 
 load_dotenv()
 
-def get_database_path(db_name: str) -> Path:
-    """Return the writable database path for the current environment."""
-    if getattr(sys, "frozen", False):
-        app_data = Path.home() / "AppData" / "Local" / "Inwebstigator"
-        app_data.mkdir(parents=True, exist_ok=True)
-        return app_data / db_name
-    
-    return Path.cwd() / db_name
 
 class Config(BaseSettings):
     """Application settings and environment configuration manager.
@@ -28,15 +18,11 @@ class Config(BaseSettings):
     app_name: str = "inwebstigator"
     automatic_scans: bool = True
 
-    user_id: uuid.UUID | None = None
-
-    db_user: str = ""
-    db_password: SecretStr = SecretStr("")
-    db_name: str = "inwebstigator.db"
+    db_name: str = f"{app_name}.db"
 
     email: str = ""
     email_password: SecretStr = SecretStr("")
-    smtp_host: str = "smtp.gmail.com"
+    smtp_host: str = ""
     smtp_port: int = 465
 
     web_crawler_default_max_pages: int = 50000
@@ -59,9 +45,15 @@ class Config(BaseSettings):
     email_retry_max_wait_seconds: int = 15
     email_retry_multiplier: int = 1
 
+    scheduler_default_days_between_scans: float = 1
+    scheduler_default_days_between_health_checks: float = 7
+
     @property
     def db_url(self) -> str:
-        return f"sqlite:///{get_database_path(self.db_name).as_posix()}"
+        user_data_dir = Path.home() / "AppData" / "Local" / self.app_name
+        user_data_dir.mkdir(parents=True, exist_ok=True)
+        db_path = user_data_dir / self.db_name
+        return f"sqlite:///{db_path.as_posix()}"
 
     @property
     def test_db_url(self) -> str:

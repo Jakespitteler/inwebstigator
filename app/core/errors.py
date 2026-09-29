@@ -80,31 +80,3 @@ class WebConnectionError(WebCrawlerError):
 
     def __init__(self, url: str) -> None:
         super().__init__(f"Network traffic issue (Timeout/Connection drop) reaching {url=}.")
-
-
-class UserError(Exception):
-    """Base class for all custom user exceptions in the application."""
-
-    ...
-
-
-class NotLoggedInError(UserError):
-    """Exception raised when we try and perform an operation and a user is not logged.
-
-    Attributes:
-        args: Positional argument tuple containing the standard error message string.
-    """
-
-    def __init__(self) -> None:
-        super().__init__("User not logged in")
-
-
-class InvalidCredentials(UserError):
-    """Exception raised when we try to log in with the wrong credentials.
-
-    Attributes:
-        args: Positional argument tuple containing the standard error message string.
-    """
-
-    def __init__(self, message: str) -> None:
-        super().__init__(f"Invalid credentials: {message}")
