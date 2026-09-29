@@ -20,13 +20,6 @@
         <div class="dashboard-header">
             <h1>Website Changes</h1>
 
-            <button
-                type="button"
-                id="logout-button"
-                class="logout-button"
-            >
-                Log Out
-            </button>
         </div>
 
         <h2>Daily Changes</h2>
@@ -427,7 +420,6 @@
                             <form
                                 class="scan-settings-form"
                                 data-website-id="{{ website.id }}"
-                                data-user-id="{{ current_user.id }}"
                             >
 
                                 <div class="scan-setting-row">
@@ -488,25 +480,7 @@
                                     <input
                                         type="number"
                                         class="days-between-scans"
-                                        value="{{ current_user.days_between_scans }}"
-                                        min="1"
-                                        step="1"
-                                        required
-                                    >
-
-                                </div>
-
-
-                                <div class="scan-setting-row">
-
-                                    <label>
-                                        Days between no-change notifications
-                                    </label>
-
-                                    <input
-                                        type="number"
-                                        class="days-between-health-checks"
-                                        value="{{ current_user.days_between_heath_checks }}"
+                                        value="{{ website.days_between_scans }}"
                                         min="1"
                                         step="1"
                                         required
@@ -559,8 +533,6 @@
         <section class="add-website-section">
 
             <h2>Add Website</h2>
-
-            {% if users %}
 
                 <form id="add-website-form">
 
@@ -621,52 +593,12 @@
 
                 </form>
 
-            {% else %}
-
-                <p>
-                    A user must exist before a website can be added.
-                </p>
-
-            {% endif %}
-
         </section>
 
     </main>
 
 
     <script>
-
-        // Log out the current user
-        const logoutButton =
-            document.getElementById("logout-button");
-
-        logoutButton.addEventListener(
-            "click",
-            async () => {
-
-                try {
-                    const response =
-                        await fetch(
-                            "/users/log_out",
-                            {
-                                method: "POST"
-                            }
-                        );
-
-                    if (!response.ok) {
-                        throw new Error(
-                            "Unable to log out."
-                        );
-                    }
-
-                    window.location.href =
-                        "/login";
-
-                } catch (error) {
-                    alert(error.message);
-                }
-            }
-        );
 
         // Add extra critical-page fields when creating a website
         const addCriticalPageButton =
@@ -976,9 +908,6 @@
                     const websiteId =
                         form.dataset.websiteId;
 
-                    const userId =
-                        form.dataset.userId;
-
                     const active =
                         form.querySelector(
                             ".scan-active"
@@ -1007,14 +936,6 @@
                             10
                         );
 
-                    const daysBetweenHealthChecks =
-                        parseInt(
-                            form.querySelector(
-                                ".days-between-health-checks"
-                            ).value,
-                            10
-                        );
-
                     const message =
                         form.querySelector(
                             ".scan-settings-message"
@@ -1039,7 +960,9 @@
                                         recommended_delay:
                                             delay,
                                         recommended_concurrent:
-                                            concurrent
+                                            concurrent,
+                                        days_between_scans:
+                                            daysBetweenScans
                                     })
                                 }
                             );
@@ -1047,30 +970,6 @@
                         if (!websiteResponse.ok) {
                             throw new Error(
                                 "Unable to save website settings."
-                            );
-                        }
-
-                        const userResponse =
-                            await fetch(
-                                `/users/${userId}`,
-                                {
-                                    method: "PATCH",
-                                    headers: {
-                                        "Content-Type":
-                                            "application/json"
-                                    },
-                                    body: JSON.stringify({
-                                        days_between_scans:
-                                            daysBetweenScans,
-                                        days_between_heath_checks:
-                                            daysBetweenHealthChecks
-                                    })
-                                }
-                            );
-
-                        if (!userResponse.ok) {
-                            throw new Error(
-                                "Unable to save schedule settings."
                             );
                         }
 

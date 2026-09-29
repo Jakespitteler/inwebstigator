@@ -108,7 +108,7 @@ def get_dashboard(session: SessionDep, request: Request):
 
     return templates.TemplateResponse(
         request=request,
-        name="dashboard.html",
+        name="index.html",
         context={
             "daily_records": daily_records,
             "daily_date": daily_date,
