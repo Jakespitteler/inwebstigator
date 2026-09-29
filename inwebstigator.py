@@ -18,21 +18,19 @@ import sys
 import threading
 import time
 from ctypes import wintypes
-from pathlib import Path
 
 from app.core.paths import resource_path
-
 
 ROOT = resource_path()
 os.chdir(ROOT)
 sys.path.insert(0, str(ROOT))
 
-import app.main
+import pystray  # noqa: E402
 import uvicorn  # noqa: E402
 import webview  # noqa: E402
-import pystray  # noqa: E402
 from PIL import Image  # noqa: E402
 
+import app.main
 
 HOST = "127.0.0.1"
 START_PATH = "/dashboard"
@@ -91,7 +89,9 @@ PAGE_STYLE = """
 </style>
 """
 
-LOADING_HTML = PAGE_STYLE + """
+LOADING_HTML = (
+    PAGE_STYLE
+    + """
 <main>
   <h1>Starting Inwebstigator</h1>
   <p>
@@ -100,8 +100,11 @@ LOADING_HTML = PAGE_STYLE + """
   </p>
 </main>
 """
+)
 
-ERROR_HTML = PAGE_STYLE + """
+ERROR_HTML = (
+    PAGE_STYLE
+    + """
 <main>
   <h1>Inwebstigator couldn't start</h1>
   <p>
@@ -110,6 +113,8 @@ ERROR_HTML = PAGE_STYLE + """
   </p>
 </main>
 """
+)
+
 
 def ensure_single_instance() -> bool:
     """Prevent multiple instances of Inwebstigator from running on Windows."""
@@ -138,17 +143,14 @@ def ensure_single_instance() -> bool:
     )
 
     if not mutex:
-        raise ctypes.WinError(
-            ctypes.get_last_error()
-        )
+        raise ctypes.WinError(ctypes.get_last_error())
 
     # Windows sets the last-error value to ERROR_ALREADY_EXISTS
     # when another process already owns this named mutex.
     if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
         ctypes.windll.user32.MessageBoxW(
             None,
-            "Inwebstigator is already running.\n\n"
-            "Check the system tray for the Inwebstigator icon.",
+            "Inwebstigator is already running.\n\nCheck the system tray for the Inwebstigator icon.",
             "Inwebstigator",
             0x40,  # MB_ICONINFORMATION
         )
@@ -160,6 +162,7 @@ def ensure_single_instance() -> bool:
     ensure_single_instance.mutex = mutex
 
     return True
+
 
 def find_free_port() -> int:
     """Ask the OS for an unused port so the app never clashes with another server."""
@@ -191,7 +194,6 @@ class BackgroundServer:
     def _run(self) -> None:
         self.server.run()
 
-
     @property
     def url(self) -> str:
         return f"http://{HOST}:{self.port}"
@@ -222,15 +224,11 @@ class BackgroundServer:
 def main() -> None:
     global ALLOW_CLOSE
 
-    server = BackgroundServer(
-        find_free_port()
-    )
+    server = BackgroundServer(find_free_port())
 
     server.start()
 
-    webview.settings[
-        "OPEN_EXTERNAL_LINKS_IN_BROWSER"
-    ] = True
+    webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
 
     window = webview.create_window(
         "Inwebstigator",
@@ -259,9 +257,7 @@ def main() -> None:
     # ---------------------------------------------------------
 
     if not ICON_PATH.exists():
-        raise FileNotFoundError(
-            f"Tray icon not found: {ICON_PATH}"
-        )
+        raise FileNotFoundError(f"Tray icon not found: {ICON_PATH}")
 
     tray_image = Image.open(ICON_PATH)
 
@@ -329,12 +325,8 @@ def main() -> None:
     # ---------------------------------------------------------
 
     def show_app_when_ready() -> None:
-        if server.wait_until_ready(
-            STARTUP_TIMEOUT_SECONDS
-        ):
-            window.load_url(
-                server.url + START_PATH
-            )
+        if server.wait_until_ready(STARTUP_TIMEOUT_SECONDS):
+            window.load_url(server.url + START_PATH)
         else:
             window.load_html(ERROR_HTML)
 

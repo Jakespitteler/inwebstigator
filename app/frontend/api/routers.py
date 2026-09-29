@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request
 from fastapi.templating import Jinja2Templates
 from httpx2 import AsyncClient
 
+from app.core.paths import resource_path
 from app.db.services.critical_page_service import CriticalPageService
 from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
@@ -13,7 +14,7 @@ from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
 from app.scanner import scan_all_websites, scan_website
 
 ROOT_ROUTER = APIRouter()
-templates = Jinja2Templates("app/frontend/templates")
+templates = Jinja2Templates(directory=resource_path("app", "frontend", "templates"))
 
 
 # ======================
