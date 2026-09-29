@@ -1,18 +1,16 @@
-from fastapi import APIRouter, Form, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Request
 from fastapi.templating import Jinja2Templates
 from httpx2 import AsyncClient
 
-from app.core.config import config
-from app.core.errors import NotLoggedInError
 from app.db.services.critical_page_service import CriticalPageService
-from app.db.services.user_service import UserService
+from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
 from app.frontend.api.db_router_factory import SessionDep, create_crud_router
+from app.frontend.api.word_diff import build_word_diff
 from app.models.critical_page_models import CriticalPageCreate, CriticalPageUpdate
-from app.models.user_models import UserCreate, UserRead, UserUpdate
+from app.models.recipient_models import RecipientCreate, RecipientUpdate
 from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
-from app.scanner import scan_user_websites, scan_website, send_notification
+from app.scanner import scan_all_websites, scan_website
 
 ROOT_ROUTER = APIRouter()
 templates = Jinja2Templates(directory="app/frontend/templates")
@@ -23,26 +21,101 @@ templates = Jinja2Templates(directory="app/frontend/templates")
 # ======================
 
 
-@ROOT_ROUTER.get("/", response_model=str)
-def get_root(request: Request) -> HTMLResponse:
-    """Renders and returns the application homepage HTML template.
+@ROOT_ROUTER.get("/")
+def get_dashboard(session: SessionDep, request: Request):
+    websites = WebsiteService(session).get_all()
 
-    Args:
-        request (Request): The incoming FastAPI HTTP request instance.
+    daily_records = []
 
-    Returns:
-        HTMLResponse: Rendered `index.html` template populated with header context.
-    """
-    context: dict[str, str] = {
-        "title": "HomePage",
-        "heading": "Inwebstigator",
-        "message": "Server is Running.",
-    }
-    return templates.TemplateResponse(request=request, name="index.html", context=context)
+    for website in websites:
+        for critical_page in website.critical_pages:
+            changed = []
+            added = []
+            removed = []
+
+            for change in critical_page.recent_text_changed or []:
+                old_html, new_html = build_word_diff(
+                    change.old_block.text,
+                    change.new_block.text,
+                )
+
+                changed.append(
+                    {
+                        "old_section": change.old_block.parent_heading,
+                        "new_section": change.new_block.parent_heading,
+                        "old": change.old_block.text,
+                        "new": change.new_block.text,
+                        "old_html": old_html,
+                        "new_html": new_html,
+                        "similarity": change.similarity,
+                    }
+                )
+
+            for block in critical_page.recent_text_added or []:
+                added.append(
+                    {
+                        "section": block.parent_heading,
+                        "text": block.text,
+                        "block_type": block.block_type.value,
+                    }
+                )
+
+            for block in critical_page.recent_text_removed or []:
+                removed.append(
+                    {
+                        "section": block.parent_heading,
+                        "text": block.text,
+                        "block_type": block.block_type.value,
+                    }
+                )
+
+            links_added = list(critical_page.recent_links_added or [])
+            links_removed = list(critical_page.recent_links_removed or [])
+            documents_added = list(critical_page.recent_documents_added or [])
+            documents_removed = list(critical_page.recent_documents_removed or [])
+
+            has_changes = any(
+                [
+                    changed,
+                    added,
+                    removed,
+                    links_added,
+                    links_removed,
+                    documents_added,
+                    documents_removed,
+                ]
+            )
+
+            if has_changes:
+                daily_records.append(
+                    {
+                        "url": critical_page.url,
+                        "website_url": website.url,
+                        "changed": changed,
+                        "added": added,
+                        "removed": removed,
+                        "links_added": links_added,
+                        "links_removed": links_removed,
+                        "documents_added": documents_added,
+                        "documents_removed": documents_removed,
+                    }
+                )
+
+    daily_date = None
+
+    return templates.TemplateResponse(
+        request=request,
+        name="index.html",
+        context={
+            "daily_records": daily_records,
+            "daily_date": daily_date,
+            "websites": websites,
+        },
+    )
 
 
 # ======================
-# Crawler
+# Scanner
 # ======================
 
 SCANNER_ROUTER = APIRouter(prefix="/scanner", tags=["Scanner"])
@@ -63,62 +136,15 @@ async def website_initial_scan(session: SessionDep, model_create: WebsiteCreate)
         await scan_website(client, website)
 
 
-@SCANNER_ROUTER.post("/run", response_model=str | None)
-async def manually_scan_a_website(
-    session: SessionDep,
-    url: str = Form(...),
-    max_pages: int | None = Form(None),
-    delay: float | None = Form(None),
-    concurrent: int | None = Form(None),
-) -> str | None:
-    """Manually triggers a scan for a specific website by its URL with optional override limits.
-
-    If updates or changes are detected during the scan, dispatches an email notification
-    to the website owner.
-
-    Args:
-        session (SessionDep): Database session dependency.
-        url (str): Target website URL submitted via form data.
-        max_pages (int | None, optional): Optional override for maximum pages to crawl.
-        delay (float | None, optional): Optional override for inter-request delay in seconds.
-        concurrent (int | None, optional): Optional override for max concurrent connections.
-
-    Returns:
-        str | None: HTML formatted scan report if changes/errors occurred, otherwise None.
-    """
-    website: WebsiteRead = WebsiteService(session).get_by_url(url)
-    user_service = UserService(session)
-    user: UserRead = user_service.get(id=website.user_id)
-    session.commit()
-
-    async with AsyncClient() as client:
-        html_report: str | None = await scan_website(client, website, max_pages, delay, concurrent)
-
-    if html_report:
-        send_notification(user, html_report)
-        return html_report  # TODO maybe return "no changes found" if no changes are found
-
-
 @SCANNER_ROUTER.post("/run_all", response_model=str | None)
-async def scan_logged_in_user_websites(session: SessionDep) -> str | None:
+async def scan_websites() -> str | None:
     """Triggers an asynchronous scan across all active, non-cooldown websites
-    registered to the currently logged-in user.
-
-    Args:
-        session (SessionDep): Database session dependency.
+    registered to the currently logged-in recipient.
 
     Returns:
         str | None: Consolidated HTML list of scan reports if updates occurred, otherwise None.
-
-    Raises:
-        NotLoggedInError: If no authenticated user ID is configured in application settings.
     """
-    if not config.user_id:
-        raise NotLoggedInError()
-
-    user: UserRead = UserService(session).get(id=config.user_id)
-    session.commit()
-    return await scan_user_websites(user)  # TODO maybe return "no changes found" if no changes are found
+    return await scan_all_websites()
 
 
 # ======================
@@ -126,41 +152,12 @@ async def scan_logged_in_user_websites(session: SessionDep) -> str | None:
 # ======================
 
 
-USER_ROUTER: APIRouter = create_crud_router(
-    prefix="/users",
-    service_class=UserService,
-    create_class=UserCreate,
-    update_class=UserUpdate,
+RECIPIENT_ROUTER: APIRouter = create_crud_router(
+    prefix="/recipients",
+    service_class=RecipientService,
+    create_class=RecipientCreate,
+    update_class=RecipientUpdate,
 )
-
-
-@USER_ROUTER.post("/log_in", response_model=str)
-async def log_in(session: SessionDep, email: str = Form(...), password: str = Form(...)) -> str:
-    """Authenticates a user using email and password form credentials.
-
-    Args:
-        session (SessionDep): Database session dependency.
-        email (str): Registered user email address.
-        password (str): User account password.
-
-    Returns:
-        str: Authentication status or session token message.
-    """
-    return UserService(session).log_in(email, password)
-
-
-@USER_ROUTER.post("/log_out", response_model=str)
-async def log_out(session: SessionDep) -> str:
-    """Logs out the active user and clears current session state.
-
-    Args:
-        session (SessionDep): Database session dependency.
-
-    Returns:
-        str: Confirmation message confirming log out.
-    """
-    return UserService(session).log_out()
-
 
 CRITICAL_PAGE_ROUTER: APIRouter = create_crud_router(
     prefix="/critical_pages",

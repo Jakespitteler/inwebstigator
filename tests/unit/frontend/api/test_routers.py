@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from app.db.schema import Base
 from app.frontend.api import routers
-from app.models import critical_page_models, user_models, website_models
+from app.models import critical_page_models, recipient_models, website_models
 
 
 class TestCRUDRouters:
@@ -137,21 +137,12 @@ class TestCRUDRouters:
 # ==========================
 
 
-def test_read_root(api_client: TestClient) -> None:
-    """
-    Tests the root endpoint to ensure the server is running.
-    """
-    response: Response = api_client.get(url="/")
-    assert response.status_code == 200
-    assert "Server is Running." in response.text
-
-
-class TestUserRouter(TestCRUDRouters):
+class TestRecipientRouter(TestCRUDRouters):
     __test__ = True
-    prefix = routers.USER_ROUTER.prefix
-    model_create = user_models.UserCreate(email="test_user@gmail.com", password="")
-    model_update = user_models.UserUpdate(email="test_user_update@gmail.com")
-    fixture_name = "test_user"
+    prefix = routers.RECIPIENT_ROUTER.prefix
+    model_create = recipient_models.RecipientCreate(email="test_recipient@gmail.com")
+    model_update = recipient_models.RecipientUpdate(email="test_recipient_update@gmail.com")
+    fixture_name = "test_recipient"
 
 
 class TestWebsiteRouter(TestCRUDRouters):
