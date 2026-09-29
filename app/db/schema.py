@@ -1,7 +1,19 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Table,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -19,19 +31,26 @@ class Base(DeclarativeBase):
     )
 
 
-class DBUser(Base):
-    __tablename__ = "users"
+website_recipient_association = Table(
+    "website_recipients",
+    Base.metadata,
+    Column("website_id", PG_UUID(as_uuid=True), ForeignKey("websites.id", ondelete="CASCADE"), primary_key=True),
+    Column(
+        "recipient_id",
+        PG_UUID(as_uuid=True),
+        ForeignKey("recipients.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+)
+
+
+class DBRecipient(Base):
+    __tablename__ = "recipients"
 
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
-    password: Mapped[str] = mapped_column(String, nullable=False)
-    days_between_scans: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    days_between_heath_checks: Mapped[int] = mapped_column(Integer, nullable=False, default=7)
-    last_scan_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_email_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    websites: Mapped[list["DBWebsite"]] = relationship(
-        back_populates="user",
-        cascade="all, delete-orphan",
+    days_between_health_checks: Mapped[float] = mapped_column(
+        Float, nullable=False, default=config.scheduler_default_days_between_health_checks
     )
 
 
@@ -66,17 +85,19 @@ class DBCriticalPage(Base):
 
 class DBWebsite(Base):
     __tablename__ = "websites"
-    __table_args__ = (UniqueConstraint("url", "user_id", name="uq_website_url_user"),)
 
     url: Mapped[str] = mapped_column(String, nullable=False, index=True)
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    user: Mapped[DBUser] = relationship(back_populates="websites")
+
     recommended_delay: Mapped[float] = mapped_column(Float, nullable=False, default=config.web_crawler_default_delay)
     recommended_concurrent: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         default=config.web_crawler_default_concurrent,
     )
+    days_between_scans: Mapped[float] = mapped_column(
+        Float, nullable=False, default=config.scheduler_default_days_between_scans
+    )
+    last_scan_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     failed_attempts_at_min_speed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -90,5 +111,6 @@ class DBWebsite(Base):
         back_populates="website",
         cascade="all, delete-orphan",
     )
+    recipients: Mapped[list[DBRecipient]] = relationship(secondary=website_recipient_association)
     recent_added_internal_links: Mapped[list[str]] = mapped_column(JSON, nullable=True)
     recent_removed_internal_links: Mapped[list[str]] = mapped_column(JSON, nullable=True)

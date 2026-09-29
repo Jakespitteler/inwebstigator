@@ -6,13 +6,15 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.core.config import config
-from app.core.errors import NotFoundError, NotLoggedInError
+from app.core.errors import NotFoundError
 from app.db import repository
 from app.db.schema import DBWebsite
 from app.db.services.critical_page_service import CriticalPageService
 from app.db.services.internal_link_service import InternalLinkService
+from app.db.services.recipient_service import RecipientService
 from app.db.utils.interfaces import CRUDService
 from app.models.critical_page_models import CriticalPageCreate
+from app.models.recipient_models import RecipientCreate
 from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -29,10 +31,6 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         """
         self._db: Session = session
 
-        if not config.user_id:
-            raise NotLoggedInError()
-        self.user_id: uuid.UUID = config.user_id
-
     def get_all(self, skip: int = 0, limit: int = 100) -> Sequence[WebsiteRead]:
         """Retrieves a paginated list of the users website records from the database.
 
@@ -44,13 +42,7 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
             A sequence of WebsiteRead models representing the retrieved records.
         """
 
-        website_records: Sequence[DBWebsite] = repository.get_list(
-            self._db,
-            table=DBWebsite,
-            skip=skip,
-            limit=limit,
-            attributes={"user_id": self.user_id},
-        )
+        website_records: Sequence[DBWebsite] = repository.get_list(self._db, table=DBWebsite, skip=skip, limit=limit)
         return [WebsiteRead.model_validate(website_record) for website_record in website_records]
 
     def get(self, id: uuid.UUID) -> WebsiteRead:
@@ -74,7 +66,7 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         return WebsiteRead.model_validate(website_record)
 
     def get_by_url(self, url: str) -> WebsiteRead:
-        """Retrieves a single website record and its relationships matching a URL and user ID.
+        """Retrieves a single website record and its relationships matching a URL.
 
         Args:
             url: The target URL string of the website.
@@ -83,16 +75,12 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
             The matching WebsiteRead data model instance populated with relationships.
 
         Raises:
-            NotFoundError: If no matching website record exists for the provided URL and user ID.
+            NotFoundError: If no matching website record exists for the provided URL.
         """
         website_records: Sequence[DBWebsite] = repository.get_list(
             self._db,
             table=DBWebsite,
-            attributes={"url": url, "user_id": self.user_id},
-            relations=[
-                DBWebsite.internal_links,
-                DBWebsite.critical_pages,
-            ],
+            relations=[DBWebsite.internal_links, DBWebsite.critical_pages],
             limit=1,
         )
 
@@ -113,18 +101,27 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         Raises:
             IntegrityError: If the record violates database constraints or already exists.
         """
-        website_record: DBWebsite = DBWebsite(
-            user_id=self.user_id, **model_create.model_dump(exclude={"critical_pages"})
-        )
+        website_record: DBWebsite = DBWebsite(**model_create.model_dump(exclude={"critical_pages", "recipient_emails"}))
         repository.add(self._db, record=website_record)
 
         if model_create.critical_pages:
+            critical_page_service = CriticalPageService(self._db)
             [
-                CriticalPageService(self._db).create(
-                    CriticalPageCreate(website_id=website_record.id, url=critical_page_url)
-                )
+                critical_page_service.create(CriticalPageCreate(website_id=website_record.id, url=critical_page_url))
                 for critical_page_url in model_create.critical_pages
             ]
+        if model_create.recipient_emails:
+            recipient_service = RecipientService(self._db)
+            for recipient_email in model_create.recipient_emails:
+                try:
+                    recipient = recipient_service.get_by_email(recipient_email)
+                except NotFoundError:
+                    recipient = recipient_service.create(RecipientCreate(email=recipient_email))
+
+                recipient_service.link_recipient_and_website(
+                    website_id=website_record.id,
+                    recipient_id=recipient.id,
+                )
 
         return WebsiteRead.model_validate(website_record)
 
@@ -149,18 +146,28 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
 
         update_data = model_update.model_dump(
             exclude_unset=True,
-            exclude={
-                "critical_page_updates",
-                "recent_added_internal_links",
-                "recent_removed_internal_links",
-            },
+            exclude={"critical_page_updates", "recipient_emails"},
         )
+
+        recipient_service = RecipientService(self._db)
+        if model_update.add_recipient_emails:
+            for recipient_email in model_update.add_recipient_emails:
+                try:
+                    recipient = recipient_service.get_by_email(recipient_email)
+                except NotFoundError:
+                    recipient = recipient_service.create(RecipientCreate(email=recipient_email))
+                recipient_service.link_recipient_and_website(website_id=website_record.id, recipient_id=recipient.id)
+
+        if model_update.remove_recipient_emails:
+            for recipient_email in model_update.remove_recipient_emails:
+                recipient = recipient_service.get_by_email(recipient_email)
+                recipient_service.unlink_recipient_and_website(website_id=website_record.id, recipient_id=recipient.id)
 
         if update_data:
             website_record = repository.update(self._db, record=website_record, updates=update_data)
 
-        critical_page_service = CriticalPageService(self._db)
         if model_update.critical_page_updates:
+            critical_page_service = CriticalPageService(self._db)
             for critical_page_id, critical_page_updates in model_update.critical_page_updates.items():
                 critical_page_service.update(id=critical_page_id, model_update=critical_page_updates)
 

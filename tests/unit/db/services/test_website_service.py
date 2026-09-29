@@ -12,7 +12,6 @@ from app.db.services.internal_link_service import InternalLinkService
 from app.db.services.website_service import WebsiteService
 from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead, CriticalPageUpdate
 from app.models.internal_link_models import InternalLinkCreate, InternalLinkRead
-from app.models.user_models import UserRead
 from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
 
 
@@ -45,7 +44,7 @@ def test_get_website(session: Session, test_website: WebsiteRead) -> None:
     assert fetched_website.url == test_website.url
 
 
-def test_get_website_raises_not_found(session: Session, test_user: UserRead) -> None:
+def test_get_website_raises_not_found(session: Session) -> None:
     """
     Tests that retrieving a non-existent website ID raises NotFoundError.
 
@@ -71,7 +70,7 @@ def test_get_website_by_url(session: Session, test_website: WebsiteRead) -> None
     assert fetched_website.url == test_website.url
 
 
-def test_get_website_by_url_raises_not_found(session: Session, test_user: UserRead) -> None:
+def test_get_website_by_url_raises_not_found(session: Session) -> None:
     """
     Tests that retrieving a non-existent URL raises NotFoundError.
 
@@ -82,7 +81,7 @@ def test_get_website_by_url_raises_not_found(session: Session, test_user: UserRe
         WebsiteService(session).get_by_url(url="https://www.nonexistent_website.com")
 
 
-def test_create_website(session: Session, test_user: UserRead) -> None:
+def test_create_website(session: Session) -> None:
     """
     Tests creating a new website with basic details.
 
@@ -99,7 +98,7 @@ def test_create_website(session: Session, test_user: UserRead) -> None:
     assert fetched_website.url == website_details.url
 
 
-def test_create_website_with_links_and_critical_pages(session: Session, test_user: UserRead) -> None:
+def test_create_website_with_links_and_critical_pages(session: Session) -> None:
     """
     Tests creating a new website with attached critical pages.
 
@@ -189,7 +188,7 @@ def test_delete_website(session: Session, test_website: WebsiteRead) -> None:
         WebsiteService(session).get(id=test_website.id)
 
 
-def test_delete_website_raises_not_found(session: Session, test_user: UserRead) -> None:
+def test_delete_website_raises_not_found(session: Session) -> None:
     """
     Tests that deleting a non-existent website raises NotFoundError.
 

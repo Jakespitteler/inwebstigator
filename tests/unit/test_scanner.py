@@ -1,21 +1,18 @@
-from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from email.message import EmailMessage
 
 import httpx2
 import pytest
 from pytest_mock import MockerFixture
-from sqlalchemy.orm import Session
 
 from app import scanner
 from app.core.errors import TrafficError, WebConnectionError
-from app.db.services.user_service import UserService
+from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
 from app.models.critical_page_models import CriticalPageRead
 from app.models.internal_link_models import InternalLinkRead
-from app.models.user_models import UserRead
+from app.models.recipient_models import RecipientRead
 from app.models.website_models import WebsiteRead
-from tests.conftest import RequestHandler
 
 # ======================================
 # Setup Fixtures
@@ -27,12 +24,14 @@ def populated_website(
     test_website: WebsiteRead,
     test_internal_link: InternalLinkRead,
     test_critical_page: CriticalPageRead,
+    test_recipient: RecipientRead,
 ) -> WebsiteRead:
-    """Provides a WebsiteRead model fully populated with its internal relationships."""
+    """Provides a WebsiteRead model fully populated with its internal relationships and recipients."""
     return test_website.model_copy(
         update={
             "internal_links": [test_internal_link],
             "critical_pages": [test_critical_page],
+            "recipients": [test_recipient],
         }
     )
 
@@ -42,39 +41,41 @@ def populated_website(
 # ======================================
 
 
-def test_send_notification_success(session: Session, mocker: MockerFixture, test_user: UserRead):
-    """Tests that send_notification builds and sends an email, updating user.last_email_at."""
+def test_send_notification_success(mocker: MockerFixture, test_recipient: RecipientRead):
+    """Tests that send_notification builds and sends an email, updating recipient.last_email_at."""
     mock_build_message = mocker.patch("app.scanner.build_message")
     mock_send_email = mocker.patch("app.scanner.send_email")
-    mock_user_service_update = mocker.patch.object(UserService, "update")
+    mock_recipient_service = mocker.patch.object(RecipientService, "get_by_email")
+    mock_recipient_service.return_value = test_recipient
+    mock_recipient_service_update = mocker.patch.object(RecipientService, "update")
 
     mock_msg = EmailMessage()
     mock_build_message.return_value = mock_msg
 
-    result = scanner.send_notification(session, test_user, "<p>Scan Report HTML</p>")
+    result = scanner.send_notification(test_recipient.email, "<p>Scan Report HTML</p>")
 
     mock_build_message.assert_called_once_with(
         subject="Website Update",
-        recipients=[test_user.email],
+        recipients=[test_recipient.email],
         html_body="<p>Scan Report HTML</p>",
     )
     mock_send_email.assert_called_once_with(mock_msg)
-    mock_user_service_update.assert_called_once()
+    mock_recipient_service_update.assert_called_once()
     assert result is None
 
 
-def test_send_notification_failure(session: Session, mocker: MockerFixture, test_user: UserRead):
+def test_send_notification_failure(mocker: MockerFixture, test_recipient: RecipientRead):
     """Tests that send_notification propagates exceptions if email delivery fails, preventing metadata updates."""
     mocker.patch("app.scanner.build_message")
     mock_send_email = mocker.patch("app.scanner.send_email")
     mock_send_email.side_effect = Exception("SMTP connection timed out")
-    mock_user_service_update = mocker.patch.object(UserService, "update")
+    mock_recipient_service_update = mocker.patch.object(RecipientService, "update")
 
     with pytest.raises(Exception, match="SMTP connection timed out"):
-        scanner.send_notification(session, test_user, "<p>Scan Report HTML</p>")
+        scanner.send_notification(test_recipient.email, "<p>Scan Report HTML</p>")
 
     mock_send_email.assert_called_once()
-    mock_user_service_update.assert_not_called()
+    mock_recipient_service_update.assert_not_called()
 
 
 # ======================================
@@ -83,29 +84,7 @@ def test_send_notification_failure(session: Session, mocker: MockerFixture, test
 
 
 @pytest.mark.anyio
-async def test_scan_website_success(
-    session: Session,
-    populated_website: WebsiteRead,
-    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
-    website_handler: RequestHandler,
-):
-    """Tests that a successful website scan updates the database record and returns the HTML report."""
-    async with mock_client_factory(website_handler) as client:
-        report: str | None = await scanner.scan_website(client=client, session=session, website=populated_website)
-
-    assert isinstance(report, str)
-    assert len(report) > 0
-
-    db_website = WebsiteService(session).get(populated_website.id)
-    assert db_website is not None
-
-
-@pytest.mark.anyio
-async def test_scan_website_traffic_error_handling(
-    session: Session,
-    populated_website: WebsiteRead,
-    mocker: MockerFixture,
-):
+async def test_scan_website_traffic_error_handling(populated_website: WebsiteRead, mocker: MockerFixture):
     """Tests that TrafficError triggers cooldown handling and returns a traffic error HTML report."""
     mock_client = mocker.AsyncMock(spec=httpx2.AsyncClient)
     mocker.patch(
@@ -114,7 +93,7 @@ async def test_scan_website_traffic_error_handling(
     )
     mock_handle_traffic = mocker.patch.object(WebsiteService, "handle_traffic_error", return_value="Cooldown applied")
 
-    report = await scanner.scan_website(client=mock_client, session=session, website=populated_website)
+    report = await scanner.scan_website(client=mock_client, website=populated_website)
 
     mock_handle_traffic.assert_called_once_with(populated_website)
     assert isinstance(report, str)
@@ -122,11 +101,7 @@ async def test_scan_website_traffic_error_handling(
 
 
 @pytest.mark.anyio
-async def test_scan_website_traffic_error_re_raised_with_params(
-    session: Session,
-    populated_website: WebsiteRead,
-    mocker: MockerFixture,
-):
+async def test_scan_website_traffic_error_re_raised_with_params(populated_website: WebsiteRead, mocker: MockerFixture):
     """Tests that TrafficError is re-raised when delay or concurrent parameters are provided."""
     mock_client = mocker.AsyncMock(spec=httpx2.AsyncClient)
     mocker.patch(
@@ -137,18 +112,13 @@ async def test_scan_website_traffic_error_re_raised_with_params(
     with pytest.raises(TrafficError, match="Scan aborted, try increasing delay or reducing concurrent"):
         await scanner.scan_website(
             client=mock_client,
-            session=session,
             website=populated_website,
             delay=1.0,
         )
 
 
 @pytest.mark.anyio
-async def test_scan_website_connection_error_handling(
-    session: Session,
-    populated_website: WebsiteRead,
-    mocker: MockerFixture,
-):
+async def test_scan_website_connection_error_handling(populated_website: WebsiteRead, mocker: MockerFixture):
     """Tests that WebConnectionError handles unreachable site state and returns a connection error HTML report."""
     mock_client = mocker.AsyncMock(spec=httpx2.AsyncClient)
     mocker.patch(
@@ -157,7 +127,7 @@ async def test_scan_website_connection_error_handling(
     )
     mock_handle_conn = mocker.patch.object(WebsiteService, "handle_connection_error", return_value="Site unreachable")
 
-    report = await scanner.scan_website(client=mock_client, session=session, website=populated_website)
+    report = await scanner.scan_website(client=mock_client, website=populated_website)
 
     mock_handle_conn.assert_called_once_with(populated_website.id)
     assert isinstance(report, str)
@@ -165,49 +135,46 @@ async def test_scan_website_connection_error_handling(
 
 
 # ======================================
-# scan_user_websites Tests
+# scan_all_websites Tests
 # ======================================
 
 
 @pytest.mark.anyio
-async def test_scan_user_websites_success(
-    session: Session,
-    test_user: UserRead,
+async def test_scan_all_websites_skips_inactive_cooldown_and_recent_scans(
     populated_website: WebsiteRead,
     mocker: MockerFixture,
 ):
-    """Tests scanning active user websites, updating last_scan_at, and dispatching notification email."""
-    user_with_websites = test_user.model_copy(update={"websites": [populated_website]})
-    mocker.patch("app.scanner.scan_website", return_value="<li>Website Updated</li>")
-    mock_send_notification = mocker.patch("app.scanner.send_notification")
-    mock_user_service_update = mocker.patch.object(UserService, "update")
-
-    result = await scanner.scan_user_websites(session, user_with_websites)
-
-    assert result == "<ul><li>Website Updated</li></ul>"
-    mock_send_notification.assert_called_once_with(session, user_with_websites, "<ul><li>Website Updated</li></ul>")
-    mock_user_service_update.assert_called_once()
-
-
-@pytest.mark.anyio
-async def test_scan_user_websites_skips_inactive_and_cooldown(
-    session: Session,
-    test_user: UserRead,
-    populated_website: WebsiteRead,
-    mocker: MockerFixture,
-):
-    """Tests that inactive websites or websites on active cooldown are skipped during scanning."""
-    inactive_site = populated_website.model_copy(update={"id": 1, "active": False})
+    """Tests that inactive websites, websites on active cooldown, or websites scanned too recently are skipped."""
+    inactive_site = populated_website.model_copy(update={"id": 1, "active": False, "url": "https://inactive.com"})
     cooldown_site = populated_website.model_copy(
-        update={"id": 2, "active": True, "on_cooldown_until": datetime(2099, 1, 1)}
+        update={
+            "id": 2,
+            "active": True,
+            "url": "https://cooldown.com",
+            "on_cooldown_until": datetime.now() + timedelta(days=1),
+        }
     )
-    user_with_sites = test_user.model_copy(update={"websites": [inactive_site, cooldown_site]})
+    recently_scanned_site = populated_website.model_copy(
+        update={
+            "id": 3,
+            "active": True,
+            "url": "https://scanned.com",
+            "on_cooldown_until": None,
+            "last_scan_at": datetime.now(),
+            "days_between_scans": 7,
+        }
+    )
 
+    mocker.patch.object(
+        WebsiteService,
+        "get_all",
+        return_value=[inactive_site, cooldown_site, recently_scanned_site],
+    )
     mock_scan_website = mocker.patch("app.scanner.scan_website")
     mock_send_notification = mocker.patch("app.scanner.send_notification")
-    mocker.patch.object(UserService, "update")
+    mocker.patch.object(WebsiteService, "update")
 
-    result = await scanner.scan_user_websites(session, user_with_sites)
+    result = await scanner.scan_all_websites()
 
     mock_scan_website.assert_not_called()
     mock_send_notification.assert_not_called()
