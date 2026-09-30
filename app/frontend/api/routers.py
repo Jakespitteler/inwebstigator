@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from datetime import datetime
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import FileResponse
@@ -149,6 +150,9 @@ async def website_initial_scan(session: SessionDep, model_create: WebsiteCreate)
     async with AsyncClient() as client:
         await scan_website(client, website)
 
+    with db_context() as session:
+        WebsiteService(session).update(id=website.id, model_update=WebsiteUpdate(last_scan_at=datetime.now()))
+
 
 @SCANNER_ROUTER.post("/initial_critical_page_scan", response_model=None)
 async def critical_page_initial_scan(session: SessionDep, model_create: CriticalPageCreate) -> None:
@@ -200,9 +204,14 @@ async def manually_scan_website(
     async with AsyncClient() as client:
         report: str | None = await scan_website(client, website, max_pages, delay, concurrent)
 
-    if report and recipient_email:
-        send_notification(recipient_email, report)
-    return report
+    if report and website.recipients:
+        if website.recipients:
+            for recipient in website.recipients:
+                send_notification(recipient.email, report)
+            if recipient_email and recipient_email not in [r.email for r in website.recipients]:
+                send_notification(recipient_email, report)
+
+        return report
 
 
 # ======================
