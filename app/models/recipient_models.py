@@ -20,6 +20,7 @@ class RecipientRead(BaseModel):
     email: EmailString
     last_email_at: datetime | None
     days_between_health_checks: float
+    created_at: datetime
 
 
 class RecipientUpdate(BaseModel):

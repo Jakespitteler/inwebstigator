@@ -14,7 +14,7 @@ from app.frontend.api.utils import ContentBlockRecord, DailyRecord, TextChangeRe
 from app.models.critical_page_models import CriticalPageCreate, CriticalPageUpdate
 from app.models.recipient_models import RecipientCreate, RecipientUpdate
 from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
-from app.scanner import scan_all_websites, scan_website
+from app.scanner import scan_all_websites, scan_website, send_monitoring_started_notifications
 
 ROOT_ROUTER = APIRouter()
 templates = Jinja2Templates(directory=resource_path("app", "frontend", "templates"))
@@ -129,7 +129,8 @@ SCANNER_ROUTER = APIRouter(prefix="/scanner", tags=["Scanner"])
 
 @SCANNER_ROUTER.post("/initial_scan", response_model=None)
 async def website_initial_scan(session: SessionDep, model_create: WebsiteCreate) -> None:
-    """Registers a new website in the database and triggers an immediate initial crawl.
+    """Registers a new website in the database, triggers an immediate initial crawl and
+    emails the website's recipients to confirm it is now being monitored.
 
     Args:
         session (SessionDep): Database session dependency.
@@ -140,6 +141,8 @@ async def website_initial_scan(session: SessionDep, model_create: WebsiteCreate)
 
     async with AsyncClient() as client:
         await scan_website(client, website)
+
+    send_monitoring_started_notifications(website)
 
 
 @SCANNER_ROUTER.post("/run_all", response_model=str | None)

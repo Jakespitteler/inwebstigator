@@ -78,6 +78,94 @@ def test_send_notification_failure(mocker: MockerFixture, test_recipient: Recipi
     mock_recipient_service_update.assert_not_called()
 
 
+def test_send_notification_uses_given_subject(mocker: MockerFixture, test_recipient: RecipientRead):
+    """Tests that send_notification passes a custom subject through to the email."""
+    mock_build_message = mocker.patch("app.scanner.build_message", return_value=EmailMessage())
+    mocker.patch("app.scanner.send_email")
+    mocker.patch.object(RecipientService, "get_by_email", return_value=test_recipient)
+    mocker.patch.object(RecipientService, "update")
+
+    scanner.send_notification(test_recipient.email, "<p>Body</p>", subject="Website monitoring started")
+
+    mock_build_message.assert_called_once_with(
+        subject="Website monitoring started",
+        recipients=[test_recipient.email],
+        html_body="<p>Body</p>",
+    )
+
+
+# ======================================
+# send_monitoring_started_notifications Tests
+# ======================================
+
+
+def test_send_monitoring_started_notifications_emails_each_recipient(
+    populated_website: WebsiteRead, test_recipient: RecipientRead, mocker: MockerFixture
+):
+    """Tests every recipient of the website is sent a confirmation naming the website and its watched pages."""
+    other_recipient = test_recipient.model_copy(update={"email": "other@gmail.com", "days_between_health_checks": 14})
+    website = populated_website.model_copy(update={"recipients": [test_recipient, other_recipient]})
+    mock_send_notification = mocker.patch("app.scanner.send_notification")
+
+    scanner.send_monitoring_started_notifications(website)
+
+    assert [call.args[0] for call in mock_send_notification.call_args_list] == [
+        test_recipient.email,
+        other_recipient.email,
+    ]
+    for call in mock_send_notification.call_args_list:
+        assert call.kwargs == {"subject": "Website monitoring started"}
+        assert website.url in call.args[1]
+        assert website.critical_pages[0].url in call.args[1]
+
+    # Each recipient is told their own confirmation interval
+    assert "every 7 days" in mock_send_notification.call_args_list[0].args[1]
+    assert "every 14 days" in mock_send_notification.call_args_list[1].args[1]
+
+
+def test_send_monitoring_started_notifications_without_recipients_sends_nothing(
+    populated_website: WebsiteRead, mocker: MockerFixture
+):
+    """Tests a website with no recipients (dashboard only) sends no email."""
+    website = populated_website.model_copy(update={"recipients": []})
+    mock_send_notification = mocker.patch("app.scanner.send_notification")
+
+    scanner.send_monitoring_started_notifications(website)
+
+    mock_send_notification.assert_not_called()
+
+
+def test_send_monitoring_started_notifications_continues_after_a_failed_send(
+    populated_website: WebsiteRead, test_recipient: RecipientRead, mocker: MockerFixture
+):
+    """Tests a failed send is swallowed, so adding the website still succeeds and other recipients are emailed."""
+    other_recipient = test_recipient.model_copy(update={"email": "other@gmail.com"})
+    website = populated_website.model_copy(update={"recipients": [test_recipient, other_recipient]})
+    mock_send_notification = mocker.patch(
+        "app.scanner.send_notification", side_effect=[ConnectionError("smtp down"), None]
+    )
+
+    scanner.send_monitoring_started_notifications(website)
+
+    assert mock_send_notification.call_count == 2
+    assert mock_send_notification.call_args.args[0] == other_recipient.email
+
+
+def test_monitoring_started_html_escapes_urls_and_describes_schedule(populated_website: WebsiteRead):
+    """Tests the confirmation body escapes URLs and states the scan and confirmation intervals."""
+    website = populated_website.model_copy(
+        update={"url": "https://example.com/?a=1&b=<script>", "days_between_scans": 1, "critical_pages": []}
+    )
+
+    body = scanner._monitoring_started_html(website, days_between_health_checks=7)  # pyright: ignore[reportPrivateUsage]
+
+    assert "https://example.com/?a=1&amp;b=&lt;script&gt;" in body
+    assert "<script>" not in body
+    assert "checked every day" in body
+    assert "every 7 days" in body
+    assert "Pages being watched" not in body
+
+
 # ======================================
 # scan_website Tests
 # ======================================
