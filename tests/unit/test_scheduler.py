@@ -6,8 +6,10 @@ from fastapi import FastAPI
 from pytest_mock import MockerFixture
 from sqlalchemy.orm import Session
 
+from app.core.config import config
 from app.db.services.recipient_service import RecipientService
 from app.models.recipient_models import RecipientRead
+from app.scanner import scan_all_websites
 from app.scheduler import (
     _run_startup_scans_in_background,  # pyright: ignore[reportPrivateUsage]
     _send_health_check_if_no_change,  # pyright: ignore[reportPrivateUsage]
@@ -121,3 +123,24 @@ async def test_schedule_scans_lifespan(test_recipient: RecipientRead, mocker: Mo
 
     # Shutdown checks
     mock_shutdown.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_schedule_scans_checks_for_due_websites_more_often_than_scan_interval(mocker: MockerFixture):
+    """
+    Tests the scan job runs more often than the default scan interval, so a website whose
+    last scan finished just after the previous check is not skipped for a whole extra interval.
+    """
+    mocker.patch.object(RecipientService, "get_all", return_value=[])
+    mocker.patch("asyncio.create_task", side_effect=lambda coroutine: coroutine.close())
+    mock_add_job = mocker.patch.object(scheduler, "add_job")
+    mocker.patch.object(scheduler, "start")
+    mocker.patch.object(scheduler, "shutdown")
+
+    async with schedule_scans(FastAPI()):
+        mock_add_job.assert_called_once_with(
+            scan_all_websites, "interval", hours=config.scheduler_hours_between_scan_checks
+        )
+
+    check_interval = timedelta(hours=config.scheduler_hours_between_scan_checks)
+    assert check_interval < timedelta(days=config.scheduler_default_days_between_scans)

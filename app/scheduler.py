@@ -59,7 +59,11 @@ async def schedule_scans(app: FastAPI) -> AsyncGenerator[None]:
         None: Yields control back to FastAPI while the scheduler is active.
     """
 
-    scheduler.add_job(scan_all_websites, "interval", days=config.scheduler_default_days_between_scans)  # pyright: ignore[reportUnknownMemberType]
+    # Check for due websites more often than the shortest scan interval. Each website is only
+    # scanned once its own days_between_scans has elapsed, so checking at that same interval
+    # would find it just short of due (its last scan finished after the previous check) and
+    # skip it until the following run.
+    scheduler.add_job(scan_all_websites, "interval", hours=config.scheduler_hours_between_scan_checks)  # pyright: ignore[reportUnknownMemberType]
 
     with db_context() as session:
         recipients = RecipientService(session).get_all()
