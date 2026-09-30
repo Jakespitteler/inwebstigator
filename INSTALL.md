@@ -13,7 +13,7 @@ please let the team know.
 
 ### 1. Unzip and open Inwebstigator
 
-1. Extract the **Inwebstigator** zip file the team sent you
+1. Extract the **Inwebstigator** zip file the team sent you.
 2. Open the extracted folder and double-click **Inwebstigator.exe**.
 3. Windows may warn that it **"protected your PC"**, because the program is
    new. Click **More info**, then **Run anyway**.
@@ -97,8 +97,8 @@ Each website has its own box, where you can:
 
 - open the website or any of its critical pages by clicking the address.
 - see how many critical pages are being watched, and how many pages
-  Inwebstigator found on the whole site (**internal pages**);
-- **add a critical page** using the Add Critical Page box, or **Delete** one;
+  Inwebstigator found on the whole site (**internal pages**).
+- **add a critical page** using the Add Critical Page box, or **Delete** one.
 - **Delete Website** to stop watching it. This also removes its saved history.
 
 ### Scan Settings
@@ -109,8 +109,8 @@ Click **Save Settings** after changing anything.
 | Setting | What it does |
 | --- | --- |
 | **Active** | Untick to pause checking this website without deleting it. |
-| **Days between scans** | How often your websites are checked. The default is 1 (daily) |
-| **Days between no-change notifications** | How often you get the "no changes" email when nothing changes. The default is 7 (weekly) |
+| **Days between scans** | How often your websites are checked. The default is 1 (daily). |
+| **Days between no-change notifications** | How often you get the "no changes" email when nothing changes. The default is 7 (weekly). |
 | **Request delay** / **Concurrent requests** | How fast Inwebstigator reads a website. Best left as they are unless the team suggests a change. |
 
 The two "Days between" settings apply to all your websites. **After changing
