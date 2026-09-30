@@ -1,20 +1,23 @@
 from collections.abc import Sequence
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Form, Request
 from fastapi.responses import FileResponse
 from fastapi.templating import Jinja2Templates
 from httpx2 import AsyncClient
 
+from app.backend.engine import get_critical_page_updates
+from app.core.errors import NotFoundError
 from app.core.paths import resource_path
+from app.db.core import db_context
 from app.db.services.critical_page_service import CriticalPageService
 from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
 from app.frontend.api.db_router_factory import SessionDep, create_crud_router
 from app.frontend.api.utils import ContentBlockRecord, DailyRecord, TextChangeRecord, build_word_diff
-from app.models.critical_page_models import CriticalPageCreate, CriticalPageUpdate
+from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead, CriticalPageUpdate
 from app.models.recipient_models import RecipientCreate, RecipientUpdate
 from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
-from app.scanner import scan_all_websites, scan_website
+from app.scanner import scan_all_websites, scan_website, send_notification
 
 ROOT_ROUTER = APIRouter()
 templates = Jinja2Templates(directory=resource_path("app", "frontend", "templates"))
@@ -127,6 +130,11 @@ async def favicon() -> FileResponse:
 SCANNER_ROUTER = APIRouter(prefix="/scanner", tags=["Scanner"])
 
 
+# TODO: Initial scans are showing up in daily changes.
+# TODO: Daily changes are currently unstyled.
+# TODO: May be good to change "Add Website" to "Initialise Website"
+
+
 @SCANNER_ROUTER.post("/initial_scan", response_model=None)
 async def website_initial_scan(session: SessionDep, model_create: WebsiteCreate) -> None:
     """Registers a new website in the database and triggers an immediate initial crawl.
@@ -142,6 +150,25 @@ async def website_initial_scan(session: SessionDep, model_create: WebsiteCreate)
         await scan_website(client, website)
 
 
+@SCANNER_ROUTER.post("/initial_critical_page_scan", response_model=None)
+async def critical_page_initial_scan(session: SessionDep, model_create: CriticalPageCreate) -> None:
+    """Registers a new critical_page in the database and triggers an immediate initial crawl.
+
+    Args:
+        session (SessionDep): Database session dependency.
+        model_create (CriticalPageCreate): Payload containing details to create the critical page record.
+    """
+    critical_page: CriticalPageRead = CriticalPageService(session).create(model_create)
+    session.commit()
+
+    async with AsyncClient() as client:
+        updates: CriticalPageUpdate | None = await get_critical_page_updates(client, critical_page)
+
+    if updates:
+        with db_context() as session:
+            CriticalPageService(session).update(id=critical_page.id, model_update=updates)
+
+
 @SCANNER_ROUTER.post("/run_all", response_model=str | None)
 async def scan_websites() -> str | None:
     """Triggers an asynchronous scan across all active, non-cooldown websites
@@ -151,6 +178,31 @@ async def scan_websites() -> str | None:
         str | None: Consolidated HTML list of scan reports if updates occurred, otherwise None.
     """
     return await scan_all_websites()
+
+
+@SCANNER_ROUTER.post("/run", response_model=str | None)
+async def manually_scan_website(
+    session: SessionDep,
+    url: str = Form(...),
+    recipient_email: str | None = Form(None),
+    max_pages: int | None = Form(None),
+    delay: float | None = Form(None),
+    concurrent: int | None = Form(None),
+) -> str | None:
+    """Triggers the app from the UI form submission."""
+    # Custom inputs are not currently being implemented by UI (we might want to keep it like this)
+    try:
+        website: WebsiteRead = WebsiteService(session).get_by_url(url)
+    except NotFoundError:
+        website: WebsiteRead = WebsiteService(session).create(model_create=WebsiteCreate(url=url))
+    session.commit()
+
+    async with AsyncClient() as client:
+        report: str | None = await scan_website(client, website, max_pages, delay, concurrent)
+
+    if report and recipient_email:
+        send_notification(recipient_email, report)
+    return report
 
 
 # ======================
