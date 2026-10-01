@@ -25,7 +25,51 @@ h1 {
 /* GETTING STARTED GUIDE */
 
 .guide-section {
-    margin-top: 10px;
+    margin-bottom: 25px;
+}
+
+.guide-card[hidden] {
+    display: none;
+}
+
+.websites-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px 20px;
+    margin-bottom: 22px;
+}
+
+.websites-header h2 {
+    font-size: 26px;
+    margin: 0;
+}
+
+.add-website-toggle {
+    padding: 10px 16px;
+    border: none;
+    border-radius: 6px;
+    background-color: #222;
+    color: white;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.add-website-toggle:hover {
+    background-color: #444;
+}
+
+.add-website-toggle[aria-expanded="true"] {
+    border: 1px solid #bbb;
+    background-color: white;
+    color: #222;
+}
+
+.add-website-toggle:focus-visible {
+    outline: 2px solid #2874c6;
+    outline-offset: 3px;
 }
 
 .guide-intro {
@@ -299,12 +343,6 @@ h1 {
 
 .websites-section {
     margin-top: 0;
-}
-
-.websites-section > h2 {
-    font-size: 26px;
-    margin-top: 0;
-    margin-bottom: 22px;
 }
 
 .website-card {
