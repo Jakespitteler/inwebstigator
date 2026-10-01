@@ -174,3 +174,29 @@ async def test_crawl_site_non_fatal_errors(
 
     assert len(visited) == 1
     assert test_url in visited
+
+
+@pytest.mark.anyio
+async def test_crawl_site_follows_homepage_redirect_to_www(
+    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
+):
+    """Tests a homepage redirecting from example.com to www.example.com is still crawled, with its links."""
+    pages: dict[str, str] = {
+        "https://www.example.com/": '<a href="/about">About</a><a href="https://example.com/contact">Contact</a>',
+        "https://www.example.com/about": "<p>About us</p>",
+        "https://www.example.com/contact": "<p>Contact us</p>",
+    }
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        url = str(request.url)
+        if request.url.host == "example.com":
+            return httpx2.Response(301, headers={"location": url.replace("://example.com", "://www.example.com")})
+        if url in pages:
+            return httpx2.Response(200, text=pages[url])
+        return httpx2.Response(404)
+
+    async with mock_client_factory(handler) as client:
+        visited: set[str] = await crawl_site(client, "https://example.com", max_pages=10)
+
+    assert "https://www.example.com/about" in visited
+    assert any(url.endswith("/contact") for url in visited)

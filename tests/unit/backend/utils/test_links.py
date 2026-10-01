@@ -5,6 +5,7 @@ from app.backend.utils.links import (
     find_added_links,
     find_removed_links,
     is_document,
+    is_internal_web_page,
     separate_document_links,
 )
 
@@ -186,3 +187,20 @@ def test_extract_links_from_html_skips_missing_href(test_url: str) -> None:
 
     expected: list[str] = [f"{test_url}valid"]
     assert result == expected
+
+
+@pytest.mark.parametrize(
+    ("base_url", "check_url", "expected"),
+    [
+        ("https://example.com/", "https://www.example.com/page", True),
+        ("https://www.example.com/", "https://example.com/page", True),
+        ("https://Example.COM/", "https://www.example.com/page", True),
+        ("https://example.com/news", "https://www.example.com/news/story", True),
+        ("https://example.com/", "https://news.example.com/page", False),
+        ("https://example.com/", "https://www.other.com/page", False),
+        ("https://example.com/news", "https://www.example.com/sport", False),
+    ],
+)
+def test_is_internal_web_page_treats_www_as_same_site(base_url: str, check_url: str, expected: bool) -> None:
+    """Test example.com and www.example.com count as one website, but other subdomains and sites do not."""
+    assert is_internal_web_page(base_url, check_url) is expected

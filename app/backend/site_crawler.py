@@ -70,6 +70,7 @@ async def fetch_internal_links_from_url(
 
             # Ensure redirect was not to an external site
             if not is_internal_web_page(base_url, check_url=absolute_url):
+                logger.warning(f"Skipping {url=} as it redirected outside the website to {absolute_url}.")
                 return url, [], None
 
             links: list[str] = extract_links_from_html(
