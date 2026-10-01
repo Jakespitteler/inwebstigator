@@ -80,6 +80,7 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         website_records: Sequence[DBWebsite] = repository.get_list(
             self._db,
             table=DBWebsite,
+            attributes={"url": url},
             relations=[DBWebsite.internal_links, DBWebsite.critical_pages],
             limit=1,
         )
@@ -104,12 +105,11 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         website_record: DBWebsite = DBWebsite(**model_create.model_dump(exclude={"critical_pages", "recipient_emails"}))
         repository.add(self._db, record=website_record)
 
-        if model_create.critical_pages:
-            critical_page_service = CriticalPageService(self._db)
-            [
-                critical_page_service.create(CriticalPageCreate(website_id=website_record.id, url=critical_page_url))
-                for critical_page_url in model_create.critical_pages
-            ]
+        critical_page_service = CriticalPageService(self._db)
+        # Monitor the exact starting URL as well as any additional pages.
+        for critical_page_url in dict.fromkeys([model_create.url, *model_create.critical_pages]):
+            critical_page_service.create(CriticalPageCreate(website_id=website_record.id, url=critical_page_url))
+        self._db.expire(website_record, ["critical_pages"])
         if model_create.recipient_emails:
             recipient_service = RecipientService(self._db)
             for recipient_email in model_create.recipient_emails:
@@ -123,6 +123,16 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
                     recipient_id=recipient.id,
                 )
 
+        return WebsiteRead.model_validate(website_record)
+
+    def ensure_main_critical_page(self, id: uuid.UUID) -> WebsiteRead:
+        """Include an existing website's main URL without replacing saved page history."""
+        website_record: DBWebsite = repository.get(self._db, table=DBWebsite, id=id)
+        if not any(page.url == website_record.url for page in website_record.critical_pages):
+            CriticalPageService(self._db).create(
+                CriticalPageCreate(website_id=website_record.id, url=website_record.url)
+            )
+            self._db.expire(website_record, ["critical_pages"])
         return WebsiteRead.model_validate(website_record)
 
     def update(self, id: uuid.UUID, model_update: WebsiteUpdate) -> WebsiteRead:
