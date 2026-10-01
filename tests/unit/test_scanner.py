@@ -232,6 +232,46 @@ async def test_main_url_content_is_scanned_and_shown_in_updates(
 
 
 @pytest.mark.anyio
+async def test_adding_a_website_saves_a_baseline_and_only_later_changes_are_reported(
+    session: Session, mocker: MockerFixture, api_client: TestClient
+):
+    """Tests the first scan of a new website records no changes, and the next scan reports only what changed."""
+    main_url = "https://example.com"
+    html = "<html><body><h2>Fees</h2><p>The fee is $100.</p></body></html>"
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, text=html)
+
+    def mock_client() -> httpx2.AsyncClient:
+        return httpx2.AsyncClient(transport=httpx2.MockTransport(respond))
+
+    mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
+    mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
+    mocker.patch("app.frontend.api.routers.AsyncClient", side_effect=mock_client)
+    crawl = mocker.patch("app.backend.engine.crawl_site", return_value={main_url, f"{main_url}/about"})
+
+    response = api_client.post("/scanner/initial_scan", json={"url": main_url})
+    assert response.status_code == 200, response.text
+
+    dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
+    updates_panel = dashboard.select_one("#updates-panel").get_text()
+    assert "No changes were detected" in updates_panel
+    assert "The fee is $100." not in updates_panel
+
+    # Next scan: the page text changes and a new internal page appears
+    html = html.replace("$100", "$120")
+    crawl.return_value = {main_url, f"{main_url}/about", f"{main_url}/new-page"}
+    website = WebsiteService(session).get_by_url(main_url)
+    async with mock_client() as client:
+        report = await scanner.scan_website(client, website)
+
+    assert report is not None
+    assert "$120" in report
+    assert f"{main_url}/new-page" in report
+    assert f"{main_url}/about" not in report
+
+
+@pytest.mark.anyio
 async def test_scan_website_traffic_error_handling(populated_website: WebsiteRead, mocker: MockerFixture):
     """Tests that TrafficError triggers cooldown handling and returns a traffic error HTML report."""
     mock_client = mocker.AsyncMock(spec=httpx2.AsyncClient)

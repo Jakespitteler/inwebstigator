@@ -91,6 +91,56 @@ async def test_get_critical_page_updates_detects_last_link_or_document_removed(
     assert getattr(updates, stored_field) == []
 
 
+@pytest.mark.anyio
+async def test_get_critical_page_updates_saves_baseline_for_new_page(
+    test_critical_page: CriticalPageRead,
+    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
+):
+    """Tests a page fetched for the first time is saved as a baseline, not reported as all new content."""
+    html = (
+        "<html><body><h2>Fees</h2><p>The fee is $100.</p>"
+        '<a href="/apply">Apply</a><a href="/files/fees.pdf">Fees PDF</a></body></html>'
+    )
+    new_page = test_critical_page.model_copy(update={"text_body": None, "links": None, "documents": None})
+
+    async with mock_client_factory(lambda request: httpx2.Response(200, text=html)) as client:
+        updates: CriticalPageUpdate | None = await get_critical_page_updates(client, new_page)
+
+    assert updates is not None
+    assert updates.text_body == html
+    assert updates.links == ["https://www.test_website.com/apply"]
+    assert updates.documents == ["https://www.test_website.com/files/fees.pdf"]
+    for recent_field in (
+        "recent_links_added",
+        "recent_links_removed",
+        "recent_documents_added",
+        "recent_documents_removed",
+        "recent_text_added",
+        "recent_text_removed",
+        "recent_text_changed",
+    ):
+        assert getattr(updates, recent_field) == [], recent_field
+
+
+@pytest.mark.anyio
+async def test_get_critical_page_updates_page_with_saved_links_is_not_a_baseline(
+    test_critical_page: CriticalPageRead,
+    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
+):
+    """Tests a page that has been fetched before (it has saved links) still reports changes."""
+    stored_page = test_critical_page.model_copy(
+        update={"text_body": None, "links": ["https://www.test_website.com/old"], "documents": None}
+    )
+
+    html = '<html><body><a href="/new">New</a></body></html>'
+    async with mock_client_factory(lambda request: httpx2.Response(200, text=html)) as client:
+        updates: CriticalPageUpdate | None = await get_critical_page_updates(client, stored_page)
+
+    assert updates is not None
+    assert updates.recent_links_added == ["https://www.test_website.com/new"]
+    assert updates.recent_links_removed == ["https://www.test_website.com/old"]
+
+
 # ======================================
 # get_website_updates
 # ======================================

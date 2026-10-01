@@ -108,6 +108,34 @@ def send_monitoring_started_notifications(website: WebsiteRead) -> None:
             logger.exception(f"Failed to send monitoring started email to {recipient.email}")
 
 
+def _has_changes_to_report(website: WebsiteRead, website_updates: WebsiteUpdate) -> bool:
+    """Returns whether a scan found changes worth reporting, as opposed to only saving baselines.
+
+    Args:
+        website (WebsiteRead): The website as it was before the scan.
+        website_updates (WebsiteUpdate): The updates the scan found.
+    """
+    page_changes = any(
+        any(
+            [
+                page_updates.recent_links_added,
+                page_updates.recent_links_removed,
+                page_updates.recent_documents_added,
+                page_updates.recent_documents_removed,
+                page_updates.recent_text_added,
+                page_updates.recent_text_removed,
+                page_updates.recent_text_changed,
+            ]
+        )
+        for page_updates in (website_updates.critical_page_updates or {}).values()
+    )
+    # A website's first crawl finds every internal link, which is its baseline rather than a change
+    internal_link_changes = website.last_scan_at is not None and bool(
+        website_updates.recent_added_internal_links or website_updates.recent_removed_internal_links
+    )
+    return page_changes or internal_link_changes
+
+
 async def scan_website(
     client: AsyncClient,
     website: WebsiteRead,
@@ -150,6 +178,9 @@ async def scan_website(
                     model_update=website_updates,
                 )
                 website_service.reset_failed_attempts(website.id)
+            if not _has_changes_to_report(website, website_updates):
+                logger.info(f"Saved baseline for {website.url}, nothing to report.")
+                return None
             return generate_scan_report_html(updated_website, status=ScanStatus.SUCCESS)
     except TrafficError as e:
         logger.error(f"Temporary ban or severe rate limit detected for {website.url}: {e}")

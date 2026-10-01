@@ -60,6 +60,24 @@ async def get_critical_page_updates(client: AsyncClient, stored_page: CriticalPa
     all_links: list[str] = extract_links_from_html(url=stored_page.url, html_content=text_body)
     documents, links = separate_document_links(links=all_links)
 
+    if stored_page.text_body is None and stored_page.links is None and stored_page.documents is None:
+        # First fetch of this page: save it as the baseline future scans compare against,
+        # rather than reporting everything on it as newly added
+        logger.info(f"Saving baseline for {stored_page.url}")
+        return CriticalPageUpdate(
+            url=stored_page.url,
+            text_body=text_body,
+            links=links,
+            documents=documents,
+            recent_links_added=[],
+            recent_links_removed=[],
+            recent_documents_added=[],
+            recent_documents_removed=[],
+            recent_text_added=[],
+            recent_text_removed=[],
+            recent_text_changed=[],
+        )
+
     updates.recent_documents_added, updates.recent_documents_removed = find_link_difference(
         previous_state=stored_page.documents or [],
         current_state=documents,

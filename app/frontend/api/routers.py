@@ -134,7 +134,6 @@ async def favicon() -> FileResponse:
 SCANNER_ROUTER = APIRouter(prefix="/scanner", tags=["Scanner"])
 
 
-# TODO: Initial scans are showing up in daily changes.
 # TODO: Daily changes are currently unstyled.
 # TODO: May be good to change "Add Website" to "Initialise Website"
 
