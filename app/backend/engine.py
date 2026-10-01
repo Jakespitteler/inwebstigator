@@ -21,7 +21,12 @@ BATCH_402_THRESHOLD_SECONDS: int = config.web_crawler_batch_402_threshold_second
 
 
 def _critical_page_has_been_updated(critical_page_updates: CriticalPageUpdate) -> bool:
-    return any([critical_page_updates.links or critical_page_updates.documents or critical_page_updates.text_body])
+    # These are only set when a difference was found, so check they are set rather than non-empty:
+    # removing a page's last link or document leaves an empty list that still needs saving
+    return any(
+        field is not None
+        for field in (critical_page_updates.links, critical_page_updates.documents, critical_page_updates.text_body)
+    )
 
 
 def _website_has_been_updated(website_updates: WebsiteUpdate) -> bool:

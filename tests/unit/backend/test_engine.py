@@ -63,6 +63,34 @@ async def test_get_critical_page_updates_no_changes(
     assert not second_updates
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("stored_field", "recent_removed_field", "removed_url"),
+    [
+        ("documents", "recent_documents_removed", "https://www.test_website.com/files/policy.pdf"),
+        ("links", "recent_links_removed", "https://www.test_website.com/old-page"),
+    ],
+    ids=["last-document", "last-link"],
+)
+async def test_get_critical_page_updates_detects_last_link_or_document_removed(
+    test_critical_page: CriticalPageRead,
+    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
+    stored_field: str,
+    recent_removed_field: str,
+    removed_url: str,
+):
+    """Tests removing a page's only link or document is reported and saved, not ignored as "no change"."""
+    html = "<html><body><p>Unchanged text.</p></body></html>"
+    stored_page = test_critical_page.model_copy(update={"text_body": html, stored_field: [removed_url]})
+
+    async with mock_client_factory(lambda request: httpx2.Response(200, text=html)) as client:
+        updates: CriticalPageUpdate | None = await get_critical_page_updates(client, stored_page)
+
+    assert updates is not None
+    assert getattr(updates, recent_removed_field) == [removed_url]
+    assert getattr(updates, stored_field) == []
+
+
 # ======================================
 # get_website_updates
 # ======================================
