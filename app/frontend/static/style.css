@@ -14,6 +14,9 @@
     --surface: rgba(240, 235, 255, 0.38);
     --surface-2: rgba(232, 225, 255, 0.22);
     --surface-opaque: rgba(244, 240, 255, 0.92);
+    --content-bg: rgba(255, 255, 255, 0.58);
+    --content-border: rgba(255, 255, 255, 0.90);
+    --content-shadow: 0 1px 3px rgba(83, 74, 183, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.95);
     --border: rgba(255, 255, 255, 0.85);
     --border-md: rgba(210, 195, 255, 0.55);
 
@@ -84,6 +87,9 @@
     --surface: rgba(190, 165, 240, 0.11);
     --surface-2: rgba(160, 180, 230, 0.08);
     --surface-opaque: rgba(30, 25, 44, 0.94);
+    --content-bg: rgba(12, 9, 22, 0.48);
+    --content-border: rgba(255, 255, 255, 0.10);
+    --content-shadow: 0 1px 3px rgba(0, 0, 0, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.06);
     --border: rgba(255, 255, 255, 0.10);
     --border-md: rgba(200, 185, 255, 0.14);
 
@@ -204,20 +210,67 @@ button, input {
     margin: 28px auto 40px;
 }
 
-.dashboard-container > h2,
-.websites-section > h2,
-.add-website-section > h2 {
-    font-family: var(--font-display);
-    font-size: 22px;
-    font-weight: 700;
+/* Section headings sit in their own glass label so they stand off the background */
+.section-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.section-title {
+    display: inline-block;
     margin: 0 0 16px;
+    padding: 8px 18px;
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-weight: 700;
+    background: var(--surface);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--card-shadow);
+}
+
+.section-heading .section-title {
+    margin: 0;
 }
 
 .week-range {
-    margin-top: -8px;
-    color: var(--text-tertiary);
-    margin-bottom: 22px;
-    font-size: 13.5px;
+    margin: 0;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: var(--content-bg);
+    border: 1px solid var(--content-border);
+    border-radius: 20px;
+    box-shadow: var(--content-shadow);
+}
+
+
+/* EMPTY STATES */
+
+.empty-state {
+    margin: 0 0 20px;
+    padding: 16px 20px;
+    color: var(--text-secondary);
+    background: var(--surface);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    border: 1px dashed var(--border-md);
+    border-radius: var(--radius-lg);
+}
+
+.website-card .empty-state {
+    background: var(--content-bg);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    font-size: 14px;
 }
 
 
@@ -381,9 +434,17 @@ button, input {
 /* CHANGE RECORDS */
 
 .page-url {
-    color: var(--text-tertiary);
-    font-size: 13.5px;
+    display: inline-block;
+    max-width: 100%;
     margin: 0 0 20px;
+    padding: 6px 12px;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: var(--content-bg);
+    border: 1px solid var(--content-border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--content-shadow);
     overflow-wrap: anywhere;
 }
 
@@ -396,15 +457,70 @@ button, input {
 }
 
 .change-section h2 {
-    font-size: 15px;
+    font-size: 12px;
     font-weight: 600;
-    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-tertiary);
     margin: 0 0 10px;
 }
 
-.change-section p {
-    margin: 6px 0;
+/* Each added/removed item sits in its own box with a coloured edge */
+.change-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.change-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 10px 12px 10px 14px;
+    background: var(--content-bg);
+    border: 1px solid var(--content-border);
+    border-left: 3px solid var(--border-md);
+    border-radius: var(--radius-md);
+    box-shadow: var(--content-shadow);
+}
+
+.change-item-added {
+    border-left-color: var(--success-text);
+}
+
+.change-item-removed {
+    border-left-color: var(--danger-text);
+}
+
+.change-item-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.change-item-section {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-tertiary);
+}
+
+.change-item-text {
     overflow-wrap: anywhere;
+    color: var(--text-primary);
+}
+
+a.change-item-text {
+    color: var(--link);
+    min-width: 0;
+}
+
+.change-item-removed .change-item-text {
+    color: var(--text-secondary);
 }
 
 .comparison-table {
@@ -414,7 +530,8 @@ button, input {
     border: 1px solid var(--border-md);
     border-radius: var(--radius-md);
     overflow: hidden;
-    background: var(--surface-2);
+    background: var(--content-bg);
+    box-shadow: var(--content-shadow);
 }
 
 .comparison-table th,
@@ -446,6 +563,21 @@ button, input {
     font-size: 12.5px;
     font-weight: 600;
     white-space: nowrap;
+}
+
+.change-badge {
+    flex-shrink: 0;
+    padding: 2px 9px;
+    border-radius: 20px;
+    font-size: 11.5px;
+}
+
+.change-badge.added-label {
+    background: var(--success-bg);
+}
+
+.change-badge.removed-label {
+    background: var(--danger-bg);
 }
 
 .added-label {
@@ -512,8 +644,9 @@ button, input {
     border-radius: 20px;
     font-size: 12.5px;
     color: var(--text-secondary);
-    background: var(--surface-2);
-    border: 1px solid var(--border-md);
+    background: var(--content-bg);
+    border: 1px solid var(--content-border);
+    box-shadow: var(--content-shadow);
 }
 
 
@@ -534,9 +667,10 @@ button, input {
     align-items: center;
     gap: 15px;
     padding: 10px 12px;
-    background: var(--surface-2);
-    border: 1px solid var(--border-md);
+    background: var(--content-bg);
+    border: 1px solid var(--content-border);
     border-radius: var(--radius-md);
+    box-shadow: var(--content-shadow);
     transition: background 0.2s ease, border-color 0.2s ease;
 }
 
@@ -766,9 +900,10 @@ button:disabled {
 .scan-settings-form {
     margin-top: 12px;
     padding: 18px;
-    background: var(--surface-2);
-    border: 1px solid var(--border-md);
+    background: var(--content-bg);
+    border: 1px solid var(--content-border);
     border-radius: var(--radius-lg);
+    box-shadow: var(--content-shadow);
 }
 
 

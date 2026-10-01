@@ -75,16 +75,20 @@
 
         </div>
 
-        <h2>Daily Changes</h2>
+        <div class="section-heading">
 
-        <!-- DAILY CHANGES -->
-        <section id="daily-changes">
+            <h2 class="section-title">Daily Changes</h2>
 
             {% if daily_date %}
                 <p class="week-range">
                     Latest scan: {{ daily_date }}
                 </p>
             {% endif %}
+
+        </div>
+
+        <!-- DAILY CHANGES -->
+        <section id="daily-changes">
 
             {% if daily_records %}
 
@@ -164,76 +168,72 @@
                         {% endfor %}
 
 
-                        <!-- Added text -->
-                        {% for item in record.added %}
+                        <!-- Added / removed text -->
+                        {% if record.added or record.removed %}
 
                             <div class="change-section">
 
-                                {% if item is mapping %}
+                                <h2>Text</h2>
 
-                                    <h2>
-                                        {{ item.section }}
-                                    </h2>
+                                <ul class="change-list">
 
-                                    <p>
-                                        {{ item.text }}
+                                    {% for item in record.added %}
 
-                                        <span class="added-label">
-                                            — Added
-                                        </span>
-                                    </p>
+                                        <li class="change-item change-item-added">
 
-                                {% else %}
+                                            <div class="change-item-body">
 
-                                    <p>
-                                        {{ item }}
+                                                {% if item.section %}
+                                                    <span class="change-item-section">
+                                                        {{ item.section }}
+                                                    </span>
+                                                {% endif %}
 
-                                        <span class="added-label">
-                                            — Added
-                                        </span>
-                                    </p>
+                                                <span class="change-item-text">
+                                                    {{ item.text if item.text is defined else item }}
+                                                </span>
 
-                                {% endif %}
+                                            </div>
 
-                            </div>
+                                            <span class="change-badge added-label">
+                                                Added
+                                            </span>
 
-                        {% endfor %}
+                                        </li>
 
+                                    {% endfor %}
 
-                        <!-- Removed text -->
-                        {% for item in record.removed %}
+                                    {% for item in record.removed %}
 
-                            <div class="change-section">
+                                        <li class="change-item change-item-removed">
 
-                                {% if item is mapping %}
+                                            <div class="change-item-body">
 
-                                    <h2>
-                                        {{ item.section }}
-                                    </h2>
+                                                {% if item.section %}
+                                                    <span class="change-item-section">
+                                                        {{ item.section }}
+                                                    </span>
+                                                {% endif %}
 
-                                    <p>
-                                        {{ item.text }}
+                                                <span class="change-item-text">
+                                                    {{ item.text if item.text is defined else item }}
+                                                </span>
 
-                                        <span class="removed-label">
-                                            — Removed
-                                        </span>
-                                    </p>
+                                            </div>
 
-                                {% else %}
+                                            <span class="change-badge removed-label">
+                                                Removed
+                                            </span>
 
-                                    <p>
-                                        {{ item }}
+                                        </li>
 
-                                        <span class="removed-label">
-                                            — Removed
-                                        </span>
-                                    </p>
+                                    {% endfor %}
 
-                                {% endif %}
+                                </ul>
 
                             </div>
 
-                        {% endfor %}
+                        {% endif %}
 
 
                         <!-- Added / removed links -->
@@ -243,41 +243,51 @@
 
                                 <h2>Links</h2>
 
-                                {% for link in record.links_added %}
+                                <ul class="change-list">
 
-                                    <p>
-                                        <a
-                                            href="{{ link }}"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                        >
-                                            {{ link }}
-                                        </a>
+                                    {% for link in record.links_added %}
 
-                                        <span class="added-label">
-                                            — Added
-                                        </span>
-                                    </p>
+                                        <li class="change-item change-item-added">
 
-                                {% endfor %}
+                                            <a
+                                                class="change-item-text"
+                                                href="{{ link }}"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                            >
+                                                {{ link }}
+                                            </a>
 
-                                {% for link in record.links_removed %}
+                                            <span class="change-badge added-label">
+                                                Added
+                                            </span>
 
-                                    <p>
-                                        <a
-                                            href="{{ link }}"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                        >
-                                            {{ link }}
-                                        </a>
+                                        </li>
 
-                                        <span class="removed-label">
-                                            — Removed
-                                        </span>
-                                    </p>
+                                    {% endfor %}
 
-                                {% endfor %}
+                                    {% for link in record.links_removed %}
+
+                                        <li class="change-item change-item-removed">
+
+                                            <a
+                                                class="change-item-text"
+                                                href="{{ link }}"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                            >
+                                                {{ link }}
+                                            </a>
+
+                                            <span class="change-badge removed-label">
+                                                Removed
+                                            </span>
+
+                                        </li>
+
+                                    {% endfor %}
+
+                                </ul>
 
                             </div>
 
@@ -291,41 +301,51 @@
 
                                 <h2>Documents</h2>
 
-                                {% for document in record.documents_added %}
+                                <ul class="change-list">
 
-                                    <p>
-                                        <a
-                                            href="{{ document }}"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                        >
-                                            {{ document.split('/')[-1] }}
-                                        </a>
+                                    {% for document in record.documents_added %}
 
-                                        <span class="added-label">
-                                            — Added
-                                        </span>
-                                    </p>
+                                        <li class="change-item change-item-added">
 
-                                {% endfor %}
+                                            <a
+                                                class="change-item-text"
+                                                href="{{ document }}"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                            >
+                                                {{ document.split('/')[-1] }}
+                                            </a>
 
-                                {% for document in record.documents_removed %}
+                                            <span class="change-badge added-label">
+                                                Added
+                                            </span>
 
-                                    <p>
-                                        <a
-                                            href="{{ document }}"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                        >
-                                            {{ document.split('/')[-1] }}
-                                        </a>
+                                        </li>
 
-                                        <span class="removed-label">
-                                            — Removed
-                                        </span>
-                                    </p>
+                                    {% endfor %}
 
-                                {% endfor %}
+                                    {% for document in record.documents_removed %}
+
+                                        <li class="change-item change-item-removed">
+
+                                            <a
+                                                class="change-item-text"
+                                                href="{{ document }}"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                            >
+                                                {{ document.split('/')[-1] }}
+                                            </a>
+
+                                            <span class="change-badge removed-label">
+                                                Removed
+                                            </span>
+
+                                        </li>
+
+                                    {% endfor %}
+
+                                </ul>
 
                             </div>
 
@@ -337,7 +357,7 @@
 
             {% else %}
 
-                <p>
+                <p class="empty-state">
                     No changes were detected in the latest scan.
                 </p>
 
@@ -348,7 +368,7 @@
         <!-- MONITORED WEBSITES -->
         <section class="websites-section">
 
-            <h2>Monitored Websites</h2>
+            <h2 class="section-title">Monitored Websites</h2>
 
             {% if websites %}
 
@@ -427,7 +447,7 @@
 
                         {% else %}
 
-                            <p>
+                            <p class="empty-state">
                                 No critical pages have been added.
                             </p>
 
@@ -573,7 +593,7 @@
 
             {% else %}
 
-                <p>
+                <p class="empty-state">
                     No websites are currently being monitored.
                 </p>
 
@@ -585,7 +605,7 @@
         <!-- ADD WEBSITE -->
         <section class="add-website-section">
 
-            <h2>Add Website</h2>
+            <h2 class="section-title">Add Website</h2>
 
                 <form id="add-website-form">
 
