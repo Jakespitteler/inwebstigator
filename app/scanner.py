@@ -177,6 +177,9 @@ async def scan_all_websites() -> str | None:
     Updates the recipient's `last_scan_at` metadata and dispatches an HTML email notification
     if any scan reports were generated.
 
+    A website whose scan fails unexpectedly is logged and skipped, and a failed email is logged
+    and skipped, so one problem cannot stop the other websites being scanned or reported.
+
     Returns:
         str | None: Consolidated HTML list of scan reports if updates/errors occurred,
         otherwise None.
@@ -202,7 +205,11 @@ async def scan_all_websites() -> str | None:
                 logger.info(f"{website.url} has been skipped as there has not been enough time since last scan.")
                 continue
 
-            report: str | None = await scan_website(client, website)
+            try:
+                report: str | None = await scan_website(client, website)
+            except Exception:
+                logger.exception(f"Scan failed for {website.url}, continuing with the remaining websites.")
+                report = None
 
             if report:
                 for recipient in website.recipients:
@@ -211,10 +218,15 @@ async def scan_all_websites() -> str | None:
             else:
                 logger.info(f"No updates found for: {website.url}")
 
+            # Recorded even when the scan failed, so a broken website is retried at its normal
+            # interval rather than on every hourly check
             with db_context() as session:
                 WebsiteService(session).update(id=website.id, model_update=WebsiteUpdate(last_scan_at=datetime.now()))
 
     if reports:
         for recipient_email, recipient_report in reports.items():
-            send_notification(recipient_email, f"<ul>{''.join(recipient_report)}</ul>")
+            try:
+                send_notification(recipient_email, f"<ul>{''.join(recipient_report)}</ul>")
+            except Exception:
+                logger.exception(f"Failed to send scan report to {recipient_email}")
         return all_reports_html

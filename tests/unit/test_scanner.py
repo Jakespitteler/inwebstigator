@@ -1,3 +1,4 @@
+import uuid
 from contextlib import nullcontext
 from datetime import datetime, timedelta
 from email.message import EmailMessage
@@ -326,3 +327,70 @@ async def test_scan_all_websites_skips_inactive_cooldown_and_recent_scans(
     mock_scan_website.assert_not_called()
     mock_send_notification.assert_not_called()
     assert result is None
+
+
+def _due_website(website: WebsiteRead, url: str, recipient_email: str) -> WebsiteRead:
+    """Returns a copy of the website that is due a scan, with a single recipient."""
+    recipient = website.recipients[0].model_copy(update={"email": recipient_email})
+    return website.model_copy(
+        update={
+            "id": uuid.uuid4(),
+            "url": url,
+            "active": True,
+            "on_cooldown_until": None,
+            "last_scan_at": None,
+            "recipients": [recipient],
+        }
+    )
+
+
+@pytest.mark.anyio
+async def test_scan_all_websites_continues_after_a_website_fails(
+    populated_website: WebsiteRead,
+    mocker: MockerFixture,
+):
+    """Tests one website's unexpected failure does not stop the others being scanned and reported."""
+    first = _due_website(populated_website, "https://first.com", "first@gmail.com")
+    broken = _due_website(populated_website, "https://broken.com", "broken@gmail.com")
+    last = _due_website(populated_website, "https://last.com", "last@gmail.com")
+    mocker.patch.object(WebsiteService, "get_all", return_value=[first, broken, last])
+    mock_scan_website = mocker.patch(
+        "app.scanner.scan_website",
+        side_effect=[
+            "<li>first report</li>",
+            httpx2.HTTPStatusError("404", request=None, response=None),
+            "<li>last report</li>",
+        ],  # type: ignore
+    )
+    mock_send_notification = mocker.patch("app.scanner.send_notification")
+    mock_update = mocker.patch.object(WebsiteService, "update")
+
+    result = await scanner.scan_all_websites()
+
+    assert mock_scan_website.call_count == 3
+    assert [call.args[0] for call in mock_send_notification.call_args_list] == ["first@gmail.com", "last@gmail.com"]
+    assert result == "<li>first report</li><li>last report</li>"
+
+    # The broken website's scan time is still recorded, so it is retried at its normal interval
+    assert [call.kwargs["id"] for call in mock_update.call_args_list] == [first.id, broken.id, last.id]
+
+
+@pytest.mark.anyio
+async def test_scan_all_websites_continues_after_a_failed_send(
+    populated_website: WebsiteRead,
+    mocker: MockerFixture,
+):
+    """Tests one recipient's failed email does not stop the remaining recipients being emailed."""
+    first = _due_website(populated_website, "https://first.com", "first@gmail.com")
+    second = _due_website(populated_website, "https://second.com", "second@gmail.com")
+    mocker.patch.object(WebsiteService, "get_all", return_value=[first, second])
+    mocker.patch("app.scanner.scan_website", side_effect=["<li>first report</li>", "<li>second report</li>"])
+    mock_send_notification = mocker.patch(
+        "app.scanner.send_notification", side_effect=[ConnectionError("smtp down"), None]
+    )
+    mocker.patch.object(WebsiteService, "update")
+
+    result = await scanner.scan_all_websites()
+
+    assert [call.args[0] for call in mock_send_notification.call_args_list] == ["first@gmail.com", "second@gmail.com"]
+    assert result == "<li>first report</li><li>second report</li>"
