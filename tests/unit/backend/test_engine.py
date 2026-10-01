@@ -1,7 +1,10 @@
+import asyncio
+import uuid
 from collections.abc import Callable
 
 import httpx2
 import pytest
+from pytest_mock import MockerFixture
 
 from app.backend.engine import get_critical_page_updates, get_website_updates
 from app.core.errors import TrafficError
@@ -211,3 +214,49 @@ async def test_get_website_updates_traffic_error(
             await get_website_updates(client=client, stored_website=test_website, max_pages=10, delay=0, concurrent=2)
 
     assert exc_info.value.status_code == 429
+
+
+@pytest.mark.anyio
+async def test_get_website_updates_skips_a_broken_critical_page(
+    test_website: WebsiteRead,
+    test_critical_page: CriticalPageRead,
+    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
+    mocker: MockerFixture,
+):
+    """Tests one critical page failing (e.g. deleted, now 404) does not stop the other pages and crawl."""
+    mocker.patch("app.backend.engine.crawl_site", return_value={test_website.url, f"{test_website.url}new-page"})
+    working_page = test_critical_page.model_copy(update={"text_body": "<html><body><p>Old text.</p></body></html>"})
+    broken_page = test_critical_page.model_copy(
+        update={"id": uuid.uuid4(), "url": f"{test_website.url}deleted-page", "text_body": "<p>Was here.</p>"}
+    )
+    website = test_website.model_copy(update={"critical_pages": [broken_page, working_page], "internal_links": []})
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        if str(request.url) == broken_page.url:
+            return httpx2.Response(404)
+        return httpx2.Response(200, text="<html><body><p>New text.</p></body></html>")
+
+    async with mock_client_factory(handler) as client:
+        updates: WebsiteUpdate | None = await get_website_updates(client, website, None, None, None)
+
+    assert updates is not None
+    assert updates.critical_page_updates is not None
+    assert set(updates.critical_page_updates) == {working_page.id}
+    assert updates.critical_page_updates[working_page.id].recent_text_changed
+    assert updates.recent_added_internal_links  # the crawl still ran
+
+
+@pytest.mark.anyio
+async def test_get_website_updates_does_not_swallow_cancellation(
+    test_website: WebsiteRead,
+    test_critical_page: CriticalPageRead,
+    mocker: MockerFixture,
+):
+    """Tests cancellation (e.g. the app shutting down) still stops the scan rather than being skipped."""
+    mocker.patch("app.backend.engine.get_critical_page_updates", side_effect=asyncio.CancelledError())
+    crawl = mocker.patch("app.backend.engine.crawl_site")
+    website = test_website.model_copy(update={"critical_pages": [test_critical_page]})
+
+    with pytest.raises(asyncio.CancelledError):
+        await get_website_updates(mocker.Mock(), website, None, None, None)
+    crawl.assert_not_called()

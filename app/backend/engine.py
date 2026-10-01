@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import uuid
 
 from httpx2 import AsyncClient
 
@@ -138,12 +139,21 @@ async def get_website_updates(
     updates = WebsiteUpdate(url=stored_website.url)
 
     if stored_website.critical_pages:
-        results = await asyncio.gather(*(get_critical_page_updates(client, cp) for cp in stored_website.critical_pages))
-        updates.critical_page_updates = {
-            cp.id: update
-            for cp, update in zip(stored_website.critical_pages, results, strict=False)
-            if update is not None
-        } or None
+        # Gather failures per page, so one broken page (e.g. deleted, now a 404) is skipped
+        # instead of stopping the rest of the website from being checked
+        results = await asyncio.gather(
+            *(get_critical_page_updates(client, cp) for cp in stored_website.critical_pages),
+            return_exceptions=True,
+        )
+        critical_page_updates: dict[uuid.UUID, CriticalPageUpdate] = {}
+        for cp, result in zip(stored_website.critical_pages, results, strict=True):
+            if isinstance(result, BaseException):
+                if not isinstance(result, Exception):
+                    raise result  # e.g. cancellation when the app is shutting down
+                logger.warning(f"Skipping critical page {cp.url} this scan as it could not be checked: {result!r}")
+            elif result is not None:
+                critical_page_updates[cp.id] = result
+        updates.critical_page_updates = critical_page_updates or None
 
     current_internal_links: list[str] = list(
         await crawl_site(
