@@ -1,18 +1,24 @@
+from contextlib import nullcontext
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 
 import httpx2
 import pytest
+from bs4 import BeautifulSoup
+from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
+from sqlalchemy.orm import Session
 
 from app import scanner
 from app.core.errors import TrafficError, WebConnectionError
+from app.db import repository
+from app.db.schema import DBWebsite
 from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
 from app.models.critical_page_models import CriticalPageRead
 from app.models.internal_link_models import InternalLinkRead
 from app.models.recipient_models import RecipientRead
-from app.models.website_models import WebsiteRead
+from app.models.website_models import WebsiteCreate, WebsiteRead
 
 # ======================================
 # Setup Fixtures
@@ -21,6 +27,7 @@ from app.models.website_models import WebsiteRead
 
 @pytest.fixture
 def populated_website(
+    session: Session,
     test_website: WebsiteRead,
     test_internal_link: InternalLinkRead,
     test_critical_page: CriticalPageRead,
@@ -30,7 +37,7 @@ def populated_website(
     return test_website.model_copy(
         update={
             "internal_links": [test_internal_link],
-            "critical_pages": [test_critical_page],
+            "critical_pages": WebsiteService(session).ensure_main_critical_page(test_website.id).critical_pages,
             "recipients": [test_recipient],
         }
     )
@@ -169,6 +176,58 @@ def test_monitoring_started_html_escapes_urls_and_describes_schedule(populated_w
 # ======================================
 # scan_website Tests
 # ======================================
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("existing_website", [False, True], ids=["new-website", "existing-website"])
+async def test_main_url_content_is_scanned_and_shown_in_updates(
+    session: Session, mocker: MockerFixture, api_client: TestClient, existing_website: bool
+):
+    """Scan the starting page without manually adding it, then detect a real content change."""
+    main_url = "https://example.com/au?edition=local"
+    service = WebsiteService(session)
+    if existing_website:
+        record = DBWebsite(url=main_url)
+        repository.add(session, record)
+        website = WebsiteRead.model_validate(record)
+        assert website.critical_pages == []
+    else:
+        website = service.create(WebsiteCreate(url=main_url))
+
+    mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
+    mocker.patch("app.backend.engine.crawl_site", return_value=set())
+    requested_urls = []
+    html = "<html><body><p>Original main page content.</p></body></html>"
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requested_urls.append(str(request.url))
+        return httpx2.Response(200, text=html)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
+        await scanner.scan_website(client, website)
+        baseline = service.get(website.id)
+        assert len(baseline.critical_pages) == 1
+        main_page = baseline.critical_pages[0]
+        assert main_page.url == main_url
+        assert main_page.text_body == html
+
+        html = html.replace("</body>", "<p>New main-page announcement.</p></body>")
+        report = await scanner.scan_website(client, baseline)
+        updated = service.get(website.id)
+        assert updated.critical_pages[0].id == main_page.id
+        assert updated.critical_pages[0].text_body == html
+        assert "New main-page announcement." in report
+
+        response = api_client.get("/")
+        assert response.status_code == 200
+        dashboard = BeautifulSoup(response.text, "html.parser")
+        assert "New main-page announcement." in dashboard.select_one("#updates-panel").get_text()
+        assert "Main website (automatic)" in dashboard.select_one("#websites-panel").get_text()
+
+        assert await scanner.scan_website(client, updated) is None
+
+    assert requested_urls == [main_url, main_url, main_url]
+    assert len(service.get(website.id).critical_pages) == 1
 
 
 @pytest.mark.anyio

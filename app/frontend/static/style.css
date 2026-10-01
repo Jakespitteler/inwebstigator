@@ -359,6 +359,64 @@ button, input {
 }
 
 
+/* WEBSITES / UPDATES TABS */
+
+.tab-buttons {
+    display: flex;
+    gap: 4px;
+    max-width: 460px;
+    margin-bottom: 28px;
+    padding: 5px;
+    background: var(--surface);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--card-shadow);
+}
+
+.tab-button {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 10px 22px;
+    border: 1px solid transparent;
+    border-radius: 17px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: var(--font);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.tab-button:hover {
+    color: var(--text-primary);
+    background: var(--control-bg);
+}
+
+.tab-button.active {
+    color: #fff;
+    background: linear-gradient(145deg, rgba(104, 96, 208, 0.92) 0%, rgba(74, 66, 176, 0.88) 100%);
+    border-color: rgba(180, 160, 255, 0.45);
+    box-shadow:
+        0 4px 18px rgba(83, 74, 183, 0.40),
+        inset 0 1px 0 rgba(255, 255, 255, 0.40);
+}
+
+.tab-content[hidden] {
+    display: none;
+}
+
+/* Each tab starts its own page, so the old divider above the websites list is not needed */
+.tab-content > .websites-section:first-child {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+}
+
+
 /* GLASS CARDS */
 
 .change-record,
@@ -650,9 +708,65 @@ a.change-item-text {
 }
 
 
+/* WEBSITE CARD HEADER */
+
+.website-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px 20px;
+}
+
+.website-identity {
+    flex: 1 1 220px;
+    min-width: 0;
+}
+
+.website-card .website-identity h3 {
+    margin: 0 0 4px;
+}
+
+.website-name {
+    font-family: var(--font-display);
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.change-record .website-name {
+    margin: 0 0 10px;
+    font-size: 18px;
+}
+
+.website-url {
+    font-size: 13.5px;
+    font-weight: 400;
+    color: var(--text-tertiary);
+}
+
+.website-url:hover {
+    color: var(--link);
+}
+
+.website-card .delete-website-button {
+    margin-top: 14px;
+}
+
+.main-page-badge {
+    flex-shrink: 0;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--link);
+    background: var(--accent-light);
+}
+
+
 /* EXISTING CRITICAL PAGES */
 
-.critical-page-list {
+.critical-page-list,
+.recipient-list {
     list-style: none;
     padding: 0;
     margin: 10px 0 20px;
@@ -661,7 +775,8 @@ a.change-item-text {
     gap: 8px;
 }
 
-.critical-page-list li {
+.critical-page-list li,
+.recipient-list li {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -674,12 +789,14 @@ a.change-item-text {
     transition: background 0.2s ease, border-color 0.2s ease;
 }
 
-.critical-page-list li:hover {
+.critical-page-list li:hover,
+.recipient-list li:hover {
     background: var(--control-bg);
     border-color: var(--focus-border);
 }
 
-.critical-page-list a {
+.critical-page-list a,
+.recipient-list span {
     overflow-wrap: anywhere;
     font-size: 14px;
 }
@@ -688,6 +805,7 @@ a.change-item-text {
 /* FORM FIELDS */
 
 .add-critical-page-form label,
+.add-recipient-form label,
 .scan-setting-row label,
 .form-group label {
     display: block;
@@ -703,9 +821,11 @@ a.change-item-text {
 }
 
 .add-critical-page-form input,
+.add-recipient-form input,
 .scan-setting-row input[type="number"],
 #website-url,
-.critical-page-input {
+.critical-page-input,
+.recipient-email-input {
     width: 100%;
     padding: 10px 14px;
     border: 1px solid var(--control-border);
@@ -719,9 +839,11 @@ a.change-item-text {
 }
 
 [data-theme="dark"] .add-critical-page-form input,
+[data-theme="dark"] .add-recipient-form input,
 [data-theme="dark"] .scan-setting-row input[type="number"],
 [data-theme="dark"] #website-url,
-[data-theme="dark"] .critical-page-input {
+[data-theme="dark"] .critical-page-input,
+[data-theme="dark"] .recipient-email-input {
     box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.28);
 }
 
@@ -731,16 +853,19 @@ input::placeholder {
 }
 
 .add-critical-page-form input:focus,
+.add-recipient-form input:focus,
 .scan-setting-row input[type="number"]:focus,
 #website-url:focus,
-.critical-page-input:focus {
+.critical-page-input:focus,
+.recipient-email-input:focus {
     outline: none;
     border-color: var(--focus-border);
     background: var(--control-bg-hover);
     box-shadow: 0 0 0 3px var(--focus-ring), 0 4px 16px rgba(83, 74, 183, 0.14);
 }
 
-.critical-page-input {
+.critical-page-input,
+.recipient-email-input {
     display: block;
     margin-bottom: 10px;
 }
@@ -758,7 +883,8 @@ input::placeholder {
     margin-bottom: 16px;
 }
 
-.add-critical-page-form {
+.add-critical-page-form,
+.add-recipient-form {
     margin-top: 20px;
 }
 
@@ -766,11 +892,15 @@ input::placeholder {
 /* BUTTONS */
 
 .add-critical-page-form button,
+.add-recipient-form button,
 .scan-settings-form button,
+.run-scan-button,
 .submit-button,
 #add-critical-page-input,
+#add-recipient-email-input,
 .delete-website-button,
-.delete-critical-page-button {
+.delete-critical-page-button,
+.delete-recipient-button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -785,11 +915,15 @@ input::placeholder {
 }
 
 .add-critical-page-form button:active,
+.add-recipient-form button:active,
 .scan-settings-form button:active,
+.run-scan-button:active,
 .submit-button:active,
 #add-critical-page-input:active,
+#add-recipient-email-input:active,
 .delete-website-button:active,
-.delete-critical-page-button:active {
+.delete-critical-page-button:active,
+.delete-recipient-button:active {
     transform: scale(0.97);
 }
 
@@ -807,7 +941,9 @@ button:disabled {
 
 /* Primary */
 .add-critical-page-form button,
+.add-recipient-form button,
 .scan-settings-form button[type="submit"],
+.run-scan-button,
 .submit-button {
     color: #fff;
     background: linear-gradient(145deg, rgba(104, 96, 208, 0.92) 0%, rgba(74, 66, 176, 0.88) 100%);
@@ -820,7 +956,9 @@ button:disabled {
 }
 
 .add-critical-page-form button:hover,
+.add-recipient-form button:hover,
 .scan-settings-form button[type="submit"]:hover,
+.run-scan-button:hover:not(:disabled),
 .submit-button:hover {
     background: linear-gradient(145deg, rgba(120, 112, 224, 0.94) 0%, rgba(90, 82, 192, 0.90) 100%);
     transform: translateY(-2px);
@@ -830,13 +968,14 @@ button:disabled {
         inset 0 1px 0 rgba(255, 255, 255, 0.50);
 }
 
-.add-critical-page-form button {
+.add-critical-page-form button,
+.add-recipient-form button {
     margin-top: 12px;
 }
 
 /* Secondary */
 #add-critical-page-input,
-.run-scan-button {
+#add-recipient-email-input {
     color: var(--text-primary);
     background: var(--control-bg);
     border: 1px solid var(--control-border);
@@ -844,18 +983,23 @@ button:disabled {
 }
 
 #add-critical-page-input:hover,
-.run-scan-button:hover {
+#add-recipient-email-input:hover {
     background: var(--control-bg-hover);
     transform: translateY(-1px);
 }
 
 .run-scan-button {
-    margin-top: 14px;
+    flex-shrink: 0;
+}
+
+.run-scan-button:disabled {
+    cursor: wait;
 }
 
 /* Destructive */
 .delete-website-button,
-.delete-critical-page-button {
+.delete-critical-page-button,
+.delete-recipient-button {
     flex-shrink: 0;
     padding: 7px 12px;
     font-size: 12.5px;
@@ -865,7 +1009,8 @@ button:disabled {
 }
 
 .delete-website-button:hover,
-.delete-critical-page-button:hover {
+.delete-critical-page-button:hover,
+.delete-recipient-button:hover {
     color: #fff;
     background: var(--danger-solid);
     border-color: var(--danger-solid);
@@ -914,7 +1059,8 @@ button:disabled {
     margin-bottom: 60px;
 }
 
-#add-critical-page-input {
+#add-critical-page-input,
+#add-recipient-email-input {
     padding: 8px 14px;
     font-size: 13px;
 }
@@ -924,6 +1070,7 @@ button:disabled {
 
 #website-form-message,
 .critical-page-message,
+.recipient-message,
 .scan-settings-message,
 .run-scan-message {
     margin: 12px 0 0;
@@ -933,6 +1080,7 @@ button:disabled {
 
 #website-form-message:empty,
 .critical-page-message:empty,
+.recipient-message:empty,
 .scan-settings-message:empty,
 .run-scan-message:empty {
     display: none;
@@ -975,13 +1123,18 @@ button:disabled {
         font-size: 20px;
     }
 
+    .tab-buttons {
+        max-width: none;
+    }
+
     .change-record,
     .website-card,
     #add-website-form {
         padding: 18px;
     }
 
-    .critical-page-list li {
+    .critical-page-list li,
+    .recipient-list li {
         flex-direction: column;
         align-items: flex-start;
     }

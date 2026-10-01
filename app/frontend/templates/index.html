@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Website Changes</title>
+    <title>Inwebstigator</title>
 
     <!-- Apply the saved theme before the first paint so the page never flashes the wrong one -->
     <script>
@@ -49,7 +49,7 @@
     <main class="dashboard-container">
 
         <div class="dashboard-header">
-            <h1>Website Changes</h1>
+            <h1>Inwebstigator</h1>
 
             <button
                 type="button"
@@ -75,6 +75,28 @@
 
         </div>
 
+        <div class="tab-buttons" role="tablist" aria-label="Dashboard sections">
+            <button
+                type="button"
+                id="websites-tab"
+                class="tab-button active"
+                role="tab"
+                aria-selected="true"
+                aria-controls="websites-panel"
+            >WEBSITES</button>
+            <button
+                type="button"
+                id="updates-tab"
+                class="tab-button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="updates-panel"
+                tabindex="-1"
+            >UPDATES</button>
+        </div>
+
+        <section id="updates-panel" class="tab-content" role="tabpanel"
+            aria-labelledby="updates-tab" tabindex="0" hidden>
         <div class="section-heading">
 
             <h2 class="section-title">Daily Changes</h2>
@@ -96,8 +118,11 @@
 
                     <section class="change-record">
 
+                        <h3 class="website-name">{{ record.website_url | website_name }}</h3>
                         <p class="page-url">
-                            {{ record.url }}
+                            <a href="{{ record.url }}" target="_blank" rel="noopener noreferrer">
+                                {{ record.url }}
+                            </a>
                         </p>
 
                         <!-- Changed content -->
@@ -166,6 +191,7 @@
                             </div>
 
                         {% endfor %}
+
 
 
                         <!-- Added / removed text -->
@@ -365,6 +391,10 @@
 
         </section>
 
+        </section>
+
+        <section id="websites-panel" class="tab-content" role="tabpanel"
+            aria-labelledby="websites-tab" tabindex="0">
         <!-- MONITORED WEBSITES -->
         <section class="websites-section">
 
@@ -376,15 +406,32 @@
 
                     <div class="website-card">
 
-                        <h3>
-                            <a
-                                href="{{ website.url }}"
-                                target="_blank"
-                                rel="noopener noreferrer"
+                        <div class="website-card-header">
+                            <div class="website-identity">
+                                <h3 class="website-name">{{ website.url | website_name }}</h3>
+                                <a
+                                    class="website-url"
+                                    href="{{ website.url }}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    {{ website.url }}
+                                </a>
+                            </div>
+
+                            <button
+                                type="button"
+                                class="run-scan-button"
+                                data-website-url="{{ website.url }}"
                             >
-                                {{ website.url }}
-                            </a>
-                        </h3>
+                                Run Scan Now
+                            </button>
+                        </div>
+
+                        <p
+                            class="run-scan-message"
+                            aria-live="polite"
+                        ></p>
 
                         <button
                             type="button"
@@ -394,6 +441,7 @@
                         >
                             Delete Website
                         </button>
+
 
 
                         <div class="website-summary">
@@ -411,6 +459,7 @@
                             </p>
 
                         </div>
+
 
 
                         <h4>Critical Pages</h4>
@@ -431,6 +480,9 @@
                                             {{ page.url }}
                                         </a>
 
+                                        {% if page.url == website.url %}
+                                        <span class="main-page-badge">Main website (automatic)</span>
+                                        {% else %}
                                         <button
                                             type="button"
                                             class="delete-critical-page-button"
@@ -438,6 +490,7 @@
                                         >
                                             Delete
                                         </button>
+                                        {% endif %}
 
                                     </li>
 
@@ -452,6 +505,7 @@
                             </p>
 
                         {% endif %}
+
 
 
                         <!-- Add a critical page later -->
@@ -483,6 +537,76 @@
                         </form>
 
 
+
+                        <!-- Notification recipients -->
+                        <h4>Notification Emails</h4>
+
+                        {% if website.recipients %}
+
+                            <ul class="recipient-list">
+
+                                {% for recipient in website.recipients %}
+
+                                    <li>
+
+                                        <span>
+                                            {{ recipient.email }}
+                                        </span>
+
+                                        <button
+                                            type="button"
+                                            class="delete-recipient-button"
+                                            data-website-id="{{ website.id }}"
+                                            data-recipient-email="{{ recipient.email }}"
+                                        >
+                                            Delete
+                                        </button>
+
+                                    </li>
+
+                                {% endfor %}
+
+                            </ul>
+
+                        {% else %}
+
+                            <p class="empty-state">
+                                No notification emails have been added.
+                            </p>
+
+                        {% endif %}
+
+
+
+                        <form
+                            class="add-recipient-form"
+                            data-website-id="{{ website.id }}"
+                        >
+
+                            <label>
+                                Add Notification Email
+                            </label>
+
+                            <input
+                                type="email"
+                                class="new-recipient-email"
+                                placeholder="name@example.com"
+                                required
+                            >
+
+                            <button type="submit">
+                                Add Email
+                            </button>
+
+                            <p
+                                class="recipient-message"
+                                aria-live="polite"
+                            ></p>
+
+                        </form>
+
+
+
                         <!-- Scan settings -->
                         <details class="scan-settings">
 
@@ -509,6 +633,7 @@
                                 </div>
 
 
+
                                 <div class="scan-setting-row">
 
                                     <label>
@@ -525,6 +650,7 @@
                                     >
 
                                 </div>
+
 
 
                                 <div class="scan-setting-row">
@@ -570,18 +696,7 @@
                                     aria-live="polite"
                                 ></p>
 
-                                <button
-                                    type="button"
-                                    class="run-scan-button"
-                                    data-website-url="{{ website.url }}"
-                                >
-                                    Run Scan Now
-                                </button>
-
-                                <p
-                                    class="run-scan-message"
-                                    aria-live="polite"
-                                ></p>
+                                
 
                             </form>
 
@@ -600,6 +715,7 @@
             {% endif %}
 
         </section>
+
 
 
         <!-- ADD WEBSITE -->
@@ -625,11 +741,12 @@
                     </div>
 
 
+
                     <div class="form-group">
 
                         <label>
                             Critical Pages
-                            <span>(optional)</span>
+                            <span>(optional additional pages)</span>
                         </label>
 
                         <div id="critical-page-inputs">
@@ -652,6 +769,35 @@
                     </div>
 
 
+
+                    <div class="form-group">
+
+                        <label>
+                            Notification Emails
+                            <span>(optional)</span>
+                        </label>
+
+                        <div id="recipient-email-inputs">
+
+                            <input
+                                type="email"
+                                class="recipient-email-input"
+                                placeholder="name@example.com"
+                            >
+
+                        </div>
+
+                        <button
+                            type="button"
+                            id="add-recipient-email-input"
+                        >
+                            + Add another email
+                        </button>
+
+                    </div>
+
+
+
                     <button
                         type="submit"
                         class="submit-button"
@@ -668,11 +814,13 @@
 
         </section>
 
+        </section>
+
     </main>
 
 
-    <script>
 
+    <script>
         // Light / dark mode toggle
         const THEME_KEY = "inwebstigator-theme";
 
@@ -741,6 +889,50 @@
         );
 
 
+
+        // Keep the selected section when forms and scans refresh the dashboard.
+        const dashboardTabs = Array.from(document.querySelectorAll('[role="tab"]'));
+
+        function selectDashboardTab(tab) {
+            dashboardTabs.forEach((item) => {
+                const selected = item === tab;
+                item.classList.toggle("active", selected);
+                item.setAttribute("aria-selected", String(selected));
+                item.tabIndex = selected ? 0 : -1;
+                document.getElementById(item.getAttribute("aria-controls")).hidden = !selected;
+            });
+        }
+
+        function restoreDashboardTab() {
+            selectDashboardTab(document.getElementById(
+                window.location.hash === "#updates" ? "updates-tab" : "websites-tab"
+            ));
+        }
+
+        dashboardTabs.forEach((tab, index) => {
+            tab.addEventListener("click", () => {
+                selectDashboardTab(tab);
+                window.location.hash = tab.id === "websites-tab" ? "websites" : "updates";
+            });
+            tab.addEventListener("keydown", (event) => {
+                let nextTab;
+                if (event.key === "ArrowRight") nextTab = dashboardTabs[(index + 1) % dashboardTabs.length];
+                if (event.key === "ArrowLeft") {
+                    nextTab = dashboardTabs[(index + dashboardTabs.length - 1) % dashboardTabs.length];
+                }
+                if (event.key === "Home") nextTab = dashboardTabs[0];
+                if (event.key === "End") nextTab = dashboardTabs[dashboardTabs.length - 1];
+                if (nextTab) {
+                    event.preventDefault();
+                    nextTab.focus();
+                    nextTab.click();
+                }
+            });
+        });
+
+        window.addEventListener("hashchange", restoreDashboardTab);
+        restoreDashboardTab();
+
         // Add extra critical-page fields when creating a website
         const addCriticalPageButton =
             document.getElementById(
@@ -770,6 +962,39 @@
                 }
             );
         }
+
+
+
+        // Add extra recipient email fields when creating a website
+        const addRecipientEmailButton =
+            document.getElementById(
+                "add-recipient-email-input"
+            );
+
+        if (addRecipientEmailButton) {
+
+            addRecipientEmailButton.addEventListener(
+                "click",
+                () => {
+
+                    const input =
+                        document.createElement("input");
+
+                    input.type = "email";
+                    input.className =
+                        "recipient-email-input";
+                    input.placeholder =
+                        "name@example.com";
+
+                    document
+                        .getElementById(
+                            "recipient-email-inputs"
+                        )
+                        .appendChild(input);
+                }
+            );
+        }
+
 
 
         // Add a new website
@@ -804,6 +1029,19 @@
                                 url.length > 0
                             );
 
+                    const recipientEmails =
+                        Array.from(
+                            document.querySelectorAll(
+                                ".recipient-email-input"
+                            )
+                        )
+                            .map((input) =>
+                                input.value.trim()
+                            )
+                            .filter((email) =>
+                                email.length > 0
+                            );
+
                     const message =
                         document.getElementById(
                             "website-form-message"
@@ -826,7 +1064,9 @@
                                     body: JSON.stringify({
                                         url: websiteUrl,
                                         critical_pages:
-                                            criticalPages
+                                            criticalPages,
+                                        recipient_emails:
+                                            recipientEmails
                                     })
                                 }
                             );
@@ -847,6 +1087,7 @@
                 }
             );
         }
+
 
 
         // Add a critical page to an existing website
@@ -886,7 +1127,7 @@
 
                         const response =
                             await fetch(
-                                "/critical_pages/",
+                                "/scanner/initial_critical_page_scan/",
                                 {
                                     method: "POST",
                                     headers: {
@@ -917,6 +1158,7 @@
                 }
             );
         });
+
 
 
         // Delete an existing critical page
@@ -972,6 +1214,146 @@
                 );
             }
         );
+
+
+
+        // Add a notification email to an existing website
+        const recipientForms =
+            document.querySelectorAll(
+                ".add-recipient-form"
+            );
+
+        recipientForms.forEach((form) => {
+
+            form.addEventListener(
+                "submit",
+                async (event) => {
+
+                    event.preventDefault();
+
+                    const websiteId =
+                        form.dataset.websiteId;
+
+                    const input =
+                        form.querySelector(
+                            ".new-recipient-email"
+                        );
+
+                    const message =
+                        form.querySelector(
+                            ".recipient-message"
+                        );
+
+                    const email =
+                        input.value.trim();
+
+                    message.textContent =
+                        "Adding email...";
+
+                    try {
+
+                        const response =
+                            await fetch(
+                                `/websites/${websiteId}`,
+                                {
+                                    method: "PATCH",
+                                    headers: {
+                                        "Content-Type":
+                                            "application/json"
+                                    },
+                                    body: JSON.stringify({
+                                        add_recipient_emails: [
+                                            email
+                                        ]
+                                    })
+                                }
+                            );
+
+                        if (!response.ok) {
+                            throw new Error(
+                                "Unable to add notification email."
+                            );
+                        }
+
+                        window.location.reload();
+
+                    } catch (error) {
+
+                        message.textContent =
+                            error.message;
+                    }
+                }
+            );
+        });
+
+
+
+        // Remove a notification email from an existing website
+        const deleteRecipientButtons =
+            document.querySelectorAll(
+                ".delete-recipient-button"
+            );
+
+        deleteRecipientButtons.forEach(
+            (button) => {
+
+                button.addEventListener(
+                    "click",
+                    async () => {
+
+                        const websiteId =
+                            button.dataset.websiteId;
+
+                        const email =
+                            button.dataset.recipientEmail;
+
+                        const confirmed =
+                            window.confirm(
+                                `Remove ${email} from this website?`
+                            );
+
+                        if (!confirmed) {
+                            return;
+                        }
+
+                        try {
+
+                            const response =
+                                await fetch(
+                                    `/websites/${websiteId}`,
+                                    {
+                                        method: "PATCH",
+                                        headers: {
+                                            "Content-Type":
+                                                "application/json"
+                                    },
+                                    body: JSON.stringify({
+                                        remove_recipient_emails: [
+                                            email
+                                        ]
+                                    })
+                                }
+                            );
+
+                            if (!response.ok) {
+                                throw new Error(
+                                    "Unable to remove notification email."
+                                );
+                            }
+
+                            window.location.reload();
+
+                        } catch (error) {
+
+                            window.alert(
+                                error.message
+                            );
+                        }
+                    }
+                );
+            }
+        );
+
 
 
         // Delete an existing website
@@ -1030,6 +1412,7 @@
                 );
             }
         );
+
 
 
         // Update scan settings for an existing website
@@ -1142,7 +1525,7 @@
                         button.dataset.websiteUrl;
 
                     const message =
-                        button.parentElement.querySelector(
+                        button.closest(".website-card").querySelector(
                             ".run-scan-message"
                         );
 
