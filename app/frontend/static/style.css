@@ -14,6 +14,8 @@
     --surface: rgba(240, 235, 255, 0.38);
     --surface-2: rgba(232, 225, 255, 0.22);
     --surface-opaque: rgba(244, 240, 255, 0.92);
+    --header-bg: linear-gradient(100deg, rgba(118, 84, 246, 0.96) 0%, rgba(108, 88, 228, 0.93) 50%, rgba(104, 92, 214, 0.92) 100%);
+    --header-glow: 0 8px 32px rgba(110, 80, 240, 0.40), 0 2px 8px rgba(83, 74, 183, 0.20);
     --content-bg: rgba(255, 255, 255, 0.58);
     --content-border: rgba(255, 255, 255, 0.90);
     --content-shadow: 0 1px 3px rgba(83, 74, 183, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.95);
@@ -87,6 +89,8 @@
     --surface: rgba(190, 165, 240, 0.11);
     --surface-2: rgba(160, 180, 230, 0.08);
     --surface-opaque: rgba(30, 25, 44, 0.94);
+    --header-bg: linear-gradient(100deg, rgba(126, 87, 255, 0.92) 0%, rgba(96, 64, 214, 0.70) 30%, rgba(60, 36, 130, 0.45) 65%, rgba(38, 22, 80, 0.35) 100%);
+    --header-glow: 0 8px 36px rgba(120, 70, 255, 0.35), 0 2px 10px rgba(0, 0, 0, 0.40);
     --content-bg: rgba(12, 9, 22, 0.48);
     --content-border: rgba(255, 255, 255, 0.10);
     --content-shadow: 0 1px 3px rgba(0, 0, 0, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -287,16 +291,17 @@ button, input {
     gap: 20px;
     margin-bottom: 32px;
     padding: 14px 20px;
-    background: var(--surface);
+    background: var(--header-bg);
     backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(1.04);
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(1.04);
-    border: 1px solid var(--border);
+    border: 1px solid rgba(200, 180, 255, 0.45);
     border-radius: var(--radius-lg);
-    box-shadow: var(--card-shadow);
+    box-shadow: var(--header-glow), inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
 .dashboard-header h1 {
     margin: 0;
+    color: #fff;
     font-family: var(--font-display);
     font-size: 24px;
     font-weight: 800;
@@ -335,6 +340,22 @@ button, input {
 
 .theme-toggle svg {
     flex-shrink: 0;
+}
+
+.dashboard-header .theme-toggle {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.35);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.30);
+}
+
+.dashboard-header .theme-toggle:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.24);
+}
+
+.dashboard-header .theme-toggle:focus-visible {
+    outline-color: #fff;
 }
 
 /* Icon and label come from CSS so they are correct from the first paint */
@@ -1091,7 +1112,6 @@ button:disabled {
 
 /* Without backdrop blur the translucent surfaces are unreadable, so make them solid */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    .dashboard-header,
     .change-record,
     .website-card,
     #add-website-form {
