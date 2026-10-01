@@ -110,7 +110,9 @@ def get_dashboard(session: SessionDep, request: Request):
                     )
                 )
 
-    daily_date = None
+    last_scans: list[datetime] = [website.last_scan_at for website in websites if website.last_scan_at]
+    # %H rather than %-I, which is not supported on Windows where the desktop app runs
+    daily_date: str | None = max(last_scans).strftime("%d %b %Y, %H:%M") if last_scans else None
 
     return templates.TemplateResponse(
         request=request,
@@ -207,6 +209,9 @@ async def manually_scan_website(
 
     async with AsyncClient() as client:
         report: str | None = await scan_website(client, website, max_pages, delay, concurrent)
+
+    with db_context() as session:
+        WebsiteService(session).update(id=website.id, model_update=WebsiteUpdate(last_scan_at=datetime.now()))
 
     if report and website.recipients:
         if website.recipients:
