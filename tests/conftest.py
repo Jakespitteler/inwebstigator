@@ -11,7 +11,7 @@ import httpx2
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import UUID as PG_UUID
-from sqlalchemy import DateTime, Engine, MetaData, StaticPool, String, create_engine, text
+from sqlalchemy import DateTime, Engine, MetaData, StaticPool, String, create_engine, event, text
 from sqlalchemy.orm import Mapped, Session, declarative_base, mapped_column
 from tenacity import wait_none
 
@@ -50,6 +50,18 @@ def engine() -> Iterator[Engine]:
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+
+    # Python's sqlite3 driver starts and ends transactions on its own, which breaks SAVEPOINTs:
+    # an app-level commit inside a test then commits for real and leaks into later tests.
+    # Hand transaction control to SQLAlchemy instead (the fix from SQLAlchemy's SQLite docs).
+    @event.listens_for(test_engine, "connect")
+    def _disable_driver_transactions(dbapi_connection, connection_record):  # pyright: ignore[reportUnusedFunction]
+        dbapi_connection.isolation_level = None
+
+    @event.listens_for(test_engine, "begin")
+    def _begin_transaction(connection):  # pyright: ignore[reportUnusedFunction]
+        connection.exec_driver_sql("BEGIN")
+
     yield test_engine
     test_engine.dispose()
 
