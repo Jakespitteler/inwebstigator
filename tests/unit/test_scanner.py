@@ -272,6 +272,40 @@ async def test_adding_a_website_saves_a_baseline_and_only_later_changes_are_repo
 
 
 @pytest.mark.anyio
+async def test_scan_report_only_includes_changes_found_by_that_scan(session: Session, mocker: MockerFixture):
+    """Tests a report lists only pages that changed in that scan, not old changes from earlier scans."""
+    main_url = "https://example.com"
+    pages = {
+        main_url: "<html><body><p>Home page.</p></body></html>",
+        f"{main_url}/fees": "<html><body><p>The fee is $100.</p></body></html>",
+        f"{main_url}/dates": "<html><body><p>Applications close in May.</p></body></html>",
+    }
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, text=pages[str(request.url).rstrip("/")])
+
+    mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
+    mocker.patch("app.backend.engine.crawl_site", return_value={main_url})
+    service = WebsiteService(session)
+    website = service.create(WebsiteCreate(url=main_url, critical_pages=[f"{main_url}/fees", f"{main_url}/dates"]))
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
+        assert await scanner.scan_website(client, website) is None  # baseline
+
+        pages[f"{main_url}/fees"] = pages[f"{main_url}/fees"].replace("$100", "$120")
+        first_report = await scanner.scan_website(client, service.get(website.id))
+        assert first_report is not None and "$120" in first_report
+
+        pages[f"{main_url}/dates"] = pages[f"{main_url}/dates"].replace("May", "June")
+        second_report = await scanner.scan_website(client, service.get(website.id))
+
+    assert second_report is not None
+    assert "June" in second_report
+    assert "$120" not in second_report
+    assert f"{main_url}/fees" not in second_report
+
+
+@pytest.mark.anyio
 async def test_scan_website_traffic_error_handling(populated_website: WebsiteRead, mocker: MockerFixture):
     """Tests that TrafficError triggers cooldown handling and returns a traffic error HTML report."""
     mock_client = mocker.AsyncMock(spec=httpx2.AsyncClient)

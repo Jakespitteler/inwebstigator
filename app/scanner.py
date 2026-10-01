@@ -16,6 +16,7 @@ from app.db.core import db_context
 from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
 from app.db.utils.field_types import EmailString
+from app.models.critical_page_models import CriticalPageUpdate
 from app.models.recipient_models import RecipientUpdate
 from app.models.website_models import WebsiteRead, WebsiteUpdate
 
@@ -108,6 +109,21 @@ def send_monitoring_started_notifications(website: WebsiteRead) -> None:
             logger.exception(f"Failed to send monitoring started email to {recipient.email}")
 
 
+def _page_has_changes(page_updates: CriticalPageUpdate) -> bool:
+    """Returns whether a scan found changes on a critical page, as opposed to only saving its baseline."""
+    return any(
+        [
+            page_updates.recent_links_added,
+            page_updates.recent_links_removed,
+            page_updates.recent_documents_added,
+            page_updates.recent_documents_removed,
+            page_updates.recent_text_added,
+            page_updates.recent_text_removed,
+            page_updates.recent_text_changed,
+        ]
+    )
+
+
 def _has_changes_to_report(website: WebsiteRead, website_updates: WebsiteUpdate) -> bool:
     """Returns whether a scan found changes worth reporting, as opposed to only saving baselines.
 
@@ -116,24 +132,40 @@ def _has_changes_to_report(website: WebsiteRead, website_updates: WebsiteUpdate)
         website_updates (WebsiteUpdate): The updates the scan found.
     """
     page_changes = any(
-        any(
-            [
-                page_updates.recent_links_added,
-                page_updates.recent_links_removed,
-                page_updates.recent_documents_added,
-                page_updates.recent_documents_removed,
-                page_updates.recent_text_added,
-                page_updates.recent_text_removed,
-                page_updates.recent_text_changed,
-            ]
-        )
-        for page_updates in (website_updates.critical_page_updates or {}).values()
+        _page_has_changes(page_updates) for page_updates in (website_updates.critical_page_updates or {}).values()
     )
     # A website's first crawl finds every internal link, which is its baseline rather than a change
     internal_link_changes = website.last_scan_at is not None and bool(
         website_updates.recent_added_internal_links or website_updates.recent_removed_internal_links
     )
     return page_changes or internal_link_changes
+
+
+def _changes_found_by_this_scan(
+    website: WebsiteRead, website_updates: WebsiteUpdate, updated_website: WebsiteRead
+) -> WebsiteRead:
+    """Returns the updated website trimmed to the changes this scan found, for its report.
+
+    A critical page keeps its recent changes from an earlier scan until it changes again, so
+    without this every report would repeat old changes from pages that have not changed since.
+
+    Args:
+        website (WebsiteRead): The website as it was before the scan.
+        website_updates (WebsiteUpdate): The updates the scan found.
+        updated_website (WebsiteRead): The website after the updates were saved.
+    """
+    changed_page_ids = {
+        page_id
+        for page_id, page_updates in (website_updates.critical_page_updates or {}).items()
+        if _page_has_changes(page_updates)
+    }
+    trimmed: dict[str, object] = {
+        "critical_pages": [page for page in updated_website.critical_pages if page.id in changed_page_ids]
+    }
+    if website.last_scan_at is None:
+        # A website's first crawl finds every internal link, which is its baseline rather than a change
+        trimmed |= {"recent_added_internal_links": [], "recent_removed_internal_links": []}
+    return updated_website.model_copy(update=trimmed)
 
 
 async def scan_website(
@@ -181,7 +213,9 @@ async def scan_website(
             if not _has_changes_to_report(website, website_updates):
                 logger.info(f"Saved baseline for {website.url}, nothing to report.")
                 return None
-            return generate_scan_report_html(updated_website, status=ScanStatus.SUCCESS)
+            return generate_scan_report_html(
+                _changes_found_by_this_scan(website, website_updates, updated_website), status=ScanStatus.SUCCESS
+            )
     except TrafficError as e:
         logger.error(f"Temporary ban or severe rate limit detected for {website.url}: {e}")
         if delay or concurrent:
