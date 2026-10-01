@@ -174,10 +174,30 @@ h1 {
     gap: 12px 20px;
 }
 
-.website-card-header h3 {
+.website-identity {
     flex: 1 1 220px;
     min-width: 0;
-    margin-bottom: 0;
+}
+
+.website-identity h3 {
+    margin-bottom: 6px;
+}
+
+.website-name {
+    margin-top: 0;
+    overflow-wrap: anywhere;
+}
+
+.website-url,
+.page-url a {
+    font-size: 14px;
+    color: #475569;
+    overflow-wrap: anywhere;
+}
+
+.website-url:hover,
+.page-url a:hover {
+    color: #075985;
 }
 
 .run-scan-button {

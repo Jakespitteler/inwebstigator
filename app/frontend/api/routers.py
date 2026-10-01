@@ -14,7 +14,7 @@ from app.db.services.critical_page_service import CriticalPageService
 from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
 from app.frontend.api.db_router_factory import SessionDep, create_crud_router
-from app.frontend.api.utils import ContentBlockRecord, DailyRecord, TextChangeRecord, build_word_diff
+from app.frontend.api.utils import ContentBlockRecord, DailyRecord, TextChangeRecord, build_word_diff, website_name
 from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead, CriticalPageUpdate
 from app.models.recipient_models import RecipientCreate, RecipientUpdate
 from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
@@ -22,6 +22,7 @@ from app.scanner import scan_all_websites, scan_website, send_notification
 
 ROOT_ROUTER = APIRouter()
 templates = Jinja2Templates(directory=resource_path("app", "frontend", "templates"))
+templates.env.filters["website_name"] = website_name
 
 
 # ======================

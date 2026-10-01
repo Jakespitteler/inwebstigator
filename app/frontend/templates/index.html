@@ -61,8 +61,11 @@
 
                     <section class="change-record">
 
+                        <h3 class="website-name">{{ record.website_url | website_name }}</h3>
                         <p class="page-url">
-                            {{ record.url }}
+                            <a href="{{ record.url }}" target="_blank" rel="noopener noreferrer">
+                                {{ record.url }}
+                            </a>
                         </p>
 
                         <!-- Changed content -->
@@ -330,15 +333,17 @@
                     <div class="website-card">
 
                         <div class="website-card-header">
-                            <h3>
+                            <div class="website-identity">
+                                <h3 class="website-name">{{ website.url | website_name }}</h3>
                                 <a
+                                    class="website-url"
                                     href="{{ website.url }}"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                 >
                                     {{ website.url }}
                                 </a>
-                            </h3>
+                            </div>
 
                             <button
                                 type="button"
