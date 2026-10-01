@@ -22,6 +22,161 @@ h1 {
 }
 
 
+/* GETTING STARTED GUIDE */
+
+.guide-section {
+    margin-top: 10px;
+}
+
+.guide-intro {
+    font-size: 18px;
+    margin: 0 0 12px;
+}
+
+.guide-card {
+    background-color: white;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    padding: 28px;
+}
+
+.guide-step h2 {
+    font-size: 24px;
+    margin: 0 0 12px;
+}
+
+.guide-help {
+    margin: 0 0 22px;
+    line-height: 1.6;
+    color: #475569;
+}
+
+.guide-settings {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0 20px;
+}
+
+.guide-settings input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 11px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    background-color: white;
+}
+
+.guide-settings input:focus {
+    outline: 2px solid #aaa;
+    border-color: #777;
+}
+
+.guide-review {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 10px 24px;
+    margin: 0;
+}
+
+.guide-review dt {
+    font-weight: bold;
+}
+
+.guide-review dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    color: #475569;
+}
+
+.guide-next[hidden] {
+    display: none;
+}
+
+.guide-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-top: 24px;
+}
+
+.guide-dots {
+    display: flex;
+    gap: 10px;
+}
+
+.guide-dot {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    background-color: #e2e8f0;
+    color: #334155;
+    font-size: 15px;
+    cursor: pointer;
+}
+
+.guide-dot:hover {
+    background-color: #cbd5e1;
+}
+
+.guide-dot.active {
+    background-color: #e0f2fe;
+    border-color: #075985;
+    color: #075985;
+    font-weight: bold;
+}
+
+.guide-nav {
+    display: flex;
+    gap: 10px;
+}
+
+.guide-back,
+.guide-next {
+    padding: 10px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.guide-back {
+    border: 1px solid #bbb;
+    background-color: white;
+    color: #222;
+}
+
+.guide-back:hover:not(:disabled) {
+    background-color: #f0f0f0;
+}
+
+.guide-next {
+    border: none;
+    background-color: #222;
+    color: white;
+}
+
+.guide-next:hover:not(:disabled) {
+    background-color: #444;
+}
+
+.guide-back:disabled,
+.guide-next:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.guide-dot:focus-visible,
+.guide-back:focus-visible,
+.guide-next:focus-visible {
+    outline: 2px solid #2874c6;
+    outline-offset: 3px;
+}
+
+
 /* WEBSITES / UPDATES FOLDER TABS */
 
 .tab-buttons {
@@ -439,24 +594,8 @@ h1 {
     font-size: 14px;
 }
 
-/* ADD WEBSITE SECTION */
+/* ADD WEBSITE FORM (inside the wizard) */
 
-.add-website-section {
-    margin-top: 35px;
-    margin-bottom: 60px;
-}
-
-.add-website-section > h2 {
-    font-size: 26px;
-    margin-bottom: 20px;
-}
-
-#add-website-form {
-    background-color: white;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    padding: 25px;
-}
 
 .form-group {
     margin-bottom: 20px;
@@ -604,13 +743,22 @@ h1 {
 
     .change-record,
     .website-card,
-    #add-website-form {
+    .guide-card {
         padding: 18px;
     }
 
     .critical-page-list li {
         flex-direction: column;
         align-items: flex-start;
+    }
+
+    .guide-review {
+        grid-template-columns: 1fr;
+        gap: 2px;
+    }
+
+    .guide-review dd {
+        margin-bottom: 10px;
     }
 
     .comparison-table th,
