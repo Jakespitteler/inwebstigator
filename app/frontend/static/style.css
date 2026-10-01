@@ -308,6 +308,62 @@ h1 {
     background-color: #444;
 }
 
+/* NOTIFICATION EMAILS */
+
+.recipient-list {
+    list-style: none;
+    padding: 0;
+    margin: 10px 0 20px;
+}
+
+.recipient-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 15px;
+    padding: 10px 0;
+    border-bottom: 1px solid #eee;
+}
+
+.add-recipient-form {
+    margin-top: 20px;
+}
+
+.add-recipient-form label {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 7px;
+}
+
+.add-recipient-form input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 11px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+.add-recipient-form input:focus {
+    outline: 2px solid #aaa;
+    border-color: #777;
+}
+
+.add-recipient-form button {
+    margin-top: 12px;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 6px;
+    background-color: #222;
+    color: white;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.add-recipient-form button:hover {
+    background-color: #444;
+}
+
 /* SCAN SETTINGS */
 
 .scan-settings {
@@ -419,7 +475,8 @@ h1 {
 }
 
 #website-url,
-.critical-page-input {
+.critical-page-input,
+.recipient-email-input {
     width: 100%;
     box-sizing: border-box;
     padding: 11px;
@@ -431,12 +488,14 @@ h1 {
 }
 
 #website-url:focus,
-.critical-page-input:focus {
+.critical-page-input:focus,
+.recipient-email-input:focus {
     outline: 2px solid #aaa;
     border-color: #777;
 }
 
-.critical-page-input {
+.critical-page-input,
+.recipient-email-input {
     display: block;
     margin-bottom: 10px;
 }
@@ -455,6 +514,20 @@ h1 {
 }
 
 #add-critical-page-input:hover {
+    background-color: #f0f0f0;
+}
+
+#add-recipient-email-input {
+    padding: 9px 13px;
+    border: 1px solid #bbb;
+    border-radius: 6px;
+    background-color: white;
+    color: #222;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+#add-recipient-email-input:hover {
     background-color: #f0f0f0;
 }
 
@@ -480,7 +553,8 @@ h1 {
 /* DELETE BUTTONS */
 
 .delete-website-button,
-.delete-critical-page-button {
+.delete-critical-page-button,
+.delete-recipient-button {
     border: 1px solid #c62828;
     background-color: white;
     color: #c62828;
@@ -491,7 +565,8 @@ h1 {
 }
 
 .delete-website-button:hover,
-.delete-critical-page-button:hover {
+.delete-critical-page-button:hover,
+.delete-recipient-button:hover {
     background-color: #c62828;
     color: white;
 }
@@ -504,7 +579,8 @@ h1 {
 /* FORM MESSAGES */
 
 #website-form-message,
-.critical-page-message {
+.critical-page-message,
+.recipient-message {
     margin-top: 12px;
     margin-bottom: 0;
     font-size: 14px;

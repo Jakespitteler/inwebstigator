@@ -136,6 +136,7 @@
                         {% endfor %}
 
 
+
                         <!-- Added text -->
                         {% for item in record.added %}
 
@@ -172,6 +173,7 @@
                         {% endfor %}
 
 
+
                         <!-- Removed text -->
                         {% for item in record.removed %}
 
@@ -206,6 +208,7 @@
                             </div>
 
                         {% endfor %}
+
 
 
                         <!-- Added / removed links -->
@@ -254,6 +257,7 @@
                             </div>
 
                         {% endif %}
+
 
 
                         <!-- Added / removed documents -->
@@ -369,6 +373,7 @@
                         </button>
 
 
+
                         <div class="website-summary">
 
                             <p>
@@ -384,6 +389,7 @@
                             </p>
 
                         </div>
+
 
 
                         <h4>Critical Pages</h4>
@@ -431,6 +437,7 @@
                         {% endif %}
 
 
+
                         <!-- Add a critical page later -->
                         <form
                             class="add-critical-page-form"
@@ -460,6 +467,76 @@
                         </form>
 
 
+
+                        <!-- Notification recipients -->
+                        <h4>Notification Emails</h4>
+
+                        {% if website.recipients %}
+
+                            <ul class="recipient-list">
+
+                                {% for recipient in website.recipients %}
+
+                                    <li>
+
+                                        <span>
+                                            {{ recipient.email }}
+                                        </span>
+
+                                        <button
+                                            type="button"
+                                            class="delete-recipient-button"
+                                            data-website-id="{{ website.id }}"
+                                            data-recipient-email="{{ recipient.email }}"
+                                        >
+                                            Delete
+                                        </button>
+
+                                    </li>
+
+                                {% endfor %}
+
+                            </ul>
+
+                        {% else %}
+
+                            <p>
+                                No notification emails have been added.
+                            </p>
+
+                        {% endif %}
+
+
+
+                        <form
+                            class="add-recipient-form"
+                            data-website-id="{{ website.id }}"
+                        >
+
+                            <label>
+                                Add Notification Email
+                            </label>
+
+                            <input
+                                type="email"
+                                class="new-recipient-email"
+                                placeholder="name@example.com"
+                                required
+                            >
+
+                            <button type="submit">
+                                Add Email
+                            </button>
+
+                            <p
+                                class="recipient-message"
+                                aria-live="polite"
+                            ></p>
+
+                        </form>
+
+
+
                         <!-- Scan settings -->
                         <details class="scan-settings">
 
@@ -486,6 +563,7 @@
                                 </div>
 
 
+
                                 <div class="scan-setting-row">
 
                                     <label>
@@ -502,6 +580,7 @@
                                     >
 
                                 </div>
+
 
 
                                 <div class="scan-setting-row">
@@ -568,6 +647,7 @@
         </section>
 
 
+
         <!-- ADD WEBSITE -->
         <section class="add-website-section">
 
@@ -589,6 +669,7 @@
                         >
 
                     </div>
+
 
 
                     <div class="form-group">
@@ -618,6 +699,35 @@
                     </div>
 
 
+
+                    <div class="form-group">
+
+                        <label>
+                            Notification Emails
+                            <span>(optional)</span>
+                        </label>
+
+                        <div id="recipient-email-inputs">
+
+                            <input
+                                type="email"
+                                class="recipient-email-input"
+                                placeholder="name@example.com"
+                            >
+
+                        </div>
+
+                        <button
+                            type="button"
+                            id="add-recipient-email-input"
+                        >
+                            + Add another email
+                        </button>
+
+                    </div>
+
+
+
                     <button
                         type="submit"
                         class="submit-button"
@@ -637,6 +747,7 @@
         </section>
 
     </main>
+
 
 
     <script>
@@ -715,6 +826,39 @@
         }
 
 
+
+        // Add extra recipient email fields when creating a website
+        const addRecipientEmailButton =
+            document.getElementById(
+                "add-recipient-email-input"
+            );
+
+        if (addRecipientEmailButton) {
+
+            addRecipientEmailButton.addEventListener(
+                "click",
+                () => {
+
+                    const input =
+                        document.createElement("input");
+
+                    input.type = "email";
+                    input.className =
+                        "recipient-email-input";
+                    input.placeholder =
+                        "name@example.com";
+
+                    document
+                        .getElementById(
+                            "recipient-email-inputs"
+                        )
+                        .appendChild(input);
+                }
+            );
+        }
+
+
+
         // Add a new website
         const addWebsiteForm =
             document.getElementById(
@@ -747,6 +891,19 @@
                                 url.length > 0
                             );
 
+                    const recipientEmails =
+                        Array.from(
+                            document.querySelectorAll(
+                                ".recipient-email-input"
+                            )
+                        )
+                            .map((input) =>
+                                input.value.trim()
+                            )
+                            .filter((email) =>
+                                email.length > 0
+                            );
+
                     const message =
                         document.getElementById(
                             "website-form-message"
@@ -769,7 +926,9 @@
                                     body: JSON.stringify({
                                         url: websiteUrl,
                                         critical_pages:
-                                            criticalPages
+                                            criticalPages,
+                                        recipient_emails:
+                                            recipientEmails
                                     })
                                 }
                             );
@@ -790,6 +949,7 @@
                 }
             );
         }
+
 
 
         // Add a critical page to an existing website
@@ -862,6 +1022,7 @@
         });
 
 
+
         // Delete an existing critical page
         const deleteCriticalPageButtons =
             document.querySelectorAll(
@@ -915,6 +1076,146 @@
                 );
             }
         );
+
+
+
+        // Add a notification email to an existing website
+        const recipientForms =
+            document.querySelectorAll(
+                ".add-recipient-form"
+            );
+
+        recipientForms.forEach((form) => {
+
+            form.addEventListener(
+                "submit",
+                async (event) => {
+
+                    event.preventDefault();
+
+                    const websiteId =
+                        form.dataset.websiteId;
+
+                    const input =
+                        form.querySelector(
+                            ".new-recipient-email"
+                        );
+
+                    const message =
+                        form.querySelector(
+                            ".recipient-message"
+                        );
+
+                    const email =
+                        input.value.trim();
+
+                    message.textContent =
+                        "Adding email...";
+
+                    try {
+
+                        const response =
+                            await fetch(
+                                `/websites/${websiteId}`,
+                                {
+                                    method: "PATCH",
+                                    headers: {
+                                        "Content-Type":
+                                            "application/json"
+                                    },
+                                    body: JSON.stringify({
+                                        add_recipient_emails: [
+                                            email
+                                        ]
+                                    })
+                                }
+                            );
+
+                        if (!response.ok) {
+                            throw new Error(
+                                "Unable to add notification email."
+                            );
+                        }
+
+                        window.location.reload();
+
+                    } catch (error) {
+
+                        message.textContent =
+                            error.message;
+                    }
+                }
+            );
+        });
+
+
+
+        // Remove a notification email from an existing website
+        const deleteRecipientButtons =
+            document.querySelectorAll(
+                ".delete-recipient-button"
+            );
+
+        deleteRecipientButtons.forEach(
+            (button) => {
+
+                button.addEventListener(
+                    "click",
+                    async () => {
+
+                        const websiteId =
+                            button.dataset.websiteId;
+
+                        const email =
+                            button.dataset.recipientEmail;
+
+                        const confirmed =
+                            window.confirm(
+                                `Remove ${email} from this website?`
+                            );
+
+                        if (!confirmed) {
+                            return;
+                        }
+
+                        try {
+
+                            const response =
+                                await fetch(
+                                    `/websites/${websiteId}`,
+                                    {
+                                        method: "PATCH",
+                                        headers: {
+                                            "Content-Type":
+                                                "application/json"
+                                    },
+                                    body: JSON.stringify({
+                                        remove_recipient_emails: [
+                                            email
+                                        ]
+                                    })
+                                }
+                            );
+
+                            if (!response.ok) {
+                                throw new Error(
+                                    "Unable to remove notification email."
+                                );
+                            }
+
+                            window.location.reload();
+
+                        } catch (error) {
+
+                            window.alert(
+                                error.message
+                            );
+                        }
+                    }
+                );
+            }
+        );
+
 
 
         // Delete an existing website
@@ -973,6 +1274,7 @@
                 );
             }
         );
+
 
 
         // Update scan settings for an existing website
