@@ -120,6 +120,28 @@ def test_create_website_with_links_and_critical_pages(session: Session) -> None:
     assert len(fetched_website.critical_pages) == 1
     assert fetched_website.critical_pages[0].url == "https://www.test_website.com/critical_page"
 
+def test_create_website_with_recipients(session: Session) -> None:
+    """
+    Tests creating a website with notification recipients.
+
+    Args:
+        session: The database session fixture.
+    """
+    recipient_emails = [
+        "recipient_one@email.com",
+        "recipient_two@email.com",
+    ]
+    website_details = WebsiteCreate(
+        url="https://www.test_recipient_website.com",
+        recipient_emails=recipient_emails,
+    )
+
+    created_website: WebsiteRead = WebsiteService(session).create(website_details)
+
+    assert created_website.id is not None
+    assert len(created_website.recipients) == 2
+    assert {recipient.email for recipient in created_website.recipients} == set(recipient_emails)
+
 
 def test_update_website(session: Session, test_website: WebsiteRead) -> None:
     """
