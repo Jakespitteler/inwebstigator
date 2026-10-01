@@ -22,40 +22,65 @@ h1 {
 }
 
 
-/* DAILY/WEEKLY TABS */
+/* WEBSITES / UPDATES FOLDER TABS */
 
 .tab-buttons {
     display: flex;
-    gap: 10px;
+    gap: 0;
     margin-top: 25px;
-    margin-bottom: 25px;
+    margin-bottom: 28px;
+    border-bottom: 2px solid #075985;
 }
 
 .tab-button {
-    border: 1px solid #ccc;
-    background-color: white;
-    padding: 10px 18px;
-    border-radius: 6px;
+    --tab-active-color: #075985;
+    flex: 1 1 0;
+    min-width: 0;
+    border: 1px solid #cbd5e1;
+    border-bottom: 0;
+    background-color: #e2e8f0;
+    color: #334155;
+    padding: 14px 24px;
+    border-radius: 0;
     cursor: pointer;
     font-size: 15px;
+    font-weight: bold;
+    letter-spacing: 0.04em;
+}
+
+.tab-button:first-child {
+    border-top-left-radius: 14px;
+}
+
+.tab-button:last-child {
+    border-top-right-radius: 14px;
+}
+
+.tab-button + .tab-button {
+    border-left: 0;
 }
 
 .tab-button:hover {
-    background-color: #f0f0f0;
+    background-color: #cbd5e1;
 }
 
 .tab-button.active {
-    background-color: #222;
+    background-color: var(--tab-active-color);
     color: white;
-    border-color: #222;
+    border-color: var(--tab-active-color);
 }
 
-.tab-content {
+.tab-button:focus-visible {
+    outline: 3px solid #0284c7;
+    outline-offset: -4px;
+}
+
+.tab-content[hidden] {
     display: none;
 }
 
-.tab-content.active {
-    display: block;
+.tab-content > h2:first-child {
+    margin-top: 0;
 }
 
 
@@ -118,9 +143,7 @@ h1 {
 /* MONITORED WEBSITES */
 
 .websites-section {
-    margin-top: 55px;
-    padding-top: 30px;
-    border-top: 2px solid #ddd;
+    margin-top: 0;
 }
 
 .websites-section > h2 {
@@ -471,6 +494,13 @@ h1 {
 /* MOBILE */
 
 @media (max-width: 700px) {
+    .tab-button {
+        flex: 1;
+        min-width: 0;
+        padding: 12px 10px;
+        font-size: 14px;
+    }
+
     .dashboard-container {
         width: 94%;
         margin-top: 20px;

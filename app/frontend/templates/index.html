@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Website Changes</title>
+    <title>Inwebstigator</title>
 
     <link
         rel="stylesheet"
@@ -18,10 +18,32 @@
     <main class="dashboard-container">
 
         <div class="dashboard-header">
-            <h1>Website Changes</h1>
+            <h1>Inwebstigator</h1>
 
         </div>
 
+        <div class="tab-buttons" role="tablist" aria-label="Dashboard sections">
+            <button
+                type="button"
+                id="websites-tab"
+                class="tab-button active"
+                role="tab"
+                aria-selected="true"
+                aria-controls="websites-panel"
+            >WEBSITES</button>
+            <button
+                type="button"
+                id="updates-tab"
+                class="tab-button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="updates-panel"
+                tabindex="-1"
+            >UPDATES</button>
+        </div>
+
+        <section id="updates-panel" class="tab-content" role="tabpanel"
+            aria-labelledby="updates-tab" tabindex="0" hidden>
         <h2>Daily Changes</h2>
 
         <!-- DAILY CHANGES -->
@@ -292,6 +314,10 @@
 
         </section>
 
+        </section>
+
+        <section id="websites-panel" class="tab-content" role="tabpanel"
+            aria-labelledby="websites-tab" tabindex="0">
         <!-- MONITORED WEBSITES -->
         <section class="websites-section">
 
@@ -599,10 +625,55 @@
 
         </section>
 
+        </section>
+
     </main>
 
 
     <script>
+
+        // Keep the selected section when forms and scans refresh the dashboard.
+        const dashboardTabs = Array.from(document.querySelectorAll('[role="tab"]'));
+
+        function selectDashboardTab(tab) {
+            dashboardTabs.forEach((item) => {
+                const selected = item === tab;
+                item.classList.toggle("active", selected);
+                item.setAttribute("aria-selected", String(selected));
+                item.tabIndex = selected ? 0 : -1;
+                document.getElementById(item.getAttribute("aria-controls")).hidden = !selected;
+            });
+        }
+
+        function restoreDashboardTab() {
+            selectDashboardTab(document.getElementById(
+                window.location.hash === "#updates" ? "updates-tab" : "websites-tab"
+            ));
+        }
+
+        dashboardTabs.forEach((tab, index) => {
+            tab.addEventListener("click", () => {
+                selectDashboardTab(tab);
+                window.location.hash = tab.id === "websites-tab" ? "websites" : "updates";
+            });
+            tab.addEventListener("keydown", (event) => {
+                let nextTab;
+                if (event.key === "ArrowRight") nextTab = dashboardTabs[(index + 1) % dashboardTabs.length];
+                if (event.key === "ArrowLeft") {
+                    nextTab = dashboardTabs[(index + dashboardTabs.length - 1) % dashboardTabs.length];
+                }
+                if (event.key === "Home") nextTab = dashboardTabs[0];
+                if (event.key === "End") nextTab = dashboardTabs[dashboardTabs.length - 1];
+                if (nextTab) {
+                    event.preventDefault();
+                    nextTab.focus();
+                    nextTab.click();
+                }
+            });
+        });
+
+        window.addEventListener("hashchange", restoreDashboardTab);
+        restoreDashboardTab();
 
         // Add extra critical-page fields when creating a website
         const addCriticalPageButton =
