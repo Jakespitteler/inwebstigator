@@ -303,15 +303,30 @@
 
                     <div class="website-card">
 
-                        <h3>
-                            <a
-                                href="{{ website.url }}"
-                                target="_blank"
-                                rel="noopener noreferrer"
+                        <div class="website-card-header">
+                            <h3>
+                                <a
+                                    href="{{ website.url }}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    {{ website.url }}
+                                </a>
+                            </h3>
+
+                            <button
+                                type="button"
+                                class="run-scan-button"
+                                data-website-url="{{ website.url }}"
                             >
-                                {{ website.url }}
-                            </a>
-                        </h3>
+                                Run Scan Now
+                            </button>
+                        </div>
+
+                        <p
+                            class="run-scan-message"
+                            aria-live="polite"
+                        ></p>
 
                         <button
                             type="button"
@@ -497,18 +512,7 @@
                                     aria-live="polite"
                                 ></p>
 
-                                <button
-                                    type="button"
-                                    class="run-scan-button"
-                                    data-website-url="{{ website.url }}"
-                                >
-                                    Run Scan Now
-                                </button>
-
-                                <p
-                                    class="run-scan-message"
-                                    aria-live="polite"
-                                ></p>
+                                
 
                             </form>
 
@@ -1001,7 +1005,7 @@
                         button.dataset.websiteUrl;
 
                     const message =
-                        button.parentElement.querySelector(
+                        button.closest(".website-card").querySelector(
                             ".run-scan-message"
                         );
 
