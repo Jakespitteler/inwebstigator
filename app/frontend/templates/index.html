@@ -404,6 +404,9 @@
                                             {{ page.url }}
                                         </a>
 
+                                        {% if page.url == website.url %}
+                                        <span>Main website (automatic)</span>
+                                        {% else %}
                                         <button
                                             type="button"
                                             class="delete-critical-page-button"
@@ -411,6 +414,7 @@
                                         >
                                             Delete
                                         </button>
+                                        {% endif %}
 
                                     </li>
 
@@ -591,7 +595,7 @@
 
                         <label>
                             Critical Pages
-                            <span>(optional)</span>
+                            <span>(optional additional pages)</span>
                         </label>
 
                         <div id="critical-page-inputs">

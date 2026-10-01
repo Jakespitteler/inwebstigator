@@ -74,6 +74,11 @@ async def scan_website(
         TrafficError: Re-raised if custom delay/concurrent parameters were set during a rate-limited scan.
     """
     try:
+        # Backfill websites added before main URLs were monitored automatically.
+        if not any(page.url == website.url for page in website.critical_pages):
+            with db_context() as session:
+                website = WebsiteService(session).ensure_main_critical_page(website.id)
+
         website_updates: WebsiteUpdate | None = await get_website_updates(client, website, max_pages, delay, concurrent)
         if website_updates:
             with db_context() as session:

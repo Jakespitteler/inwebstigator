@@ -96,6 +96,8 @@ def test_create_website(session: Session) -> None:
 
     fetched_website: WebsiteRead = WebsiteService(session).get(id=created_website.id)
     assert fetched_website.url == website_details.url
+    assert [page.url for page in created_website.critical_pages] == [website_details.url]
+    assert [page.url for page in fetched_website.critical_pages] == [website_details.url]
 
 
 def test_create_website_with_links_and_critical_pages(session: Session) -> None:
@@ -117,8 +119,42 @@ def test_create_website_with_links_and_critical_pages(session: Session) -> None:
     fetched_website: WebsiteRead = WebsiteService(session).get(id=created_website.id)
     assert fetched_website.url == website_details.url
     assert fetched_website.critical_pages
-    assert len(fetched_website.critical_pages) == 1
-    assert fetched_website.critical_pages[0].url == "https://www.test_website.com/critical_page"
+    assert {page.url for page in fetched_website.critical_pages} == {
+        website_details.url,
+        "https://www.test_website.com/critical_page",
+    }
+
+
+def test_create_website_deduplicates_main_and_additional_pages(session: Session) -> None:
+    main_url = "https://example.com/au?edition=local"
+    additional_url = "https://example.com/news"
+    created = WebsiteService(session).create(
+        WebsiteCreate(url=main_url, critical_pages=[main_url, additional_url, additional_url])
+    )
+    assert sorted(page.url for page in created.critical_pages) == sorted([main_url, additional_url])
+
+
+def test_ensure_main_critical_page_preserves_existing_pages(
+    session: Session, test_website: WebsiteRead, test_critical_page: CriticalPageRead
+) -> None:
+    service = WebsiteService(session)
+    updated = service.ensure_main_critical_page(test_website.id)
+    main_page = next(page for page in updated.critical_pages if page.url == test_website.url)
+    CriticalPageService(session).update(main_page.id, CriticalPageUpdate(text_body="Saved main page history"))
+
+    repeated = service.ensure_main_critical_page(test_website.id)
+    assert {page.id for page in repeated.critical_pages} == {main_page.id, test_critical_page.id}
+    saved_main_page = next(page for page in repeated.critical_pages if page.id == main_page.id)
+    assert saved_main_page.text_body == "Saved main page history"
+
+
+def test_get_by_url_selects_requested_website(session: Session, test_website: WebsiteRead) -> None:
+    service = WebsiteService(session)
+    second = service.create(WebsiteCreate(url="https://second.example.com/au"))
+    assert service.get_by_url(second.url).id == second.id
+    assert service.get_by_url(test_website.url).id == test_website.id
+    with pytest.raises(NotFoundError):
+        service.get_by_url("https://unknown.example.com")
 
 
 def test_update_website(session: Session, test_website: WebsiteRead) -> None:
