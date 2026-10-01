@@ -1,6 +1,8 @@
 from bs4 import BeautifulSoup, Tag
 
+from app.backend.diff_checker import compare_page_content
 from app.backend.utils.html_parser import (
+    HTMLBlockType,
     PageContent,
     clean_html,
     extract_last_updated,
@@ -131,3 +133,54 @@ def test_parse_html_full() -> None:
     assert len(page_content.blocks) == 1
     assert page_content.links == ["https://example.com"]
     assert page_content.last_updated is None
+
+
+def test_extract_sequential_blocks_captures_list_items() -> None:
+    html_content: str = "<div><h2>Fees</h2><ul><li>Application fee: $100</li><li>Late fee: $20</li></ul></div>"
+    soup: BeautifulSoup = BeautifulSoup(html_content, "html.parser")
+    container: Tag = soup.find("div")  # type: ignore
+
+    _, blocks = extract_sequential_blocks(container, frozenset())
+    assert [(block.parent_heading, block.block_type, block.text) for block in blocks] == [
+        ("Fees", HTMLBlockType.LIST_ITEM, "Application fee: $100"),
+        ("Fees", HTMLBlockType.LIST_ITEM, "Late fee: $20"),
+    ]
+
+
+def test_extract_sequential_blocks_still_captures_blockquotes() -> None:
+    html_content: str = "<div><blockquote>Quoted policy text</blockquote></div>"
+    soup: BeautifulSoup = BeautifulSoup(html_content, "html.parser")
+    container: Tag = soup.find("div")  # type: ignore
+
+    _, blocks = extract_sequential_blocks(container, frozenset())
+    assert [(block.block_type, block.text) for block in blocks] == [(HTMLBlockType.QUOTE, "Quoted policy text")]
+
+
+def test_extract_sequential_blocks_does_not_duplicate_nested_blocks() -> None:
+    html_content: str = (
+        "<div>"
+        "<ul><li><p>Paragraph inside a list item</p></li></ul>"
+        "<ol><li>Parent item<ul><li>Child item</li></ul></li></ol>"
+        "<blockquote><p>Paragraph inside a quote</p></blockquote>"
+        "</div>"
+    )
+    soup: BeautifulSoup = BeautifulSoup(html_content, "html.parser")
+    container: Tag = soup.find("div")  # type: ignore
+
+    _, blocks = extract_sequential_blocks(container, frozenset())
+    assert [block.text for block in blocks] == [
+        "Paragraph inside a list item",
+        "Parent item Child item",
+        "Paragraph inside a quote",
+    ]
+
+
+def test_list_item_edit_is_detected_as_a_change() -> None:
+    old_page: PageContent = parse_html("<main><h2>Fees</h2><ul><li>Application fee: $100</li></ul></main>")
+    new_page: PageContent = parse_html("<main><h2>Fees</h2><ul><li>Application fee: $120</li></ul></main>")
+
+    added, removed, changed = compare_page_content(old_page, new_page)
+    assert (added, removed) == ([], [])
+    assert len(changed) == 1
+    assert changed[0].old_block.text == "Application fee: $100"
+    assert changed[0].new_block.text == "Application fee: $120"
