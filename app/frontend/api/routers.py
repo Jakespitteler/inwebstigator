@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 from httpx2 import AsyncClient
 
 from app.backend.engine import get_critical_page_updates
+from app.core.config import config
 from app.core.errors import NotFoundError
 from app.core.paths import resource_path
 from app.db.core import db_context
@@ -117,7 +118,14 @@ def get_dashboard(session: SessionDep, request: Request):
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={"daily_records": daily_records, "daily_date": daily_date, "websites": websites},
+        context={
+            "daily_records": daily_records,
+            "daily_date": daily_date,
+            "websites": websites,
+            "default_delay": config.web_crawler_default_delay,
+            "default_concurrent": config.web_crawler_default_concurrent,
+            "default_days_between_scans": config.scheduler_default_days_between_scans,
+        },
     )
 
 
