@@ -1,3 +1,18 @@
+# TODO
+- Updates page needs a parent card with the website and child card with the critical pages (currently they're all sequential) 
+- Each website card should have its own last scan date and time
+- Critical page count is unnecessary
+- On critical pages sometimes it will add and remove the same text
+- Initial scan saves to recent links added and all that so is showing up in the dashboard
+- UI isn't allowing days between scans to be a float
+- The add website card could probably be the same as the other website cards since Jay Jay wants to keep the advanced settings hidden
+- Make the running first scan text bold and add a spinning loading icon
+- Need a way to cancel the scan
+- Have something saying you can close the window and the scan will run in the background
+- Be able to add facebook.com without needing to write https://www.facebook.com
+- Maybe only add a website to the db once the scan is complete
+- "Daily changes" should be "Changes since last scan"
+- check if email when website is added changes the interval it says
 
 ## Email notifications
 

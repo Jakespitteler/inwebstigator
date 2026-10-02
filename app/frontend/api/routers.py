@@ -23,7 +23,7 @@ from app.scanner import scan_all_websites, scan_website, send_monitoring_started
 
 ROOT_ROUTER = APIRouter()
 templates = Jinja2Templates(directory=resource_path("app", "frontend", "templates"))
-templates.env.filters["website_name"] = website_name
+templates.env.filters["website_name"] = website_name  # pyright: ignore[reportUnknownMemberType]
 
 
 # ======================
@@ -142,7 +142,6 @@ async def favicon() -> FileResponse:
 SCANNER_ROUTER = APIRouter(prefix="/scanner", tags=["Scanner"])
 
 
-# TODO: Daily changes are currently unstyled.
 # TODO: May be good to change "Add Website" to "Initialise Website"
 
 
