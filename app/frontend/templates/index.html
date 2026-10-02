@@ -75,160 +75,6 @@
 
         </div>
 
-        <!-- ADD WEBSITE WIZARD -->
-        <section class="guide-section" aria-labelledby="guide-heading">
-
-            <p id="guide-heading" class="guide-intro">
-                Add a website to monitor:
-            </p>
-
-            <form id="add-website-form" class="guide-card" novalidate>
-
-                <div class="guide-step" data-step="1">
-                    <h2>Add a website</h2>
-                    <p class="guide-help">
-                        Enter the website's address. Its main page is always monitored.
-                        Add any other pages you want watched in more detail
-                        (text changes, documents etc.).
-                    </p>
-
-                    <div class="form-group">
-                        <label for="website-url">Website URL</label>
-                        <input
-                            type="url"
-                            id="website-url"
-                            placeholder="https://example.com"
-                            required
-                        >
-                    </div>
-
-                    <div class="form-group">
-                        <label>
-                            Critical Pages
-                            <span>(optional additional pages)</span>
-                        </label>
-
-                        <div id="critical-page-inputs">
-                            <input
-                                type="url"
-                                class="critical-page-input"
-                                placeholder="https://example.com/critical-page"
-                            >
-                        </div>
-
-                        <button type="button" id="add-critical-page-input">
-                            + Add another critical page
-                        </button>
-                    </div>
-                </div>
-
-                <div class="guide-step" data-step="2" hidden>
-                    <h2>Add a notification email</h2>
-                    <p class="guide-help">
-                        Reports for this website are sent to these addresses.
-                        You can add or remove them later on the website's card.
-                    </p>
-
-                    <div class="form-group">
-                        <label>
-                            Notification Emails
-                            <span>(optional)</span>
-                        </label>
-
-                        <div id="recipient-email-inputs">
-                            <input
-                                type="email"
-                                class="recipient-email-input"
-                                placeholder="name@example.com"
-                            >
-                        </div>
-
-                        <button type="button" id="add-recipient-email-input">
-                            + Add another email
-                        </button>
-                    </div>
-                </div>
-
-                <div class="guide-step" data-step="3" hidden>
-                    <h2>Scan settings</h2>
-                    <p class="guide-help">
-                        The defaults suit most sites. A longer delay and fewer
-                        concurrent requests crawl the site more gently.
-                    </p>
-
-                    <div class="guide-settings">
-                        <div class="form-group">
-                            <label for="new-website-days">Days between scans</label>
-                            <input
-                                type="number"
-                                id="new-website-days"
-                                value="{{ default_days_between_scans | int }}"
-                                min="1"
-                                step="1"
-                                required
-                            >
-                        </div>
-
-                        <div class="form-group">
-                            <label for="new-website-delay">Request delay (seconds)</label>
-                            <input
-                                type="number"
-                                id="new-website-delay"
-                                value="{{ default_delay }}"
-                                min="0"
-                                step="0.1"
-                                required
-                            >
-                        </div>
-
-                        <div class="form-group">
-                            <label for="new-website-concurrent">Concurrent requests</label>
-                            <input
-                                type="number"
-                                id="new-website-concurrent"
-                                value="{{ default_concurrent }}"
-                                min="1"
-                                step="1"
-                                required
-                            >
-                        </div>
-                    </div>
-                </div>
-
-                <div class="guide-step" data-step="4" hidden>
-                    <h2>Review and add</h2>
-                    <p class="guide-help">
-                        Adding the website runs its first scan straight away, which can
-                        take several minutes for a large site. The first scan lists
-                        everything on your critical pages as "Added".
-                    </p>
-
-                    <dl id="guide-review" class="guide-review"></dl>
-                </div>
-
-                <p id="website-form-message" aria-live="polite"></p>
-
-                <div class="guide-controls">
-
-                    <div class="guide-dots" role="group" aria-label="Steps">
-                        <button type="button" class="guide-dot" data-step="1" aria-label="Step 1: Website">1</button>
-                        <button type="button" class="guide-dot" data-step="2" aria-label="Step 2: Emails">2</button>
-                        <button type="button" class="guide-dot" data-step="3" aria-label="Step 3: Scan settings">3</button>
-                        <button type="button" class="guide-dot" data-step="4" aria-label="Step 4: Review">4</button>
-                    </div>
-
-                    <div class="guide-nav">
-                        <button type="button" id="guide-back" class="guide-back">Back</button>
-                        <button type="button" id="guide-next" class="guide-next">Next</button>
-                        <button type="submit" id="guide-submit" class="guide-next" hidden>Add Website</button>
-                    </div>
-
-                </div>
-
-            </form>
-
-        </section>
-
         <div class="tab-buttons" role="tablist" aria-label="Dashboard sections">
             <button
                 type="button"
@@ -552,7 +398,180 @@
         <!-- MONITORED WEBSITES -->
         <section class="websites-section">
 
-            <h2 class="section-title">Monitored Websites</h2>
+            <div class="websites-header">
+                <h2 class="section-title">Monitored Websites</h2>
+
+                {% if websites %}
+                    <button
+                        type="button"
+                        id="add-website-toggle"
+                        class="add-website-toggle"
+                        aria-expanded="false"
+                        aria-controls="add-website-form"
+                    >+ Add website</button>
+                {% endif %}
+            </div>
+
+            <!-- ADD WEBSITE WIZARD -->
+            <section class="guide-section" aria-label="Add website">
+
+                {% if not websites %}
+                    <p class="guide-intro">
+                        Add your first website to start monitoring it:
+                    </p>
+                {% endif %}
+
+                <form
+                    id="add-website-form"
+                    class="guide-card"
+                    novalidate
+                    {% if websites %}hidden{% endif %}
+                >
+
+                    <div class="guide-step" data-step="1">
+                        <h2>Add a website</h2>
+                        <p class="guide-help">
+                            Enter the website's address. Its main page is always monitored.
+                            Add any other pages you want watched in more detail
+                            (text changes, documents etc.).
+                        </p>
+
+                        <div class="form-group">
+                            <label for="website-url">Website URL</label>
+                            <input
+                                type="url"
+                                id="website-url"
+                                placeholder="https://example.com"
+                                required
+                            >
+                        </div>
+
+                        <div class="form-group">
+                            <label>
+                                Critical Pages
+                                <span>(optional additional pages)</span>
+                            </label>
+
+                            <div id="critical-page-inputs">
+                                <input
+                                    type="url"
+                                    class="critical-page-input"
+                                    placeholder="https://example.com/critical-page"
+                                >
+                            </div>
+
+                            <button type="button" id="add-critical-page-input">
+                                + Add another critical page
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="guide-step" data-step="2" hidden>
+                        <h2>Add a notification email</h2>
+                        <p class="guide-help">
+                            Reports for this website are sent to these addresses.
+                            You can add or remove them later on the website's card.
+                        </p>
+
+                        <div class="form-group">
+                            <label>
+                                Notification Emails
+                                <span>(optional)</span>
+                            </label>
+
+                            <div id="recipient-email-inputs">
+                                <input
+                                    type="email"
+                                    class="recipient-email-input"
+                                    placeholder="name@example.com"
+                                >
+                            </div>
+
+                            <button type="button" id="add-recipient-email-input">
+                                + Add another email
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="guide-step" data-step="3" hidden>
+                        <h2>Scan settings</h2>
+                        <p class="guide-help">
+                            The defaults suit most sites. A longer delay and fewer
+                            concurrent requests crawl the site more gently.
+                        </p>
+
+                        <div class="guide-settings">
+                            <div class="form-group">
+                                <label for="new-website-days">Days between scans</label>
+                                <input
+                                    type="number"
+                                    id="new-website-days"
+                                    value="{{ default_days_between_scans | int }}"
+                                    min="1"
+                                    step="1"
+                                    required
+                                >
+                            </div>
+
+                            <div class="form-group">
+                                <label for="new-website-delay">Request delay (seconds)</label>
+                                <input
+                                    type="number"
+                                    id="new-website-delay"
+                                    value="{{ default_delay }}"
+                                    min="0"
+                                    step="0.1"
+                                    required
+                                >
+                            </div>
+
+                            <div class="form-group">
+                                <label for="new-website-concurrent">Concurrent requests</label>
+                                <input
+                                    type="number"
+                                    id="new-website-concurrent"
+                                    value="{{ default_concurrent }}"
+                                    min="1"
+                                    step="1"
+                                    required
+                                >
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="guide-step" data-step="4" hidden>
+                        <h2>Review and add</h2>
+                        <p class="guide-help">
+                            Adding the website runs its first scan straight away, which can
+                            take several minutes for a large site. The first scan lists
+                            everything on your critical pages as "Added".
+                        </p>
+
+                        <dl id="guide-review" class="guide-review"></dl>
+                    </div>
+
+                    <p id="website-form-message" aria-live="polite"></p>
+
+                    <div class="guide-controls">
+
+                        <div class="guide-dots" role="group" aria-label="Steps">
+                            <button type="button" class="guide-dot" data-step="1" aria-label="Step 1: Website">1</button>
+                            <button type="button" class="guide-dot" data-step="2" aria-label="Step 2: Emails">2</button>
+                            <button type="button" class="guide-dot" data-step="3" aria-label="Step 3: Scan settings">3</button>
+                            <button type="button" class="guide-dot" data-step="4" aria-label="Step 4: Review">4</button>
+                        </div>
+
+                        <div class="guide-nav">
+                            <button type="button" id="guide-back" class="guide-back">Back</button>
+                            <button type="button" id="guide-next" class="guide-next">Next</button>
+                            <button type="submit" id="guide-submit" class="guide-next" hidden>Add Website</button>
+                        </div>
+
+                    </div>
+
+                </form>
+
+            </section>
 
             {% if websites %}
 
@@ -860,12 +879,6 @@
 
                 {% endfor %}
 
-            {% else %}
-
-                <p class="empty-state">
-                    No websites are currently being monitored.
-                </p>
-
             {% endif %}
 
         </section>
@@ -1080,6 +1093,25 @@
             });
 
             showGuideStep(1);
+        }
+
+        // Once websites exist the wizard starts collapsed behind the "+ Add website" button
+        const addWebsiteToggle = document.getElementById("add-website-toggle");
+
+        if (addWebsiteToggle) {
+            addWebsiteToggle.addEventListener("click", () => {
+                const form = document.getElementById("add-website-form");
+                const opening = form.hidden;
+
+                form.hidden = !opening;
+                addWebsiteToggle.setAttribute("aria-expanded", String(opening));
+                addWebsiteToggle.textContent = opening ? "Close" : "+ Add website";
+
+                if (opening) {
+                    showGuideStep(1);
+                    document.getElementById("website-url").focus();
+                }
+            });
         }
 
         // Add extra critical-page fields when creating a website
