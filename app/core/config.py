@@ -45,7 +45,7 @@ class Config(BaseSettings):
     email_retry_max_wait_seconds: int = 15
     email_retry_multiplier: int = 1
 
-    scheduler_hours_between_scan_checks: float = 1
+    scheduler_minimum_days_between_scans: float = 0.5
     scheduler_default_days_between_scans: float = 1
     scheduler_default_days_between_health_checks: float = 7
 

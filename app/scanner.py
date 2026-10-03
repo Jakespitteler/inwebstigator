@@ -1,7 +1,7 @@
 import logging
 from collections import defaultdict
 from collections.abc import Sequence
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 
 from httpx2 import AsyncClient
 
@@ -147,6 +147,7 @@ async def scan_all_websites() -> str | None:
         website_service = WebsiteService(session)
         websites: Sequence[WebsiteRead] = website_service.get_all()
 
+    run_started_at = datetime.now()
     reports_by_recipient: dict[EmailString, list[str]] = defaultdict(list)
     all_reports: list[str] = []
     async with AsyncClient() as client:
@@ -157,9 +158,9 @@ async def scan_all_websites() -> str | None:
             if website.on_cooldown_until and website.on_cooldown_until > datetime.now():
                 logger.warning(f"{website.url} has been skipped as it is on cooldown.")
                 continue
-            if website.last_scan_at and (datetime.now() - website.last_scan_at) < timedelta(
-                days=website.days_between_scans
-            ):
+            if website.last_scan_at and (
+                run_started_at - datetime.combine(website.last_scan_at.date(), time.min)  # Start of the day
+            ) < timedelta(days=website.days_between_scans):
                 logger.info(f"{website.url} has been skipped as there has not been enough time since last scan.")
                 continue
 
@@ -176,10 +177,8 @@ async def scan_all_websites() -> str | None:
             else:
                 logger.info(f"No updates found for: {website.url}")
 
-            # Recorded even when the scan failed, so a broken website is retried at its normal
-            # interval rather than on every hourly check
             with db_context() as session:
-                WebsiteService(session).update(id=website.id, model_update=WebsiteUpdate(last_scan_at=datetime.now()))
+                WebsiteService(session).update(id=website.id, model_update=WebsiteUpdate(last_scan_at=run_started_at))
 
     for recipient_email, recipient_reports in reports_by_recipient.items():
         try:
