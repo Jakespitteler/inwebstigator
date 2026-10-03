@@ -158,7 +158,7 @@ async def website_initial_scan(session: SessionDep, model_create: WebsiteCreate)
     session.commit()
 
     async with AsyncClient() as client:
-        await scan_website(client, website)
+        await scan_website(client, website, init=True)
 
     with db_context() as session:
         WebsiteService(session).update(id=website.id, model_update=WebsiteUpdate(last_scan_at=datetime.now()))
@@ -178,7 +178,7 @@ async def critical_page_initial_scan(session: SessionDep, model_create: Critical
     session.commit()
 
     async with AsyncClient() as client:
-        updates: CriticalPageUpdate | None = await get_critical_page_updates(client, critical_page)
+        updates: CriticalPageUpdate | None = await get_critical_page_updates(client, critical_page, init=True)
 
     if updates:
         with db_context() as session:
@@ -222,9 +222,9 @@ async def manually_scan_website(
     if report and website.recipients:
         if website.recipients:
             for recipient in website.recipients:
-                send_notification(recipient.email, report)
+                send_notification(recipient.email, report, subject="Manual Website Scan")
             if recipient_email and recipient_email not in [r.email for r in website.recipients]:
-                send_notification(recipient_email, report)
+                send_notification(recipient_email, report, subject="Manual Website Scan")
 
         return report
 

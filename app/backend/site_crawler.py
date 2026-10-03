@@ -142,7 +142,7 @@ async def crawl_site(
     queue: list[str] = [url]
 
     while queue and len(visited) < max_pages:
-        logger.info(f"Queue size: {len(queue)} | Visited: {len(visited)}")
+        logger.info(f"{url}: Queue size: {len(queue)} | Visited: {len(visited)}")
 
         batch_size: int = min(len(queue), max_pages - len(visited))
         batch: list[str] = queue[:batch_size]

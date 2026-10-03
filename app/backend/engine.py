@@ -10,6 +10,7 @@ from app.backend.utils.html_parser import parse_html
 from app.backend.utils.http_client import fetch_content_from_url
 from app.backend.utils.links import extract_links_from_html, separate_document_links
 from app.core.config import config
+from app.core.errors import TrafficError
 from app.models.critical_page_models import CriticalPageRead, CriticalPageUpdate
 from app.models.website_models import WebsiteRead, WebsiteUpdate
 
@@ -21,26 +22,15 @@ DEFAULT_CONCURRENT: int = config.web_crawler_default_concurrent
 BATCH_402_THRESHOLD_SECONDS: int = config.web_crawler_batch_402_threshold_seconds
 
 
-def _critical_page_has_been_updated(critical_page_updates: CriticalPageUpdate) -> bool:
-    # These are only set when a difference was found, so check they are set rather than non-empty:
-    # removing a page's last link or document leaves an empty list that still needs saving
-    return any(
-        field is not None
-        for field in (critical_page_updates.links, critical_page_updates.documents, critical_page_updates.text_body)
-    )
+def _website_has_been_updated(updates: WebsiteUpdate) -> bool:
+    return bool(updates.critical_page_updates or updates.initial_internal_links is not None or updates.has_changes)
 
 
-def _website_has_been_updated(website_updates: WebsiteUpdate) -> bool:
-    return any(
-        [
-            website_updates.critical_page_updates
-            or website_updates.recent_added_internal_links
-            or website_updates.recent_removed_internal_links
-        ]
-    )
-
-
-async def get_critical_page_updates(client: AsyncClient, stored_page: CriticalPageRead) -> CriticalPageUpdate | None:
+async def get_critical_page_updates(
+    client: AsyncClient,
+    stored_page: CriticalPageRead,
+    init: bool = False,
+) -> CriticalPageUpdate | None:
     """Fetches the latest content for a critical page and computes the differences from its stored state.
 
     Analyses the fetched HTML to extract and categorise links (documents vs. regular links),
@@ -55,36 +45,21 @@ async def get_critical_page_updates(client: AsyncClient, stored_page: CriticalPa
         CriticalPageUpdate: A schema object containing the updated fields (text_body, links, documents)
         and the computed recent differences (added/removed links, text changes).
     """
-    updates = CriticalPageUpdate(url=stored_page.url)
 
     text_body, _ = await fetch_content_from_url(client, url=stored_page.url)
-    all_links: list[str] = extract_links_from_html(url=stored_page.url, html_content=text_body)
-    documents, links = separate_document_links(links=all_links)
+    documents, links = separate_document_links(
+        links=extract_links_from_html(url=stored_page.url, html_content=text_body)
+    )
 
-    if stored_page.text_body is None and stored_page.links is None and stored_page.documents is None:
-        # First fetch of this page: save it as the baseline future scans compare against,
-        # rather than reporting everything on it as newly added
-        logger.info(f"Saving baseline for {stored_page.url}")
-        return CriticalPageUpdate(
-            url=stored_page.url,
-            text_body=text_body,
-            links=links,
-            documents=documents,
-            recent_links_added=[],
-            recent_links_removed=[],
-            recent_documents_added=[],
-            recent_documents_removed=[],
-            recent_text_added=[],
-            recent_text_removed=[],
-            recent_text_changed=[],
-        )
+    if init or stored_page.text_body is None:
+        return CriticalPageUpdate(url=stored_page.url, links=links, documents=documents, text_body=text_body)
+
+    updates = CriticalPageUpdate(url=stored_page.url)
 
     updates.recent_documents_added, updates.recent_documents_removed = find_link_difference(
         previous_state=stored_page.documents or [],
         current_state=documents,
     )
-    logger.info(f"{updates.recent_documents_added=}")
-    logger.info(f"{updates.recent_documents_removed=}")
     if updates.recent_documents_added or updates.recent_documents_removed:
         updates.documents = documents
 
@@ -92,8 +67,6 @@ async def get_critical_page_updates(client: AsyncClient, stored_page: CriticalPa
         previous_state=stored_page.links or [],
         current_state=links,
     )
-    logger.info(f"{updates.recent_links_added=}")
-    logger.info(f"{updates.recent_links_removed=}")
     if updates.recent_links_added or updates.recent_links_removed:
         updates.links = links
 
@@ -101,15 +74,15 @@ async def get_critical_page_updates(client: AsyncClient, stored_page: CriticalPa
         old_content=parse_html(html=stored_page.text_body or ""),
         new_content=parse_html(html=text_body),
     )
-    logger.info(f"{updates.recent_text_added=}")
-    logger.info(f"{updates.recent_text_removed=}")
-    logger.info(f"{updates.recent_text_changed=}")
 
     if updates.recent_text_added or updates.recent_text_removed or updates.recent_text_changed:
         updates.text_body = text_body
 
-    if _critical_page_has_been_updated(updates):
-        return updates
+    if not updates.has_changes:
+        return None
+    recent_changes = updates.model_dump(exclude_unset=True, exclude={"url", "links", "documents", "text_body"})
+    logger.info(f"Changes found on {stored_page.url}: {recent_changes}")
+    return updates
 
 
 async def get_website_updates(
@@ -118,6 +91,7 @@ async def get_website_updates(
     max_pages: int | None,
     delay: float | None,
     concurrent: int | None,
+    init: bool = False,
 ) -> WebsiteUpdate | None:
     """Crawls a website to detect changes in internal links and updates its monitored critical pages.
 
@@ -138,22 +112,25 @@ async def get_website_updates(
     """
     updates = WebsiteUpdate(url=stored_website.url)
 
-    if stored_website.critical_pages:
-        # Gather failures per page, so one broken page (e.g. deleted, now a 404) is skipped
-        # instead of stopping the rest of the website from being checked
-        results = await asyncio.gather(
-            *(get_critical_page_updates(client, cp) for cp in stored_website.critical_pages),
-            return_exceptions=True,
-        )
-        critical_page_updates: dict[uuid.UUID, CriticalPageUpdate] = {}
-        for cp, result in zip(stored_website.critical_pages, results, strict=True):
-            if isinstance(result, BaseException):
-                if not isinstance(result, Exception):
-                    raise result  # e.g. cancellation when the app is shutting down
-                logger.warning(f"Skipping critical page {cp.url} this scan as it could not be checked: {result!r}")
-            elif result is not None:
-                critical_page_updates[cp.id] = result
-        updates.critical_page_updates = critical_page_updates or None
+    # Gather failures per page, so one broken page (e.g. deleted, now a 404) is skipped
+    # instead of stopping the rest of the website from being checked
+    results = await asyncio.gather(
+        *(get_critical_page_updates(client, stored_page, init) for stored_page in stored_website.critical_pages),
+        return_exceptions=True,
+    )
+    critical_page_updates: dict[uuid.UUID, CriticalPageUpdate] = {}
+    for critical_page, result in zip(stored_website.critical_pages, results, strict=True):
+        if isinstance(result, BaseException):
+            # A rate limit applies to the whole site, so it is raised to put the website on cooldown.
+            # Anything that is not an Exception (e.g. cancellation on shutdown) must not be swallowed.
+            if isinstance(result, TrafficError) or not isinstance(result, Exception):
+                raise result  # e.g. cancellation when the app is shutting down
+            logger.warning(
+                f"Skipping critical page {critical_page.url} this scan as it could not be checked: {result!r}"
+            )
+        elif result is not None:
+            critical_page_updates[critical_page.id] = result
+    updates.critical_page_updates = critical_page_updates or None
 
     current_internal_links: list[str] = list(
         await crawl_site(
@@ -165,13 +142,16 @@ async def get_website_updates(
             batch_403_threshold=BATCH_402_THRESHOLD_SECONDS,
         )
     )
-
-    updates.recent_added_internal_links, updates.recent_removed_internal_links = find_link_difference(
-        previous_state=[link.url for link in stored_website.internal_links],
-        current_state=current_internal_links,
-    )
-    logger.info(f"{updates.recent_added_internal_links=}")
-    logger.info(f"{updates.recent_removed_internal_links=}")
+    if init or not stored_website.internal_links:
+        updates.initial_internal_links = current_internal_links
+        logger.info(f"{len(updates.initial_internal_links)=}")
+    else:
+        updates.recent_added_internal_links, updates.recent_removed_internal_links = find_link_difference(
+            previous_state=[link.url for link in stored_website.internal_links],
+            current_state=current_internal_links,
+        )
+        logger.info(f"{updates.recent_added_internal_links=}")
+        logger.info(f"{updates.recent_removed_internal_links=}")
 
     if _website_has_been_updated(updates):
         return updates

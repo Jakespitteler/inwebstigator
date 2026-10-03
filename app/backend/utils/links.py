@@ -96,7 +96,7 @@ def _is_web_page(parsed_url: ParseResult) -> bool:
 def _site_host(netloc: str) -> str:
     """Returns the part of a network location that identifies the website.
 
-    Hostnames are case-insensitive, and a leading "www." is dropped because sites commonly
+    Host names are case-insensitive, and a leading "www." is dropped because sites commonly
     redirect between example.com and www.example.com and link to both.
 
     Args:

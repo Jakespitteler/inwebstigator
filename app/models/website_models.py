@@ -62,5 +62,16 @@ class WebsiteUpdate(BaseModel):
     add_recipient_emails: list[EmailString] | None = None
     remove_recipient_emails: list[EmailString] | None = None
 
+    initial_internal_links: list[URLString] | None = None
     recent_added_internal_links: list[URLString] | None = None
     recent_removed_internal_links: list[URLString] | None = None
+
+    @property
+    def changed_page_ids(self) -> set[uuid.UUID]:
+        """IDs of the critical pages a scan found changes on, excluding pages that only saved a baseline."""
+        return {page_id for page_id, page in (self.critical_page_updates or {}).items() if page.has_changes}
+
+    @property
+    def has_changes(self) -> bool:
+        """Whether a scan found changes worth reporting, as opposed to only saving baselines."""
+        return bool(self.changed_page_ids or self.recent_added_internal_links or self.recent_removed_internal_links)

@@ -182,6 +182,11 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
                 critical_page_service.update(id=critical_page_id, model_update=critical_page_updates)
 
         internal_link_service = InternalLinkService(self._db)
+        if model_update.initial_internal_links:
+            internal_link_service.create_batch(
+                urls=model_update.initial_internal_links,
+                website_id=website_record.id,
+            )
         if model_update.recent_added_internal_links:
             internal_link_service.create_batch(
                 urls=model_update.recent_added_internal_links,
