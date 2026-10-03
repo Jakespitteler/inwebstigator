@@ -215,6 +215,8 @@ def test_manual_scan_records_scan_time(
     response = api_client.post("/scanner/run", data={"url": test_website.url})
 
     assert response.status_code == 200, response.text
-    last_scan_at = session.get(DBWebsite, test_website.id).last_scan_at
+    website = session.get(DBWebsite, test_website.id)
+    assert website
+    last_scan_at = website.last_scan_at
     assert last_scan_at is not None and last_scan_at >= before
     assert _latest_scan_text(api_client) == f"Latest scan: {last_scan_at:%d %b %Y, %H:%M}"

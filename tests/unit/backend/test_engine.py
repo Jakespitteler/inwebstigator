@@ -13,6 +13,16 @@ from app.models.internal_link_models import InternalLinkRead
 from app.models.website_models import WebsiteRead, WebsiteUpdate
 from tests.conftest import RequestHandler
 
+RECENT_PAGE_FIELDS = (
+    "recent_links_added",
+    "recent_links_removed",
+    "recent_documents_added",
+    "recent_documents_removed",
+    "recent_text_added",
+    "recent_text_removed",
+    "recent_text_changed",
+)
+
 # ======================================
 # get_critical_page_updates
 # ======================================
@@ -34,6 +44,7 @@ async def test_get_critical_page_updates_with_changes(
     async with mock_client_factory(website_handler) as client:
         updates: CriticalPageUpdate | None = await get_critical_page_updates(client, initial_page)
     assert updates
+    assert updates.has_changes
     assert updates.url == initial_page.url
     assert updates.recent_links_added is not None
     assert updates.recent_links_removed == [f"{test_critical_page.url}old-link"]
@@ -46,24 +57,17 @@ async def test_get_critical_page_updates_no_changes(
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
     website_handler: RequestHandler,
 ):
-    """Tests that idempotency prevents useless DB updates by syncing the model first."""
+    """Tests a page re-scanned with the same content as its saved baseline returns no updates."""
+    new_page = test_critical_page.model_copy(update={"text_body": None, "links": None, "documents": None})
+
     async with mock_client_factory(website_handler) as client:
-        # 1. Run once to extract the parsed target state from the mock HTML
-        initial_updates: CriticalPageUpdate | None = await get_critical_page_updates(client, test_critical_page)
+        baseline: CriticalPageUpdate | None = await get_critical_page_updates(client, new_page)
+        assert baseline is not None
 
-        # 2. Pre-populate our base model with that target state
-        assert initial_updates
-        synced_page = test_critical_page.model_copy(
-            update={
-                "text_body": initial_updates.text_body,
-                "links": initial_updates.links,
-                "documents": initial_updates.documents,
-            }
+        synced_page = new_page.model_copy(
+            update={"text_body": baseline.text_body, "links": baseline.links, "documents": baseline.documents}
         )
-
-        # 3. Re-run against synced state; zero diffs should be detected
-        second_updates: CriticalPageUpdate | None = await get_critical_page_updates(client, synced_page)
-    assert not second_updates
+        assert await get_critical_page_updates(client, synced_page) is None
 
 
 @pytest.mark.anyio
@@ -90,58 +94,52 @@ async def test_get_critical_page_updates_detects_last_link_or_document_removed(
         updates: CriticalPageUpdate | None = await get_critical_page_updates(client, stored_page)
 
     assert updates is not None
+    assert updates.has_changes
     assert getattr(updates, recent_removed_field) == [removed_url]
     assert getattr(updates, stored_field) == []
 
 
 @pytest.mark.anyio
-async def test_get_critical_page_updates_saves_baseline_for_new_page(
+@pytest.mark.parametrize(
+    ("stored_content", "init"),
+    [
+        ({"text_body": None, "links": None, "documents": None}, False),
+        ({"text_body": None, "links": ["https://www.test_website.com/old"], "documents": None}, False),
+        (
+            {
+                "text_body": "<html><body><p>Old text.</p></body></html>",
+                "links": ["https://www.test_website.com/old"],
+                "documents": [],
+            },
+            True,
+        ),
+    ],
+    ids=["new-page", "page-without-saved-text", "init-over-saved-content"],
+)
+async def test_get_critical_page_updates_saves_baseline(
     test_critical_page: CriticalPageRead,
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
+    stored_content: dict[str, object],
+    init: bool,
 ):
-    """Tests a page fetched for the first time is saved as a baseline, not reported as all new content."""
+    """Tests a page with no saved text, or any page on an init scan, has its current content saved as a
+    baseline rather than reported as all new content."""
     html = (
         "<html><body><h2>Fees</h2><p>The fee is $100.</p>"
         '<a href="/apply">Apply</a><a href="/files/fees.pdf">Fees PDF</a></body></html>'
     )
-    new_page = test_critical_page.model_copy(update={"text_body": None, "links": None, "documents": None})
+    stored_page = test_critical_page.model_copy(update=stored_content)
 
     async with mock_client_factory(lambda request: httpx2.Response(200, text=html)) as client:
-        updates: CriticalPageUpdate | None = await get_critical_page_updates(client, new_page)
+        updates: CriticalPageUpdate | None = await get_critical_page_updates(client, stored_page, init=init)
 
     assert updates is not None
     assert updates.text_body == html
     assert updates.links == ["https://www.test_website.com/apply"]
     assert updates.documents == ["https://www.test_website.com/files/fees.pdf"]
-    for recent_field in (
-        "recent_links_added",
-        "recent_links_removed",
-        "recent_documents_added",
-        "recent_documents_removed",
-        "recent_text_added",
-        "recent_text_removed",
-        "recent_text_changed",
-    ):
-        assert getattr(updates, recent_field) == [], recent_field
-
-
-@pytest.mark.anyio
-async def test_get_critical_page_updates_page_with_saved_links_is_not_a_baseline(
-    test_critical_page: CriticalPageRead,
-    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
-):
-    """Tests a page that has been fetched before (it has saved links) still reports changes."""
-    stored_page = test_critical_page.model_copy(
-        update={"text_body": None, "links": ["https://www.test_website.com/old"], "documents": None}
-    )
-
-    html = '<html><body><a href="/new">New</a></body></html>'
-    async with mock_client_factory(lambda request: httpx2.Response(200, text=html)) as client:
-        updates: CriticalPageUpdate | None = await get_critical_page_updates(client, stored_page)
-
-    assert updates is not None
-    assert updates.recent_links_added == ["https://www.test_website.com/new"]
-    assert updates.recent_links_removed == ["https://www.test_website.com/old"]
+    assert not updates.has_changes
+    for recent_field in RECENT_PAGE_FIELDS:
+        assert not getattr(updates, recent_field), recent_field
 
 
 # ======================================
@@ -153,7 +151,7 @@ async def test_get_critical_page_updates_page_with_saved_links_is_not_a_baseline
 async def test_get_website_updates_with_changes(
     test_website: WebsiteRead,
     test_internal_link: InternalLinkRead,
-    test_critical_page: CriticalPageRead,  # 1. Inject critical page fixture
+    test_critical_page: CriticalPageRead,
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
     website_handler: RequestHandler,
 ):
@@ -177,7 +175,9 @@ async def test_get_website_updates_with_changes(
             client=client, stored_website=initial_website, max_pages=10, delay=0, concurrent=2
         )
     assert updates
+    assert updates.has_changes
     assert updates.url == initial_website.url
+    assert updates.initial_internal_links is None
 
     # Crawler internal link diff assertions
     assert updates.recent_added_internal_links is not None
@@ -190,16 +190,77 @@ async def test_get_website_updates_with_changes(
 
     # Delegated Critical Page updates assertion
     assert updates.critical_page_updates is not None
-    assert len(initial_website.critical_pages) > 0
-
     cp_id = initial_website.critical_pages[0].id
     assert cp_id in updates.critical_page_updates
+    assert updates.changed_page_ids == {cp_id}
 
     cp_update = updates.critical_page_updates[cp_id]
     assert cp_update.recent_links_added is not None
     assert len(cp_update.recent_links_added) > 0
     assert cp_update.recent_links_removed == [f"{test_website.url}old-link"]
     assert cp_update.recent_text_changed is not None
+
+
+@pytest.mark.anyio
+async def test_get_website_updates_returns_none_when_nothing_changed(
+    test_website: WebsiteRead,
+    test_internal_link: InternalLinkRead,
+    mocker: MockerFixture,
+):
+    """Tests a scan that finds no changes and has no baselines to save returns None, so nothing is written."""
+    mocker.patch("app.backend.engine.crawl_site", return_value={test_internal_link.url})
+    website = test_website.model_copy(update={"critical_pages": [], "internal_links": [test_internal_link]})
+
+    assert await get_website_updates(mocker.Mock(), website, None, None, None) is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("init", [False, True], ids=["no-saved-links", "init-over-saved-links"])
+async def test_get_website_updates_saves_internal_link_baseline(
+    test_website: WebsiteRead,
+    test_internal_link: InternalLinkRead,
+    mocker: MockerFixture,
+    init: bool,
+):
+    """Tests a website with no saved internal links (e.g. its first scan failed), or any website on an init
+    scan, saves its crawled links as a baseline rather than reporting them all as added."""
+    crawled = {test_website.url, f"{test_website.url}about"}
+    mocker.patch("app.backend.engine.crawl_site", return_value=crawled)
+    website = test_website.model_copy(
+        update={"critical_pages": [], "internal_links": [test_internal_link] if init else []}
+    )
+
+    updates: WebsiteUpdate | None = await get_website_updates(mocker.Mock(), website, None, None, None, init=init)
+
+    assert updates is not None
+    assert set(updates.initial_internal_links or []) == crawled
+    assert not updates.recent_added_internal_links
+    assert not updates.recent_removed_internal_links
+    assert not updates.has_changes
+
+
+@pytest.mark.anyio
+async def test_get_website_updates_returns_new_page_baseline_without_changes(
+    test_website: WebsiteRead,
+    test_internal_link: InternalLinkRead,
+    test_critical_page: CriticalPageRead,
+    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
+    mocker: MockerFixture,
+):
+    """Tests a newly added critical page is returned so its baseline is saved, without counting as a change."""
+    mocker.patch("app.backend.engine.crawl_site", return_value={test_internal_link.url})
+    new_page = test_critical_page.model_copy(update={"text_body": None, "links": None, "documents": None})
+    website = test_website.model_copy(update={"critical_pages": [new_page], "internal_links": [test_internal_link]})
+    html = "<html><body><p>New page.</p></body></html>"
+
+    async with mock_client_factory(lambda request: httpx2.Response(200, text=html)) as client:
+        updates: WebsiteUpdate | None = await get_website_updates(client, website, None, None, None)
+
+    assert updates is not None
+    assert updates.critical_page_updates is not None
+    assert updates.critical_page_updates[new_page.id].text_body == html
+    assert updates.changed_page_ids == set()
+    assert not updates.has_changes
 
 
 @pytest.mark.anyio
@@ -243,20 +304,66 @@ async def test_get_website_updates_skips_a_broken_critical_page(
     assert updates.critical_page_updates is not None
     assert set(updates.critical_page_updates) == {working_page.id}
     assert updates.critical_page_updates[working_page.id].recent_text_changed
-    assert updates.recent_added_internal_links  # the crawl still ran
+    assert updates.initial_internal_links  # the crawl still ran
 
 
 @pytest.mark.anyio
-async def test_get_website_updates_does_not_swallow_cancellation(
+@pytest.mark.parametrize(
+    "error",
+    [TrafficError(url="https://www.test_website.com/", status_code=429), asyncio.CancelledError()],
+    ids=["rate-limit", "cancellation"],
+)
+async def test_get_website_updates_stops_on_critical_page_rate_limit_or_cancellation(
     test_website: WebsiteRead,
     test_critical_page: CriticalPageRead,
     mocker: MockerFixture,
+    error: BaseException,
 ):
-    """Tests cancellation (e.g. the app shutting down) still stops the scan rather than being skipped."""
-    mocker.patch("app.backend.engine.get_critical_page_updates", side_effect=asyncio.CancelledError())
+    """Tests a rate limit on a critical page (it applies to the whole site) or cancellation (e.g. the app
+    shutting down) stops the scan before the crawl, rather than the page being skipped."""
+    mocker.patch("app.backend.engine.get_critical_page_updates", side_effect=error)
     crawl = mocker.patch("app.backend.engine.crawl_site")
     website = test_website.model_copy(update={"critical_pages": [test_critical_page]})
 
-    with pytest.raises(asyncio.CancelledError):
+    with pytest.raises(type(error)):
         await get_website_updates(mocker.Mock(), website, None, None, None)
     crawl.assert_not_called()
+
+
+# ======================================
+# WebsiteUpdate change detection
+# ======================================
+
+CHANGED_PAGE_ID = uuid.uuid4()
+BASELINE_PAGE_ID = uuid.uuid4()
+
+
+@pytest.mark.parametrize(
+    ("updates", "changed_page_ids", "has_changes"),
+    [
+        (WebsiteUpdate(), set[uuid.UUID](), False),
+        (WebsiteUpdate(initial_internal_links=["https://www.test_website.com/"]), set[uuid.UUID](), False),
+        (WebsiteUpdate(recent_added_internal_links=[], recent_removed_internal_links=[]), set[uuid.UUID](), False),
+        (WebsiteUpdate(recent_removed_internal_links=["https://www.test_website.com/old"]), set[uuid.UUID](), True),
+        (
+            WebsiteUpdate(
+                critical_page_updates={
+                    CHANGED_PAGE_ID: CriticalPageUpdate(
+                        url="https://www.test_website.com/fees",
+                        recent_links_added=["https://www.test_website.com/new"],
+                    ),
+                    BASELINE_PAGE_ID: CriticalPageUpdate(
+                        url="https://www.test_website.com/new-page", text_body="<p>Hi</p>", links=[], documents=[]
+                    ),
+                }
+            ),
+            {CHANGED_PAGE_ID},
+            True,
+        ),
+    ],
+    ids=["empty", "internal-link-baseline", "empty-link-diff", "link-removed", "changed-and-baseline-pages"],
+)
+def test_website_update_change_detection(updates: WebsiteUpdate, changed_page_ids: set[uuid.UUID], has_changes: bool):
+    """Tests only real changes count as changes, and pages that only saved a baseline are not reported."""
+    assert updates.changed_page_ids == changed_page_ids
+    assert updates.has_changes is has_changes

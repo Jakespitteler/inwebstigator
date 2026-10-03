@@ -42,7 +42,11 @@ def _send_health_check_if_no_change(recipient: RecipientRead) -> None:
         recipient (RecipientRead): The target recipient to check and notify.
     """
     if (datetime.now() - _last_contacted_at(recipient)) > timedelta(days=recipient.days_between_health_checks):
-        send_notification(recipient.email, report="No changes have been found since the last notification")
+        send_notification(
+            recipient.email,
+            report="No changes have been found since the last notification",
+            subject="Health Check",
+        )
 
 
 def _send_due_health_checks() -> None:
