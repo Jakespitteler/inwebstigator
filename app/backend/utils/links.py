@@ -93,11 +93,27 @@ def _is_web_page(parsed_url: ParseResult) -> bool:
     return PurePosixPath(parsed_url.path).suffix.lower() in WEB_PAGE_EXTENSIONS
 
 
+def _site_host(netloc: str) -> str:
+    """Returns the part of a network location that identifies the website.
+
+    Host names are case-insensitive, and a leading "www." is dropped because sites commonly
+    redirect between example.com and www.example.com and link to both.
+
+    Args:
+        netloc: The network location of a parsed URL, e.g. "www.example.com".
+
+    Returns:
+        The lower-cased network location without a leading "www.".
+    """
+    return netloc.lower().removeprefix("www.")
+
+
 def is_internal_web_page(base_url: str, check_url: str) -> bool:
     """Checks whether a URL is an internal webpage residing within the base URL hierarchy.
 
-    Verifies that the target URL matches the domain network location of the base URL,
-    represents a standard web page, and resides at or beneath the path level of the base URL.
+    Verifies that the target URL is on the same website as the base URL (treating example.com and
+    www.example.com as the same), represents a standard web page, and resides at or beneath the
+    path level of the base URL.
 
     Args:
         base_url: The reference base URL string defining the root domain and path scope.
@@ -109,7 +125,7 @@ def is_internal_web_page(base_url: str, check_url: str) -> bool:
     parsed_base_url: ParseResult = urlparse(base_url)
     parsed_check_url: ParseResult = urlparse(check_url)
 
-    if parsed_base_url.netloc != parsed_check_url.netloc:
+    if _site_host(parsed_base_url.netloc) != _site_host(parsed_check_url.netloc):
         return False
     if not _is_web_page(parsed_check_url):
         return False

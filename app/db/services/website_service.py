@@ -106,33 +106,22 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         repository.add(self._db, record=website_record)
 
         critical_page_service = CriticalPageService(self._db)
-        # Monitor the exact starting URL as well as any additional pages.
         for critical_page_url in dict.fromkeys([model_create.url, *model_create.critical_pages]):
             critical_page_service.create(CriticalPageCreate(website_id=website_record.id, url=critical_page_url))
         self._db.expire(website_record, ["critical_pages"])
-        if model_create.recipient_emails:
-            recipient_service = RecipientService(self._db)
-            for recipient_email in model_create.recipient_emails:
-                try:
-                    recipient = recipient_service.get_by_email(recipient_email)
-                except NotFoundError:
-                    recipient = recipient_service.create(RecipientCreate(email=recipient_email))
 
-                recipient_service.link_recipient_and_website(
-                    website_id=website_record.id,
-                    recipient_id=recipient.id,
-                )
+        recipient_service = RecipientService(self._db)
+        for recipient_email in model_create.recipient_emails:
+            try:
+                recipient = recipient_service.get_by_email(recipient_email)
+            except NotFoundError:
+                recipient = recipient_service.create(RecipientCreate(email=recipient_email))
 
-        return WebsiteRead.model_validate(website_record)
-
-    def ensure_main_critical_page(self, id: uuid.UUID) -> WebsiteRead:
-        """Include an existing website's main URL without replacing saved page history."""
-        website_record: DBWebsite = repository.get(self._db, table=DBWebsite, id=id)
-        if not any(page.url == website_record.url for page in website_record.critical_pages):
-            CriticalPageService(self._db).create(
-                CriticalPageCreate(website_id=website_record.id, url=website_record.url)
+            recipient_service.link_recipient_and_website(
+                website_id=website_record.id,
+                recipient_id=recipient.id,
             )
-            self._db.expire(website_record, ["critical_pages"])
+
         return WebsiteRead.model_validate(website_record)
 
     def update(self, id: uuid.UUID, model_update: WebsiteUpdate) -> WebsiteRead:
@@ -182,6 +171,11 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
                 critical_page_service.update(id=critical_page_id, model_update=critical_page_updates)
 
         internal_link_service = InternalLinkService(self._db)
+        if model_update.initial_internal_links:
+            internal_link_service.create_batch(
+                urls=model_update.initial_internal_links,
+                website_id=website_record.id,
+            )
         if model_update.recent_added_internal_links:
             internal_link_service.create_batch(
                 urls=model_update.recent_added_internal_links,

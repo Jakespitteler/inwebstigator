@@ -23,7 +23,7 @@ from app.scanner import scan_all_websites, scan_website, send_monitoring_started
 
 ROOT_ROUTER = APIRouter()
 templates = Jinja2Templates(directory=resource_path("app", "frontend", "templates"))
-templates.env.filters["website_name"] = website_name
+templates.env.filters["website_name"] = website_name  # pyright: ignore[reportUnknownMemberType]
 
 
 # ======================
@@ -111,7 +111,9 @@ def get_dashboard(session: SessionDep, request: Request):
                     )
                 )
 
-    daily_date = None
+    last_scans: list[datetime] = [website.last_scan_at for website in websites if website.last_scan_at]
+    # %H rather than %-I, which is not supported on Windows where the desktop app runs
+    daily_date: str | None = max(last_scans).strftime("%d %b %Y, %H:%M") if last_scans else None
 
     return templates.TemplateResponse(
         request=request,
@@ -140,8 +142,6 @@ async def favicon() -> FileResponse:
 SCANNER_ROUTER = APIRouter(prefix="/scanner", tags=["Scanner"])
 
 
-# TODO: Initial scans are showing up in daily changes.
-# TODO: Daily changes are currently unstyled.
 # TODO: May be good to change "Add Website" to "Initialise Website"
 
 
@@ -158,7 +158,7 @@ async def website_initial_scan(session: SessionDep, model_create: WebsiteCreate)
     session.commit()
 
     async with AsyncClient() as client:
-        await scan_website(client, website)
+        await scan_website(client, website, init=True)
 
     with db_context() as session:
         WebsiteService(session).update(id=website.id, model_update=WebsiteUpdate(last_scan_at=datetime.now()))
@@ -178,7 +178,7 @@ async def critical_page_initial_scan(session: SessionDep, model_create: Critical
     session.commit()
 
     async with AsyncClient() as client:
-        updates: CriticalPageUpdate | None = await get_critical_page_updates(client, critical_page)
+        updates: CriticalPageUpdate | None = await get_critical_page_updates(client, critical_page, init=True)
 
     if updates:
         with db_context() as session:
@@ -216,12 +216,15 @@ async def manually_scan_website(
     async with AsyncClient() as client:
         report: str | None = await scan_website(client, website, max_pages, delay, concurrent)
 
+    with db_context() as session:
+        WebsiteService(session).update(id=website.id, model_update=WebsiteUpdate(last_scan_at=datetime.now()))
+
     if report and website.recipients:
         if website.recipients:
             for recipient in website.recipients:
-                send_notification(recipient.email, report)
+                send_notification(recipient.email, report, subject="Manual Website Scan")
             if recipient_email and recipient_email not in [r.email for r in website.recipients]:
-                send_notification(recipient_email, report)
+                send_notification(recipient_email, report, subject="Manual Website Scan")
 
         return report
 

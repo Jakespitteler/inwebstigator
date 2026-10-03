@@ -57,7 +57,7 @@ class HTMLBlockType(StrEnum):
     HEADING_6 = "h6"
     CODE = "pre"
     QUOTE = "blockquote"
-    LIST = "blockquote"
+    LIST_ITEM = "li"
     UNORDERED_LIST = "ul"
     ORDERED_LIST = "ol"
     DIVISION = "div"
@@ -67,7 +67,8 @@ class HTMLBlockType(StrEnum):
 # Maps HTML tags to their internal block type and the function required to parse them.
 BLOCK_PARSERS: dict[HTMLBlockType, Callable[[Tag], str]] = {
     HTMLBlockType.PARAGRAPH: parse_standard_text,
-    HTMLBlockType.LIST: parse_standard_text,
+    HTMLBlockType.QUOTE: parse_standard_text,
+    HTMLBlockType.LIST_ITEM: parse_standard_text,
     HTMLBlockType.TABLE_ROW: parse_table_row,
 }
 
@@ -214,6 +215,11 @@ def extract_sequential_blocks(container: Tag, ignore_parents: frozenset[str]) ->
                 current_heading = text
 
         elif tag.name in BLOCK_PARSERS:
+            # The outer block's text already includes anything nested in it (e.g. <li><p>...</p></li>),
+            # so parsing the inner block too would record the same text twice
+            if tag.find_parent(list(BLOCK_PARSERS)):
+                continue
+
             block_type = HTMLBlockType(tag.name)
             parser_func = BLOCK_PARSERS[block_type]
             text = parser_func(tag)
