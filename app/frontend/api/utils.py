@@ -1,9 +1,22 @@
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
+from urllib.parse import urlsplit
 
 from markupsafe import Markup, escape
 
 from app.db.utils.field_types import URLString
+
+
+def website_name(url: str) -> str:
+    """Display the hostname, including its domain ending, without a leading www."""
+    try:
+        hostname = (urlsplit(url).hostname or "").rstrip(".")
+    except ValueError:
+        return "Website"
+    if not hostname:
+        return "Website"
+
+    return hostname.removeprefix("www.")
 
 
 @dataclass

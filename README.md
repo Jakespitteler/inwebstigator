@@ -1,3 +1,86 @@
+# TODO
+- Updates page needs a parent card with the website and child card with the critical pages (currently they're all sequential) 
+- Each website card should have its own last scan date and time
+- Critical page count is unnecessary
+- On critical pages sometimes it will add and remove the same text
+- Initial scan saves to recent links added and all that so is showing up in the dashboard
+- UI isn't allowing days between scans to be a float
+- The add website card could probably be the same as the other website cards since Jay Jay wants to keep the advanced settings hidden
+- Make the running first scan text bold and add a spinning loading icon
+- Need a way to cancel the scan
+- Have something saying you can close the window and the scan will run in the background
+- Be able to add facebook.com without needing to write https://www.facebook.com
+- Maybe only add a website to the db once the scan is complete
+- "Daily changes" should be "Changes since last scan"
+- check if email when website is added changes the interval it says
+
+
+### TODOs — Reviewed by JJ
+
+#### Scanning and scheduling
+
+- **Add a loading indicator when a scan is running.**
+- **Collapse the review/add-site UI while scanning.** After pressing "Run
+  Scan", replace or collapse the larger UI into something small such as
+  "Scanning [site]...".
+- **Allow sites to be queued while a scan is running.** The UI should remain
+  usable while another scan is in progress.
+- **Queue scan requests.** If multiple scan buttons are pressed while scans
+  are already running, requests should be queued rather than interrupting
+  existing scans.
+- **Prevent duplicate scan requests.** The same site should not be added to
+  the scan queue more than once at a time.
+- **Do not interrupt an existing scan when starting another scan.** Currently,
+  starting a scan for an existing site while another site is being scanned
+  appears to stop the current scan and start the new one. The desired behaviour
+  is to queue the new scan and allow the current scan to finish.
+- **Investigate scan queue persistence.** When a scan is interrupted/restarted,
+  it is unclear whether the queue of unexplored links is being maintained
+  correctly.
+
+#### Website display
+
+- **Make monitored websites collapsible.** Each website should initially show
+  only its name (and potentially its link) and a scan button. Clicking anywhere
+  in the website's box should expand it to show the additional information.
+  This should make the dashboard easier to use with multiple monitored sites.
+- **Improve website name display.** For example, `teqsa.gov.au` should be
+  displayed as `TEQSA` rather than the full domain. Investigate whether a
+  library can reliably extract a readable site name from a URL. Note that
+  simply removing the `.com`/`.gov.au` suffix is not sufficient for all cases.
+- **Make the latest scan time per-site.** Currently the latest scan time appears
+  to be global and is displayed for all websites. Each monitored website
+  should display its own latest scan time.
+- **Add our application icon to the dashboard.**
+
+#### Buttons and UI
+
+- **Decide on the position of the "Add Critical Page" and "Add Email"
+  buttons.** The suggestion was to place them to the left of the input field,
+  alongside the scan button. JJ prefers either keeping the current layout or
+  placing them on the right, as that is closer to his mouse.
+- **Style the delete-website confirmation popup.**
+- **Make deletion safer.** Default to "Cancel" rather than "OK" in the delete
+  confirmation and make the destructive action harder to trigger accidentally.
+- **Hide or de-emphasise the delete button** to reduce accidental deletion.
+- **Add copyright and team information.** Consider adding a footer and/or an
+  About/Contact page containing relevant copyright, team, and contact
+  information.
+
+#### Scan history and change tracking
+
+- **Keep the history of the last 7 scans.** We need to keep track of the last 7 
+  scans according to JJ
+- **Investigate multiple changes per day.** Confirm whether all changes are
+  currently being captured. If not, ensure that earlier changes are preserved
+  rather than being replaced by the latest change.
+
+### TODOs — Not reviewed by JJ
+
+- **Allow the application to be quit from the terminal using `Ctrl+C`.**
+- **Consider allowing advanced users to configure the sender email address.**
+  Currently not considered necessary according to JJ.
+
 
 ## Email notifications
 

@@ -200,3 +200,43 @@ def generate_scan_report_html(
     out.append("</div>")
 
     return "".join(out)
+
+
+def _format_days(days: float) -> str:
+    """Formats a day count for display, e.g. 1 -> "day", 7 -> "7 days", 0.5 -> "0.5 days"."""
+    return "day" if days == 1 else f"{days:g} days"
+
+
+def monitoring_started_html(website: WebsiteRead, days_between_health_checks: float) -> str:
+    """Generates the HTML body of the email confirming a website is now being monitored.
+
+    Args:
+        website (WebsiteRead): The website that has started being monitored.
+        days_between_health_checks (float): How often the recipient is told nothing has changed.
+    """
+    critical_pages = "".join(
+        f'<li style="margin-bottom: 4px;">{html.escape(critical_page.url)}</li>'
+        for critical_page in website.critical_pages
+    )
+    critical_pages_section = (
+        f'<p style="margin: 16px 0 6px;">Pages being watched for content changes:</p>'
+        f'<ul style="padding-left: 20px; margin: 0;">{critical_pages}</ul>'
+        if critical_pages
+        else ""
+    )
+    return (
+        "<div style=\"font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; "
+        "background-color: #ffffff; color: #1f2328; line-height: 1.5; padding: 20px; max-width: 800px; "
+        'margin: 0 auto; border-radius: 8px; border: 1px solid #d0d7de;">'
+        '<h2 style="margin-top: 0; font-size: 20px; border-bottom: 1px solid #d0d7de; padding-bottom: 8px;">'
+        f"Now monitoring {html.escape(website.url)}</h2>"
+        '<p style="margin: 0;">You have been added as a recipient for this website. '
+        f"It is checked every {_format_days(website.days_between_scans)}, and you will be emailed "
+        "when a change is found.</p>"
+        f"{critical_pages_section}"
+        '<p style="margin: 16px 0 0;">If nothing changes, you will get a short confirmation email every '
+        f"{_format_days(days_between_health_checks)} so you know monitoring is still running.</p>"
+        '<hr style="border: 0; height: 1px; background: #d0d7de; margin: 25px 0;">'
+        '<p style="color: #57606a; font-size: 12px; margin: 0;">This is an automated message.</p>'
+        "</div>"
+    )

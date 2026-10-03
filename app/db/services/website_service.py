@@ -80,6 +80,7 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         website_records: Sequence[DBWebsite] = repository.get_list(
             self._db,
             table=DBWebsite,
+            attributes={"url": url},
             relations=[DBWebsite.internal_links, DBWebsite.critical_pages],
             limit=1,
         )
@@ -104,24 +105,22 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         website_record: DBWebsite = DBWebsite(**model_create.model_dump(exclude={"critical_pages", "recipient_emails"}))
         repository.add(self._db, record=website_record)
 
-        if model_create.critical_pages:
-            critical_page_service = CriticalPageService(self._db)
-            [
-                critical_page_service.create(CriticalPageCreate(website_id=website_record.id, url=critical_page_url))
-                for critical_page_url in model_create.critical_pages
-            ]
-        if model_create.recipient_emails:
-            recipient_service = RecipientService(self._db)
-            for recipient_email in model_create.recipient_emails:
-                try:
-                    recipient = recipient_service.get_by_email(recipient_email)
-                except NotFoundError:
-                    recipient = recipient_service.create(RecipientCreate(email=recipient_email))
+        critical_page_service = CriticalPageService(self._db)
+        for critical_page_url in dict.fromkeys([model_create.url, *model_create.critical_pages]):
+            critical_page_service.create(CriticalPageCreate(website_id=website_record.id, url=critical_page_url))
+        self._db.expire(website_record, ["critical_pages"])
 
-                recipient_service.link_recipient_and_website(
-                    website_id=website_record.id,
-                    recipient_id=recipient.id,
-                )
+        recipient_service = RecipientService(self._db)
+        for recipient_email in model_create.recipient_emails:
+            try:
+                recipient = recipient_service.get_by_email(recipient_email)
+            except NotFoundError:
+                recipient = recipient_service.create(RecipientCreate(email=recipient_email))
+
+            recipient_service.link_recipient_and_website(
+                website_id=website_record.id,
+                recipient_id=recipient.id,
+            )
 
         return WebsiteRead.model_validate(website_record)
 
@@ -172,6 +171,11 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
                 critical_page_service.update(id=critical_page_id, model_update=critical_page_updates)
 
         internal_link_service = InternalLinkService(self._db)
+        if model_update.initial_internal_links:
+            internal_link_service.create_batch(
+                urls=model_update.initial_internal_links,
+                website_id=website_record.id,
+            )
         if model_update.recent_added_internal_links:
             internal_link_service.create_batch(
                 urls=model_update.recent_added_internal_links,

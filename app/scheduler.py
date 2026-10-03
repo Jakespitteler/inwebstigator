@@ -1,8 +1,7 @@
-import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler  # pyright: ignore[reportMissingTypeStubs]
 from fastapi import FastAPI
@@ -22,35 +21,44 @@ def _send_health_check_if_no_change(recipient: RecipientRead) -> None:
     """Dispatches a health check notification to a recipient if no email notification
     has been sent within the designated health check threshold.
 
+    The threshold counts from the start of the day they were last emailed. Emails go out partway
+    through a daily run, so counting from the exact time would make the next due run look slightly
+    short of the threshold and delay the health check by a whole day.
+
     Args:
         recipient (RecipientRead): The target recipient to check and notify.
     """
-    if recipient.last_email_at and (datetime.now() - recipient.last_email_at) > timedelta(
-        days=recipient.days_between_health_checks
-    ):
-        send_notification(recipient.email, report="No changes have been found since the last notification")
+    if recipient.last_email_at and (
+        datetime.now() - datetime.combine(recipient.last_email_at.date(), time.min)  # Start of the day
+    ) >= timedelta(days=recipient.days_between_health_checks):
+        send_notification(
+            recipient.email,
+            report="No changes have been found since the last notification",
+            subject="Health Check",
+        )
 
 
-async def _run_startup_scans_in_background() -> None:
-    """Runs missed startup scans and health checks asynchronously in the background
+async def _scan_then_send_health_checks() -> None:
+    """Scans the websites that are due, then sends the health checks that are due.
 
-    so they do not block the application startup sequence or UI load.
+    Recipients are read after the scan, on every run, so a change notification sent by the scan
+    counts as recent contact, and newly added recipients and changed intervals are picked up.
     """
-    # Small grace period to let the window render and server finish initialising
-    await asyncio.sleep(1)
     await scan_all_websites()
 
     with db_context() as session:
         recipients = RecipientService(session).get_all()
     for recipient in recipients:
-        _send_health_check_if_no_change(recipient)
+        try:
+            _send_health_check_if_no_change(recipient)
+        except Exception:
+            logger.exception(f"Failed to send health check to {recipient.email}")
 
 
 @asynccontextmanager
 async def schedule_scans(app: FastAPI) -> AsyncGenerator[None]:
-    """FastAPI lifespan context manager that initialises administrative metadata,
-    executes catch-up scans on startup for overdue intervals, schedules recurring
-    website scans and health checks, and manages the APScheduler lifecycle.
+    """FastAPI lifespan context manager that schedules the recurring website scans and health
+    checks, and manages the APScheduler lifecycle.
 
     Args:
         app (FastAPI): The application instance.
@@ -59,19 +67,18 @@ async def schedule_scans(app: FastAPI) -> AsyncGenerator[None]:
         None: Yields control back to FastAPI while the scheduler is active.
     """
 
-    scheduler.add_job(scan_all_websites, "interval", days=config.scheduler_default_days_between_scans)  # pyright: ignore[reportUnknownMemberType]
-
-    with db_context() as session:
-        recipients = RecipientService(session).get_all()
-    for recipient in recipients:
-        scheduler.add_job(  # pyright: ignore[reportUnknownMemberType]
-            _send_health_check_if_no_change,
-            "interval",
-            days=recipient.days_between_health_checks,
-            args=[recipient],
-        )
+    scheduler.add_job(  # pyright: ignore[reportUnknownMemberType]
+        _scan_then_send_health_checks,
+        "interval",
+        days=config.scheduler_minimum_days_between_scans,
+        next_run_time=datetime.now() + timedelta(seconds=1),
+        misfire_grace_time=None,
+        id="scan_then_send_health_checks",
+        replace_existing=True,
+    )
 
     scheduler.start()
-    asyncio.create_task(_run_startup_scans_in_background())
-    yield
-    scheduler.shutdown()
+    try:
+        yield
+    finally:
+        scheduler.shutdown()

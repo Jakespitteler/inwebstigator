@@ -1,11 +1,16 @@
 import uuid
+from contextlib import nullcontext
+from datetime import datetime
 
 import pytest
+from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 from httpx2 import Response
 from pydantic import BaseModel
+from pytest_mock import MockerFixture
+from sqlalchemy.orm import Session
 
-from app.db.schema import Base
+from app.db.schema import Base, DBWebsite
 from app.frontend.api import routers
 from app.models import critical_page_models, recipient_models, website_models
 
@@ -162,3 +167,56 @@ class TestCriticalPageRouter(TestCRUDRouters):
     )
     model_update = critical_page_models.CriticalPageUpdate(links=["https://www.test_website.com/updated_critical_page"])
     fixture_name = "test_critical_page"
+
+
+# ==========================
+#  Dashboard
+# ==========================
+
+
+def _latest_scan_text(api_client: TestClient) -> str | None:
+    """Returns the dashboard's "Latest scan" line, or None if it is not shown."""
+    response = api_client.get("/")
+    assert response.status_code == 200, response.text
+    line = BeautifulSoup(response.text, "html.parser").select_one(".week-range")
+    return " ".join(line.get_text().split()) if line else None
+
+
+def test_dashboard_shows_most_recent_scan_across_websites(api_client: TestClient, session: Session) -> None:
+    """Tests the dashboard shows when the most recently scanned website was last scanned."""
+    session.add_all(
+        [
+            DBWebsite(url="https://older.example.com", last_scan_at=datetime(2026, 9, 28, 9, 5)),
+            DBWebsite(url="https://newer.example.com", last_scan_at=datetime(2026, 10, 1, 14, 30)),
+            DBWebsite(url="https://never-scanned.example.com"),
+        ]
+    )
+    session.flush()
+
+    assert _latest_scan_text(api_client) == "Latest scan: 01 Oct 2026, 14:30"
+
+
+def test_dashboard_hides_latest_scan_when_nothing_scanned(api_client: TestClient, session: Session) -> None:
+    """Tests the "Latest scan" line is left out until a website has been scanned."""
+    session.add(DBWebsite(url="https://never-scanned.example.com"))
+    session.flush()
+
+    assert _latest_scan_text(api_client) is None
+
+
+def test_manual_scan_records_scan_time(
+    api_client: TestClient, session: Session, test_website: website_models.WebsiteRead, mocker: MockerFixture
+) -> None:
+    """Tests "Run Scan Now" records when the website was scanned, so the dashboard and scheduler see it."""
+    mocker.patch("app.frontend.api.routers.scan_website", return_value=None)
+    mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
+    before = datetime.now()
+
+    response = api_client.post("/scanner/run", data={"url": test_website.url})
+
+    assert response.status_code == 200, response.text
+    website = session.get(DBWebsite, test_website.id)
+    assert website
+    last_scan_at = website.last_scan_at
+    assert last_scan_at is not None and last_scan_at >= before
+    assert _latest_scan_text(api_client) == f"Latest scan: {last_scan_at:%d %b %Y, %H:%M}"

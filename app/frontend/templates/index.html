@@ -1,11 +1,42 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="preloading">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Website Changes</title>
+    <title>Inwebstigator</title>
+
+    <!-- Apply the saved theme before the first paint so the page never flashes the wrong one -->
+    <script>
+        (function () {
+            var saved = null;
+
+            try {
+                saved = localStorage.getItem("inwebstigator-theme");
+            } catch (error) {
+                // Storage can be unavailable (e.g. private mode); fall back to the OS setting
+            }
+
+            var prefersDark =
+                window.matchMedia("(prefers-color-scheme: dark)").matches;
+
+            document.documentElement.setAttribute(
+                "data-theme",
+                saved || (prefersDark ? "dark" : "light")
+            );
+        })();
+    </script>
+
+    <!-- Fonts load without blocking the page; system fonts are used if offline -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Outfit:wght@700;800&display=swap"
+        media="print"
+        onload="this.media='all'"
+    >
 
     <link
         rel="stylesheet"
@@ -18,14 +49,57 @@
     <main class="dashboard-container">
 
         <div class="dashboard-header">
-            <h1>Website Changes</h1>
+            <h1>Inwebstigator</h1>
+
+            <button
+                type="button"
+                class="theme-toggle"
+                id="themeToggleBtn"
+                aria-label="Toggle light or dark mode"
+            >
+                <!-- Sun icon, shown in dark mode -->
+                <svg id="themeIconDark" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <circle cx="8" cy="8" r="3.5" stroke="currentColor" stroke-width="1.5"/>
+                    <path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.1 3.1l1 1M11.9 11.9l1 1M3.1 12.9l1-1M11.9 4.1l1-1"
+                          stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                </svg>
+
+                <!-- Moon icon, shown in light mode -->
+                <svg id="themeIconLight" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="M13.5 9.5A5.5 5.5 0 016.5 2.5a5.5 5.5 0 100 11 5.5 5.5 0 007-4z"
+                          stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+
+                <span id="themeToggleLabel"></span>
+            </button>
 
         </div>
 
-        <h2>Daily Changes</h2>
+        <div class="tab-buttons" role="tablist" aria-label="Dashboard sections">
+            <button
+                type="button"
+                id="websites-tab"
+                class="tab-button active"
+                role="tab"
+                aria-selected="true"
+                aria-controls="websites-panel"
+            >WEBSITES</button>
+            <button
+                type="button"
+                id="updates-tab"
+                class="tab-button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="updates-panel"
+                tabindex="-1"
+            >UPDATES</button>
+        </div>
 
-        <!-- DAILY CHANGES -->
-        <section id="daily-changes">
+        <section id="updates-panel" class="tab-content" role="tabpanel"
+            aria-labelledby="updates-tab" tabindex="0" hidden>
+        <div class="section-heading">
+
+            <h2 class="section-title">Daily Changes</h2>
 
             {% if daily_date %}
                 <p class="week-range">
@@ -33,14 +107,22 @@
                 </p>
             {% endif %}
 
+        </div>
+
+        <!-- DAILY CHANGES -->
+        <section id="daily-changes">
+
             {% if daily_records %}
 
                 {% for record in daily_records %}
 
                     <section class="change-record">
 
+                        <h3 class="website-name">{{ record.website_url | website_name }}</h3>
                         <p class="page-url">
-                            {{ record.url }}
+                            <a href="{{ record.url }}" target="_blank" rel="noopener noreferrer">
+                                {{ record.url }}
+                            </a>
                         </p>
 
                         <!-- Changed content -->
@@ -111,76 +193,73 @@
                         {% endfor %}
 
 
-                        <!-- Added text -->
-                        {% for item in record.added %}
+
+                        <!-- Added / removed text -->
+                        {% if record.added or record.removed %}
 
                             <div class="change-section">
 
-                                {% if item is mapping %}
+                                <h2>Text</h2>
 
-                                    <h2>
-                                        {{ item.section }}
-                                    </h2>
+                                <ul class="change-list">
 
-                                    <p>
-                                        {{ item.text }}
+                                    {% for item in record.added %}
 
-                                        <span class="added-label">
-                                            — Added
-                                        </span>
-                                    </p>
+                                        <li class="change-item change-item-added">
 
-                                {% else %}
+                                            <div class="change-item-body">
 
-                                    <p>
-                                        {{ item }}
+                                                {% if item.section %}
+                                                    <span class="change-item-section">
+                                                        {{ item.section }}
+                                                    </span>
+                                                {% endif %}
 
-                                        <span class="added-label">
-                                            — Added
-                                        </span>
-                                    </p>
+                                                <span class="change-item-text">
+                                                    {{ item.text if item.text is defined else item }}
+                                                </span>
 
-                                {% endif %}
+                                            </div>
 
-                            </div>
+                                            <span class="change-badge added-label">
+                                                Added
+                                            </span>
 
-                        {% endfor %}
+                                        </li>
 
+                                    {% endfor %}
 
-                        <!-- Removed text -->
-                        {% for item in record.removed %}
+                                    {% for item in record.removed %}
 
-                            <div class="change-section">
+                                        <li class="change-item change-item-removed">
 
-                                {% if item is mapping %}
+                                            <div class="change-item-body">
 
-                                    <h2>
-                                        {{ item.section }}
-                                    </h2>
+                                                {% if item.section %}
+                                                    <span class="change-item-section">
+                                                        {{ item.section }}
+                                                    </span>
+                                                {% endif %}
 
-                                    <p>
-                                        {{ item.text }}
+                                                <span class="change-item-text">
+                                                    {{ item.text if item.text is defined else item }}
+                                                </span>
 
-                                        <span class="removed-label">
-                                            — Removed
-                                        </span>
-                                    </p>
+                                            </div>
 
-                                {% else %}
+                                            <span class="change-badge removed-label">
+                                                Removed
+                                            </span>
 
-                                    <p>
-                                        {{ item }}
+                                        </li>
 
-                                        <span class="removed-label">
-                                            — Removed
-                                        </span>
-                                    </p>
+                                    {% endfor %}
 
-                                {% endif %}
+                                </ul>
 
                             </div>
 
-                        {% endfor %}
+                        {% endif %}
 
 
                         <!-- Added / removed links -->
@@ -190,41 +269,51 @@
 
                                 <h2>Links</h2>
 
-                                {% for link in record.links_added %}
+                                <ul class="change-list">
 
-                                    <p>
-                                        <a
-                                            href="{{ link }}"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                        >
-                                            {{ link }}
-                                        </a>
+                                    {% for link in record.links_added %}
 
-                                        <span class="added-label">
-                                            — Added
-                                        </span>
-                                    </p>
+                                        <li class="change-item change-item-added">
 
-                                {% endfor %}
+                                            <a
+                                                class="change-item-text"
+                                                href="{{ link }}"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                            >
+                                                {{ link }}
+                                            </a>
 
-                                {% for link in record.links_removed %}
+                                            <span class="change-badge added-label">
+                                                Added
+                                            </span>
 
-                                    <p>
-                                        <a
-                                            href="{{ link }}"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                        >
-                                            {{ link }}
-                                        </a>
+                                        </li>
 
-                                        <span class="removed-label">
-                                            — Removed
-                                        </span>
-                                    </p>
+                                    {% endfor %}
 
-                                {% endfor %}
+                                    {% for link in record.links_removed %}
+
+                                        <li class="change-item change-item-removed">
+
+                                            <a
+                                                class="change-item-text"
+                                                href="{{ link }}"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                            >
+                                                {{ link }}
+                                            </a>
+
+                                            <span class="change-badge removed-label">
+                                                Removed
+                                            </span>
+
+                                        </li>
+
+                                    {% endfor %}
+
+                                </ul>
 
                             </div>
 
@@ -238,41 +327,51 @@
 
                                 <h2>Documents</h2>
 
-                                {% for document in record.documents_added %}
+                                <ul class="change-list">
 
-                                    <p>
-                                        <a
-                                            href="{{ document }}"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                        >
-                                            {{ document.split('/')[-1] }}
-                                        </a>
+                                    {% for document in record.documents_added %}
 
-                                        <span class="added-label">
-                                            — Added
-                                        </span>
-                                    </p>
+                                        <li class="change-item change-item-added">
 
-                                {% endfor %}
+                                            <a
+                                                class="change-item-text"
+                                                href="{{ document }}"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                            >
+                                                {{ document.split('/')[-1] }}
+                                            </a>
 
-                                {% for document in record.documents_removed %}
+                                            <span class="change-badge added-label">
+                                                Added
+                                            </span>
 
-                                    <p>
-                                        <a
-                                            href="{{ document }}"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                        >
-                                            {{ document.split('/')[-1] }}
-                                        </a>
+                                        </li>
 
-                                        <span class="removed-label">
-                                            — Removed
-                                        </span>
-                                    </p>
+                                    {% endfor %}
 
-                                {% endfor %}
+                                    {% for document in record.documents_removed %}
+
+                                        <li class="change-item change-item-removed">
+
+                                            <a
+                                                class="change-item-text"
+                                                href="{{ document }}"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                            >
+                                                {{ document.split('/')[-1] }}
+                                            </a>
+
+                                            <span class="change-badge removed-label">
+                                                Removed
+                                            </span>
+
+                                        </li>
+
+                                    {% endfor %}
+
+                                </ul>
 
                             </div>
 
@@ -284,7 +383,7 @@
 
             {% else %}
 
-                <p>
+                <p class="empty-state">
                     No changes were detected in the latest scan.
                 </p>
 
@@ -292,10 +391,187 @@
 
         </section>
 
+        </section>
+
+        <section id="websites-panel" class="tab-content" role="tabpanel"
+            aria-labelledby="websites-tab" tabindex="0">
         <!-- MONITORED WEBSITES -->
         <section class="websites-section">
 
-            <h2>Monitored Websites</h2>
+            <div class="websites-header">
+                <h2 class="section-title">Monitored Websites</h2>
+
+                {% if websites %}
+                    <button
+                        type="button"
+                        id="add-website-toggle"
+                        class="add-website-toggle"
+                        aria-expanded="false"
+                        aria-controls="add-website-form"
+                    >+ Add website</button>
+                {% endif %}
+            </div>
+
+            <!-- ADD WEBSITE WIZARD -->
+            <section class="guide-section" aria-label="Add website">
+
+                {% if not websites %}
+                    <p class="guide-intro">
+                        Add your first website to start monitoring it:
+                    </p>
+                {% endif %}
+
+                <form
+                    id="add-website-form"
+                    class="guide-card"
+                    novalidate
+                    {% if websites %}hidden{% endif %}
+                >
+
+                    <div class="guide-step" data-step="1">
+                        <h2>Add a website</h2>
+                        <p class="guide-help">
+                            Enter the website's address. Its main page is always monitored.
+                            Add any other pages you want watched in more detail
+                            (text changes, documents etc.).
+                        </p>
+
+                        <div class="form-group">
+                            <label for="website-url">Website URL</label>
+                            <input
+                                type="url"
+                                id="website-url"
+                                placeholder="https://example.com"
+                                required
+                            >
+                        </div>
+
+                        <div class="form-group">
+                            <label>
+                                Critical Pages
+                                <span>(optional additional pages)</span>
+                            </label>
+
+                            <div id="critical-page-inputs">
+                                <input
+                                    type="url"
+                                    class="critical-page-input"
+                                    placeholder="https://example.com/critical-page"
+                                >
+                            </div>
+
+                            <button type="button" id="add-critical-page-input">
+                                + Add another critical page
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="guide-step" data-step="2" hidden>
+                        <h2>Add a notification email</h2>
+                        <p class="guide-help">
+                            Reports for this website are sent to these addresses.
+                            You can add or remove them later on the website's card.
+                        </p>
+
+                        <div class="form-group">
+                            <label>
+                                Notification Emails
+                                <span>(optional)</span>
+                            </label>
+
+                            <div id="recipient-email-inputs">
+                                <input
+                                    type="email"
+                                    class="recipient-email-input"
+                                    placeholder="name@example.com"
+                                >
+                            </div>
+
+                            <button type="button" id="add-recipient-email-input">
+                                + Add another email
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="guide-step" data-step="3" hidden>
+                        <h2>Scan settings</h2>
+                        <p class="guide-help">
+                            The defaults suit most sites. A longer delay and fewer
+                            concurrent requests crawl the site more gently.
+                        </p>
+
+                        <div class="guide-settings">
+                            <div class="form-group">
+                                <label for="new-website-days">Days between scans</label>
+                                <input
+                                    type="number"
+                                    id="new-website-days"
+                                    value="{{ default_days_between_scans | int }}"
+                                    min="1"
+                                    step="1"
+                                    required
+                                >
+                            </div>
+
+                            <div class="form-group">
+                                <label for="new-website-delay">Request delay (seconds)</label>
+                                <input
+                                    type="number"
+                                    id="new-website-delay"
+                                    value="{{ default_delay }}"
+                                    min="0"
+                                    step="0.1"
+                                    required
+                                >
+                            </div>
+
+                            <div class="form-group">
+                                <label for="new-website-concurrent">Concurrent requests</label>
+                                <input
+                                    type="number"
+                                    id="new-website-concurrent"
+                                    value="{{ default_concurrent }}"
+                                    min="1"
+                                    step="1"
+                                    required
+                                >
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="guide-step" data-step="4" hidden>
+                        <h2>Review and add</h2>
+                        <p class="guide-help">
+                            Adding the website runs its first scan straight away, which can
+                            take several minutes for a large site. The first scan saves each
+                            page as a starting point, and you'll be told about changes after that.
+                        </p>
+
+                        <dl id="guide-review" class="guide-review"></dl>
+                    </div>
+
+                    <p id="website-form-message" aria-live="polite"></p>
+
+                    <div class="guide-controls">
+
+                        <div class="guide-dots" role="group" aria-label="Steps">
+                            <button type="button" class="guide-dot" data-step="1" aria-label="Step 1: Website">1</button>
+                            <button type="button" class="guide-dot" data-step="2" aria-label="Step 2: Emails">2</button>
+                            <button type="button" class="guide-dot" data-step="3" aria-label="Step 3: Scan settings">3</button>
+                            <button type="button" class="guide-dot" data-step="4" aria-label="Step 4: Review">4</button>
+                        </div>
+
+                        <div class="guide-nav">
+                            <button type="button" id="guide-back" class="guide-back">Back</button>
+                            <button type="button" id="guide-next" class="guide-next">Next</button>
+                            <button type="submit" id="guide-submit" class="guide-next" hidden>Add Website</button>
+                        </div>
+
+                    </div>
+
+                </form>
+
+            </section>
 
             {% if websites %}
 
@@ -303,15 +579,32 @@
 
                     <div class="website-card">
 
-                        <h3>
-                            <a
-                                href="{{ website.url }}"
-                                target="_blank"
-                                rel="noopener noreferrer"
+                        <div class="website-card-header">
+                            <div class="website-identity">
+                                <h3 class="website-name">{{ website.url | website_name }}</h3>
+                                <a
+                                    class="website-url"
+                                    href="{{ website.url }}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    {{ website.url }}
+                                </a>
+                            </div>
+
+                            <button
+                                type="button"
+                                class="run-scan-button"
+                                data-website-url="{{ website.url }}"
                             >
-                                {{ website.url }}
-                            </a>
-                        </h3>
+                                Run Scan Now
+                            </button>
+                        </div>
+
+                        <p
+                            class="run-scan-message"
+                            aria-live="polite"
+                        ></p>
 
                         <button
                             type="button"
@@ -321,6 +614,7 @@
                         >
                             Delete Website
                         </button>
+
 
 
                         <div class="website-summary">
@@ -338,6 +632,7 @@
                             </p>
 
                         </div>
+
 
 
                         <h4>Critical Pages</h4>
@@ -358,6 +653,9 @@
                                             {{ page.url }}
                                         </a>
 
+                                        {% if page.url == website.url %}
+                                        <span class="main-page-badge">Main website (automatic)</span>
+                                        {% else %}
                                         <button
                                             type="button"
                                             class="delete-critical-page-button"
@@ -365,6 +663,7 @@
                                         >
                                             Delete
                                         </button>
+                                        {% endif %}
 
                                     </li>
 
@@ -374,11 +673,12 @@
 
                         {% else %}
 
-                            <p>
+                            <p class="empty-state">
                                 No critical pages have been added.
                             </p>
 
                         {% endif %}
+
 
 
                         <!-- Add a critical page later -->
@@ -410,6 +710,76 @@
                         </form>
 
 
+
+                        <!-- Notification recipients -->
+                        <h4>Notification Emails</h4>
+
+                        {% if website.recipients %}
+
+                            <ul class="recipient-list">
+
+                                {% for recipient in website.recipients %}
+
+                                    <li>
+
+                                        <span>
+                                            {{ recipient.email }}
+                                        </span>
+
+                                        <button
+                                            type="button"
+                                            class="delete-recipient-button"
+                                            data-website-id="{{ website.id }}"
+                                            data-recipient-email="{{ recipient.email }}"
+                                        >
+                                            Delete
+                                        </button>
+
+                                    </li>
+
+                                {% endfor %}
+
+                            </ul>
+
+                        {% else %}
+
+                            <p class="empty-state">
+                                No notification emails have been added.
+                            </p>
+
+                        {% endif %}
+
+
+
+                        <form
+                            class="add-recipient-form"
+                            data-website-id="{{ website.id }}"
+                        >
+
+                            <label>
+                                Add Notification Email
+                            </label>
+
+                            <input
+                                type="email"
+                                class="new-recipient-email"
+                                placeholder="name@example.com"
+                                required
+                            >
+
+                            <button type="submit">
+                                Add Email
+                            </button>
+
+                            <p
+                                class="recipient-message"
+                                aria-live="polite"
+                            ></p>
+
+                        </form>
+
+
+
                         <!-- Scan settings -->
                         <details class="scan-settings">
 
@@ -436,6 +806,7 @@
                                 </div>
 
 
+
                                 <div class="scan-setting-row">
 
                                     <label>
@@ -452,6 +823,7 @@
                                     >
 
                                 </div>
+
 
 
                                 <div class="scan-setting-row">
@@ -497,18 +869,7 @@
                                     aria-live="polite"
                                 ></p>
 
-                                <button
-                                    type="button"
-                                    class="run-scan-button"
-                                    data-website-url="{{ website.url }}"
-                                >
-                                    Run Scan Now
-                                </button>
-
-                                <p
-                                    class="run-scan-message"
-                                    aria-live="polite"
-                                ></p>
+                                
 
                             </form>
 
@@ -518,87 +879,240 @@
 
                 {% endfor %}
 
-            {% else %}
-
-                <p>
-                    No websites are currently being monitored.
-                </p>
-
             {% endif %}
 
         </section>
-
-
-        <!-- ADD WEBSITE -->
-        <section class="add-website-section">
-
-            <h2>Add Website</h2>
-
-                <form id="add-website-form">
-
-                    <div class="form-group">
-
-                        <label for="website-url">
-                            Website URL
-                        </label>
-
-                        <input
-                            type="url"
-                            id="website-url"
-                            placeholder="https://example.com"
-                            required
-                        >
-
-                    </div>
-
-
-                    <div class="form-group">
-
-                        <label>
-                            Critical Pages
-                            <span>(optional)</span>
-                        </label>
-
-                        <div id="critical-page-inputs">
-
-                            <input
-                                type="url"
-                                class="critical-page-input"
-                                placeholder="https://example.com/critical-page"
-                            >
-
-                        </div>
-
-                        <button
-                            type="button"
-                            id="add-critical-page-input"
-                        >
-                            + Add another critical page
-                        </button>
-
-                    </div>
-
-
-                    <button
-                        type="submit"
-                        class="submit-button"
-                    >
-                        Add Website
-                    </button>
-
-                    <p
-                        id="website-form-message"
-                        aria-live="polite"
-                    ></p>
-
-                </form>
 
         </section>
 
     </main>
 
 
+
     <script>
+        // Light / dark mode toggle
+        const THEME_KEY = "inwebstigator-theme";
+
+        function applyTheme(theme) {
+            document.documentElement.setAttribute(
+                "data-theme",
+                theme
+            );
+        }
+
+        function hasSavedTheme() {
+            try {
+                return localStorage.getItem(THEME_KEY) !== null;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        const themeToggleButton =
+            document.getElementById(
+                "themeToggleBtn"
+            );
+
+        if (themeToggleButton) {
+
+            themeToggleButton.addEventListener(
+                "click",
+                () => {
+
+                    const current =
+                        document.documentElement.getAttribute(
+                            "data-theme"
+                        );
+
+                    const next =
+                        current === "dark" ? "light" : "dark";
+
+                    applyTheme(next);
+
+                    try {
+                        localStorage.setItem(THEME_KEY, next);
+                    } catch (error) {
+                        // Theme still applies for this session
+                    }
+                }
+            );
+        }
+
+        // Follow the OS setting until the user picks a theme themselves
+        window
+            .matchMedia("(prefers-color-scheme: dark)")
+            .addEventListener(
+                "change",
+                (event) => {
+                    if (!hasSavedTheme()) {
+                        applyTheme(event.matches ? "dark" : "light");
+                    }
+                }
+            );
+
+        // Re-enable transitions once the initial theme has been painted
+        requestAnimationFrame(() =>
+            requestAnimationFrame(() =>
+                document.documentElement.classList.remove("preloading")
+            )
+        );
+
+
+
+        // Keep the selected section when forms and scans refresh the dashboard.
+        const dashboardTabs = Array.from(document.querySelectorAll('[role="tab"]'));
+
+        function selectDashboardTab(tab) {
+            dashboardTabs.forEach((item) => {
+                const selected = item === tab;
+                item.classList.toggle("active", selected);
+                item.setAttribute("aria-selected", String(selected));
+                item.tabIndex = selected ? 0 : -1;
+                document.getElementById(item.getAttribute("aria-controls")).hidden = !selected;
+            });
+        }
+
+        function restoreDashboardTab() {
+            selectDashboardTab(document.getElementById(
+                window.location.hash === "#updates" ? "updates-tab" : "websites-tab"
+            ));
+        }
+
+        dashboardTabs.forEach((tab, index) => {
+            tab.addEventListener("click", () => {
+                selectDashboardTab(tab);
+                window.location.hash = tab.id === "websites-tab" ? "websites" : "updates";
+            });
+            tab.addEventListener("keydown", (event) => {
+                let nextTab;
+                if (event.key === "ArrowRight") nextTab = dashboardTabs[(index + 1) % dashboardTabs.length];
+                if (event.key === "ArrowLeft") {
+                    nextTab = dashboardTabs[(index + dashboardTabs.length - 1) % dashboardTabs.length];
+                }
+                if (event.key === "Home") nextTab = dashboardTabs[0];
+                if (event.key === "End") nextTab = dashboardTabs[dashboardTabs.length - 1];
+                if (nextTab) {
+                    event.preventDefault();
+                    nextTab.focus();
+                    nextTab.click();
+                }
+            });
+        });
+
+        window.addEventListener("hashchange", restoreDashboardTab);
+        restoreDashboardTab();
+
+        // Step through the add website wizard
+        const guideSteps = Array.from(document.querySelectorAll(".guide-step"));
+        const guideDots = Array.from(document.querySelectorAll(".guide-dot"));
+        const guideBack = document.getElementById("guide-back");
+        const guideNext = document.getElementById("guide-next");
+        const guideSubmit = document.getElementById("guide-submit");
+        let currentGuideStep = 1;
+
+        function filledValues(selector) {
+            return Array.from(document.querySelectorAll(selector))
+                .map((input) => input.value.trim())
+                .filter((value) => value.length > 0);
+        }
+
+        // Returns true when every field on the step is valid, otherwise shows the browser's message.
+        function guideStepIsValid(step) {
+            const inputs = guideSteps[step - 1].querySelectorAll("input");
+            return Array.from(inputs).every((input) => input.reportValidity());
+        }
+
+        function renderGuideReview() {
+            const review = document.getElementById("guide-review");
+            const rows = [
+                ["Website", [document.getElementById("website-url").value.trim()]],
+                ["Critical pages", filledValues(".critical-page-input")],
+                ["Notification emails", filledValues(".recipient-email-input")],
+                ["Days between scans", [document.getElementById("new-website-days").value]],
+                ["Request delay", [`${document.getElementById("new-website-delay").value} seconds`]],
+                ["Concurrent requests", [document.getElementById("new-website-concurrent").value]],
+            ];
+
+            review.replaceChildren();
+            rows.forEach(([label, values]) => {
+                const term = document.createElement("dt");
+                term.textContent = label;
+                const detail = document.createElement("dd");
+                detail.textContent = values.length ? values.join(", ") : "None";
+                review.append(term, detail);
+            });
+        }
+
+        function showGuideStep(step) {
+            // Moving forward must not skip past a step with invalid input.
+            for (let previous = currentGuideStep; previous < step; previous++) {
+                if (!guideStepIsValid(previous)) {
+                    step = previous;
+                    break;
+                }
+            }
+
+            currentGuideStep = step;
+            guideSteps.forEach((item) => {
+                item.hidden = Number(item.dataset.step) !== step;
+            });
+            guideDots.forEach((dot) => {
+                const current = Number(dot.dataset.step) === step;
+                dot.classList.toggle("active", current);
+                if (current) {
+                    dot.setAttribute("aria-current", "step");
+                } else {
+                    dot.removeAttribute("aria-current");
+                }
+            });
+
+            const lastStep = step === guideSteps.length;
+            guideBack.disabled = step === 1;
+            guideNext.hidden = lastStep;
+            guideSubmit.hidden = !lastStep;
+
+            if (lastStep) {
+                renderGuideReview();
+            }
+        }
+
+        if (guideSteps.length) {
+            guideDots.forEach((dot) => {
+                dot.addEventListener("click", () => showGuideStep(Number(dot.dataset.step)));
+            });
+            guideBack.addEventListener("click", () => showGuideStep(currentGuideStep - 1));
+            guideNext.addEventListener("click", () => showGuideStep(currentGuideStep + 1));
+
+            // Enter in a field moves to the next step rather than submitting early.
+            document.getElementById("add-website-form").addEventListener("keydown", (event) => {
+                if (event.key === "Enter" && event.target.tagName === "INPUT"
+                        && currentGuideStep < guideSteps.length) {
+                    event.preventDefault();
+                    showGuideStep(currentGuideStep + 1);
+                }
+            });
+
+            showGuideStep(1);
+        }
+
+        // Once websites exist the wizard starts collapsed behind the "+ Add website" button
+        const addWebsiteToggle = document.getElementById("add-website-toggle");
+
+        if (addWebsiteToggle) {
+            addWebsiteToggle.addEventListener("click", () => {
+                const form = document.getElementById("add-website-form");
+                const opening = form.hidden;
+
+                form.hidden = !opening;
+                addWebsiteToggle.setAttribute("aria-expanded", String(opening));
+                addWebsiteToggle.textContent = opening ? "Close" : "+ Add website";
+
+                if (opening) {
+                    showGuideStep(1);
+                    document.getElementById("website-url").focus();
+                }
+            });
+        }
 
         // Add extra critical-page fields when creating a website
         const addCriticalPageButton =
@@ -629,6 +1143,39 @@
                 }
             );
         }
+
+
+
+        // Add extra recipient email fields when creating a website
+        const addRecipientEmailButton =
+            document.getElementById(
+                "add-recipient-email-input"
+            );
+
+        if (addRecipientEmailButton) {
+
+            addRecipientEmailButton.addEventListener(
+                "click",
+                () => {
+
+                    const input =
+                        document.createElement("input");
+
+                    input.type = "email";
+                    input.className =
+                        "recipient-email-input";
+                    input.placeholder =
+                        "name@example.com";
+
+                    document
+                        .getElementById(
+                            "recipient-email-inputs"
+                        )
+                        .appendChild(input);
+                }
+            );
+        }
+
 
 
         // Add a new website
@@ -663,19 +1210,34 @@
                                 url.length > 0
                             );
 
+                    const recipientEmails =
+                        Array.from(
+                            document.querySelectorAll(
+                                ".recipient-email-input"
+                            )
+                        )
+                            .map((input) =>
+                                input.value.trim()
+                            )
+                            .filter((email) =>
+                                email.length > 0
+                            );
+
                     const message =
                         document.getElementById(
                             "website-form-message"
                         );
 
                     message.textContent =
-                        "Adding website...";
+                        "Adding website and running its first scan. This can take several minutes...";
+
+                    guideSubmit.disabled = true;
 
                     try {
 
                         const response =
                             await fetch(
-                                "/websites/",
+                                "/scanner/initial_scan",
                                 {
                                     method: "POST",
                                     headers: {
@@ -685,7 +1247,20 @@
                                     body: JSON.stringify({
                                         url: websiteUrl,
                                         critical_pages:
-                                            criticalPages
+                                            criticalPages,
+                                        recipient_emails:
+                                            recipientEmails,
+                                        recommended_delay: parseFloat(
+                                            document.getElementById("new-website-delay").value
+                                        ),
+                                        recommended_concurrent: parseInt(
+                                            document.getElementById("new-website-concurrent").value,
+                                            10
+                                        ),
+                                        days_between_scans: parseInt(
+                                            document.getElementById("new-website-days").value,
+                                            10
+                                        )
                                     })
                                 }
                             );
@@ -702,10 +1277,13 @@
 
                         message.textContent =
                             error.message;
+
+                        guideSubmit.disabled = false;
                     }
                 }
             );
         }
+
 
 
         // Add a critical page to an existing website
@@ -745,7 +1323,7 @@
 
                         const response =
                             await fetch(
-                                "/critical_pages/",
+                                "/scanner/initial_critical_page_scan/",
                                 {
                                     method: "POST",
                                     headers: {
@@ -776,6 +1354,7 @@
                 }
             );
         });
+
 
 
         // Delete an existing critical page
@@ -831,6 +1410,146 @@
                 );
             }
         );
+
+
+
+        // Add a notification email to an existing website
+        const recipientForms =
+            document.querySelectorAll(
+                ".add-recipient-form"
+            );
+
+        recipientForms.forEach((form) => {
+
+            form.addEventListener(
+                "submit",
+                async (event) => {
+
+                    event.preventDefault();
+
+                    const websiteId =
+                        form.dataset.websiteId;
+
+                    const input =
+                        form.querySelector(
+                            ".new-recipient-email"
+                        );
+
+                    const message =
+                        form.querySelector(
+                            ".recipient-message"
+                        );
+
+                    const email =
+                        input.value.trim();
+
+                    message.textContent =
+                        "Adding email...";
+
+                    try {
+
+                        const response =
+                            await fetch(
+                                `/websites/${websiteId}`,
+                                {
+                                    method: "PATCH",
+                                    headers: {
+                                        "Content-Type":
+                                            "application/json"
+                                    },
+                                    body: JSON.stringify({
+                                        add_recipient_emails: [
+                                            email
+                                        ]
+                                    })
+                                }
+                            );
+
+                        if (!response.ok) {
+                            throw new Error(
+                                "Unable to add notification email."
+                            );
+                        }
+
+                        window.location.reload();
+
+                    } catch (error) {
+
+                        message.textContent =
+                            error.message;
+                    }
+                }
+            );
+        });
+
+
+
+        // Remove a notification email from an existing website
+        const deleteRecipientButtons =
+            document.querySelectorAll(
+                ".delete-recipient-button"
+            );
+
+        deleteRecipientButtons.forEach(
+            (button) => {
+
+                button.addEventListener(
+                    "click",
+                    async () => {
+
+                        const websiteId =
+                            button.dataset.websiteId;
+
+                        const email =
+                            button.dataset.recipientEmail;
+
+                        const confirmed =
+                            window.confirm(
+                                `Remove ${email} from this website?`
+                            );
+
+                        if (!confirmed) {
+                            return;
+                        }
+
+                        try {
+
+                            const response =
+                                await fetch(
+                                    `/websites/${websiteId}`,
+                                    {
+                                        method: "PATCH",
+                                        headers: {
+                                            "Content-Type":
+                                                "application/json"
+                                    },
+                                    body: JSON.stringify({
+                                        remove_recipient_emails: [
+                                            email
+                                        ]
+                                    })
+                                }
+                            );
+
+                            if (!response.ok) {
+                                throw new Error(
+                                    "Unable to remove notification email."
+                                );
+                            }
+
+                            window.location.reload();
+
+                        } catch (error) {
+
+                            window.alert(
+                                error.message
+                            );
+                        }
+                    }
+                );
+            }
+        );
+
 
 
         // Delete an existing website
@@ -889,6 +1608,7 @@
                 );
             }
         );
+
 
 
         // Update scan settings for an existing website
@@ -1001,7 +1721,7 @@
                         button.dataset.websiteUrl;
 
                     const message =
-                        button.parentElement.querySelector(
+                        button.closest(".website-card").querySelector(
                             ".run-scan-message"
                         );
 

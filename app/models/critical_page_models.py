@@ -42,3 +42,17 @@ class CriticalPageUpdate(BaseModel):
     recent_text_added: list[ContentBlock] | None = None
     recent_text_removed: list[ContentBlock] | None = None
     recent_text_changed: list[ChangedBlock] | None = None
+
+    @property
+    def has_changes(self) -> bool:
+        return any(
+            (
+                self.recent_links_added,
+                self.recent_links_removed,
+                self.recent_documents_added,
+                self.recent_documents_removed,
+                self.recent_text_added,
+                self.recent_text_removed,
+                self.recent_text_changed,
+            )
+        )

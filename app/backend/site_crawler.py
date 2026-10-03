@@ -70,6 +70,7 @@ async def fetch_internal_links_from_url(
 
             # Ensure redirect was not to an external site
             if not is_internal_web_page(base_url, check_url=absolute_url):
+                logger.warning(f"Skipping {url=} as it redirected outside the website to {absolute_url}.")
                 return url, [], None
 
             links: list[str] = extract_links_from_html(
@@ -141,7 +142,7 @@ async def crawl_site(
     queue: list[str] = [url]
 
     while queue and len(visited) < max_pages:
-        logger.info(f"Queue size: {len(queue)} | Visited: {len(visited)}")
+        logger.info(f"{url}: Queue size: {len(queue)} | Visited: {len(visited)}")
 
         batch_size: int = min(len(queue), max_pages - len(visited))
         batch: list[str] = queue[:batch_size]
