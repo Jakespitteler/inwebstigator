@@ -226,10 +226,42 @@ def test_manual_scan_of_a_website_already_queued_is_refused(
     api_client: TestClient, test_website: website_models.WebsiteRead, mocker: MockerFixture
 ) -> None:
     """Tests "Run Scan Now" for a website already queued or being scanned is refused rather than queued twice."""
-    mocker.patch("app.scanner.queued_website_urls", {test_website.url})
+    mocker.patch.dict("app.scanner.queued_crawls", {test_website.url: mocker.Mock()})
     mock_get_website_updates = mocker.patch("app.scanner.get_website_updates")
 
     response = api_client.post("/scanner/run", data={"url": test_website.url})
 
     assert response.status_code == 409, response.text
     mock_get_website_updates.assert_not_called()
+
+
+def test_cancel_scan_reports_whether_there_was_a_scan_to_cancel(
+    api_client: TestClient, test_website: website_models.WebsiteRead, mocker: MockerFixture
+) -> None:
+    """Tests "Cancel Scan" cancels a queued or running scan, and says so when there was nothing to cancel."""
+    mock_crawl = mocker.Mock()
+    mock_crawl.cancel.return_value = True
+    mocker.patch.dict("app.scanner.queued_crawls", {test_website.url: mock_crawl})
+
+    assert api_client.post("/scanner/cancel", data={"url": test_website.url}).json() is True
+    mock_crawl.cancel.assert_called_once()
+    assert api_client.post("/scanner/cancel", data={"url": "https://not-queued.com"}).json() is False
+
+
+def test_dashboard_shows_cancel_button_only_for_websites_being_scanned(
+    api_client: TestClient, session: Session, test_website: website_models.WebsiteRead, mocker: MockerFixture
+) -> None:
+    """Tests a website that is queued or being scanned shows "Cancel Scan" instead of "Run Scan Now" after a
+    refresh, and other websites do not."""
+    session.add(DBWebsite(url="https://not-scanning.example.com"))
+    session.flush()
+    mocker.patch.dict("app.scanner.queued_crawls", {test_website.url: mocker.Mock()})
+
+    dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
+
+    for url, scanning in [(test_website.url, True), ("https://not-scanning.example.com", False)]:
+        run_button = dashboard.select_one(f'.run-scan-button[data-website-url="{url}"]')
+        cancel_button = dashboard.select_one(f'.cancel-scan-button[data-website-url="{url}"]')
+        assert run_button is not None and cancel_button is not None
+        assert run_button.has_attr("disabled") is scanning
+        assert cancel_button.has_attr("hidden") is not scanning

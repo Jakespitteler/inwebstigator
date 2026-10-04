@@ -200,3 +200,32 @@ async def test_crawl_site_follows_homepage_redirect_to_www(
 
     assert "https://www.example.com/about" in visited
     assert any(url.endswith("/contact") for url in visited)
+
+
+@pytest.mark.anyio
+async def test_crawl_site_cancels_its_other_requests_when_it_gives_up(test_url: str):
+    """Tests the rest of a round is cancelled when one page fails for good, so an abandoned crawl does not
+    keep requesting pages in the background while the next website is scanned."""
+    gave_up = asyncio.Event()
+    requests_finished_after_giving_up: list[str] = []
+
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        url = str(request.url)
+        if url == test_url:
+            return httpx2.Response(
+                200, text='<a href="/slow1">Slow</a><a href="/slow2">Slow</a><a href="/down">Down</a>'
+            )
+        if url.endswith("/down"):
+            raise httpx2.ConnectError("Mocked Connection Error", request=request)
+        await asyncio.sleep(0.1)
+        if gave_up.is_set():
+            requests_finished_after_giving_up.append(url)
+        return httpx2.Response(200, text="<p>Slow page</p>")
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        with pytest.raises(WebConnectionError):
+            await crawl_site(client, test_url)
+        gave_up.set()
+        await asyncio.sleep(0.2)
+
+    assert requests_finished_after_giving_up == []

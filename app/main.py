@@ -3,7 +3,13 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import config
-from app.core.errors import IntegrityError, NotFoundError, ScanAlreadyQueuedError, WebConnectionError
+from app.core.errors import (
+    IntegrityError,
+    NotFoundError,
+    ScanAlreadyQueuedError,
+    ScanCancelledError,
+    WebConnectionError,
+)
 from app.core.logging import setup_logging
 from app.core.paths import resource_path
 from app.db.core import engine
@@ -82,13 +88,14 @@ async def integrity_error_handler(request: Request, exc: IntegrityError):
 
 
 @app.exception_handler(ScanAlreadyQueuedError)
-async def scan_already_queued_handler(request: Request, exc: ScanAlreadyQueuedError):
+@app.exception_handler(ScanCancelledError)
+async def scan_not_run_handler(request: Request, exc: ScanAlreadyQueuedError | ScanCancelledError):
     """
-    Handles ScanAlreadyQueuedError exceptions by returning a 409 status.
+    Handles ScanAlreadyQueuedError and ScanCancelledError exceptions by returning a 409 status.
 
     Args:
         request: The incoming request.
-        exc: The ScanAlreadyQueuedError exception.
+        exc: The ScanAlreadyQueuedError or ScanCancelledError exception.
 
     Returns:
         A JSONResponse with a 409 status.

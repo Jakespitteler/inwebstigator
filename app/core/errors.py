@@ -92,3 +92,15 @@ class ScanAlreadyQueuedError(WebCrawlerError):
     def __init__(self, url: str) -> None:
         self.url: str = url
         super().__init__(f"{url} is already queued or being scanned.")
+
+
+class ScanCancelledError(WebCrawlerError):
+    """Exception raised when a website's scan is cancelled before it finished.
+
+    Attributes:
+        url: The URL of the website whose scan was cancelled.
+    """
+
+    def __init__(self, url: str) -> None:
+        self.url: str = url
+        super().__init__(f"The scan of {url} was cancelled.")

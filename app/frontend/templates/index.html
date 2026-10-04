@@ -592,10 +592,21 @@
                                 </a>
                             </div>
 
+                            <!-- Before the run button, so it doesn't appear under the cursor after clicking run -->
+                            <button
+                                type="button"
+                                class="cancel-scan-button"
+                                data-website-url="{{ website.url }}"
+                                {% if website.url not in queued_website_urls %}hidden{% endif %}
+                            >
+                                Cancel Scan
+                            </button>
+
                             <button
                                 type="button"
                                 class="run-scan-button"
                                 data-website-url="{{ website.url }}"
+                                {% if website.url in queued_website_urls %}disabled{% endif %}
                             >
                                 Run Scan Now
                             </button>
@@ -1729,7 +1740,13 @@
                             ".run-scan-message"
                         );
 
+                    const cancelButton =
+                        button.closest(".website-card").querySelector(
+                            ".cancel-scan-button"
+                        );
+
                     button.disabled = true;
+                    cancelButton.hidden = false;
                     message.textContent =
                         "Scan queued. It runs once any scan already in progress has finished...";
 
@@ -1755,9 +1772,10 @@
                             );
 
                         if (!response.ok) {
+                            // 409 means it was already queued or was cancelled, which the server explains
                             throw new Error(
                                 response.status === 409
-                                    ? "This website is already queued or being scanned."
+                                    ? (await response.json()).detail
                                     : "Unable to complete scan."
                             );
                         }
@@ -1775,11 +1793,81 @@
 
                     } finally {
                         scansInProgress--;
+                        cancelButton.hidden = true;
                     }
 
                     if (scansInProgress === 0) {
                         window.location.reload();
                     }
+                }
+            );
+        });
+
+        // Cancel a website's scan, whether it is still queued or already running
+        const cancelScanButtons =
+            document.querySelectorAll(
+                ".cancel-scan-button"
+            );
+
+        cancelScanButtons.forEach((button) => {
+
+            button.addEventListener(
+                "click",
+                async () => {
+
+                    const card =
+                        button.closest(".website-card");
+
+                    const message =
+                        card.querySelector(
+                            ".run-scan-message"
+                        );
+
+                    const formData =
+                        new FormData();
+
+                    formData.append(
+                        "url",
+                        button.dataset.websiteUrl
+                    );
+
+                    button.disabled = true;
+
+                    try {
+
+                        const response =
+                            await fetch(
+                                "/scanner/cancel",
+                                {
+                                    method: "POST",
+                                    body: formData
+                                }
+                            );
+
+                        if (!response.ok) {
+                            throw new Error(
+                                "Unable to cancel scan."
+                            );
+                        }
+
+                        const cancelled =
+                            await response.json();
+
+                        message.textContent =
+                            cancelled
+                                ? "Scan cancelled."
+                                : "The scan had already finished. Refresh the page to see the results.";
+
+                        button.hidden = true;
+                        card.querySelector(".run-scan-button").disabled = false;
+
+                    } catch (error) {
+
+                        message.textContent =
+                            error.message;
+                    }
+
+                    button.disabled = false;
                 }
             );
         });

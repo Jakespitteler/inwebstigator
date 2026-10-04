@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app import scanner
 from app.backend.format_message import monitoring_started_html
-from app.core.errors import ScanAlreadyQueuedError, TrafficError, WebConnectionError
+from app.core.errors import ScanAlreadyQueuedError, ScanCancelledError, TrafficError, WebConnectionError
 from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
 from app.models.critical_page_models import CriticalPageRead, CriticalPageUpdate
@@ -466,7 +466,64 @@ async def test_a_website_already_queued_or_being_scanned_is_not_queued_again(
 
     finish_scan.set()
     await asyncio.gather(*scans)
-    assert scanner.queued_website_urls == set()  # Both can be queued again now they have finished
+    assert scanner.queued_crawls == {}  # Both can be queued again now they have finished
+
+
+@pytest.mark.anyio
+async def test_cancelling_a_scan_stops_it_and_saves_nothing(populated_website: WebsiteRead, mocker: MockerFixture):
+    """Tests a scan can be cancelled whether it is running or still queued, and nothing from it is saved."""
+    crawls_started: list[str] = []
+    first_crawl_started = asyncio.Event()
+
+    async def crawl(client: httpx2.AsyncClient, website: WebsiteRead, *args: object) -> None:
+        crawls_started.append(website.url)
+        first_crawl_started.set()
+        await asyncio.Event().wait()  # Runs until cancelled
+
+    mocker.patch("app.scanner.scan_lock", asyncio.Lock())  # A lock for this test's event loop
+    mocker.patch("app.scanner.get_website_updates", side_effect=crawl)
+    mock_update = mocker.patch.object(WebsiteService, "update")
+    queued_website = populated_website.model_copy(update={"url": "https://queued.com"})
+    client = mocker.AsyncMock(spec=httpx2.AsyncClient)
+    scans = [
+        asyncio.create_task(scanner.scan_website(client, website)) for website in (populated_website, queued_website)
+    ]
+    await first_crawl_started.wait()
+
+    assert scanner.cancel_scan(queued_website.url)
+    assert scanner.cancel_scan(populated_website.url)
+
+    for scan in scans:
+        with pytest.raises(ScanCancelledError):
+            await scan
+    assert crawls_started == [populated_website.url]  # The queued scan never started
+    mock_update.assert_not_called()
+    assert scanner.queued_crawls == {}
+    assert not scanner.cancel_scan(populated_website.url)  # Nothing left to cancel
+
+
+@pytest.mark.anyio
+async def test_stopping_the_app_mid_scan_is_not_mistaken_for_cancelling_the_scan(
+    populated_website: WebsiteRead, mocker: MockerFixture
+):
+    """Tests a scan stopped because the app is shutting down is cancelled as normal, rather than being
+    reported as a scan the user cancelled."""
+    crawl_started = asyncio.Event()
+
+    async def crawl(*args: object) -> None:
+        crawl_started.set()
+        await asyncio.Event().wait()  # Runs until cancelled
+
+    mocker.patch("app.scanner.scan_lock", asyncio.Lock())  # A lock for this test's event loop
+    mocker.patch("app.scanner.get_website_updates", side_effect=crawl)
+    scan = asyncio.create_task(scanner.scan_website(mocker.AsyncMock(spec=httpx2.AsyncClient), populated_website))
+    await crawl_started.wait()
+
+    scan.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await scan
+    assert scanner.queued_crawls == {}
 
 
 # ======================================

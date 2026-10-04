@@ -1,8 +1,7 @@
 import asyncio
 import logging
 from collections import defaultdict
-from collections.abc import AsyncGenerator, Sequence
-from contextlib import asynccontextmanager
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime, time, timedelta
 
 from httpx2 import AsyncClient
@@ -10,7 +9,7 @@ from httpx2 import AsyncClient
 from app.backend.email_service import build_message, send_email
 from app.backend.engine import get_website_updates
 from app.backend.format_message import ScanStatus, generate_scan_report_html, monitoring_started_html
-from app.core.errors import ScanAlreadyQueuedError, TrafficError, WebConnectionError
+from app.core.errors import ScanAlreadyQueuedError, ScanCancelledError, TrafficError, WebConnectionError
 from app.db.core import db_context
 from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
@@ -23,7 +22,9 @@ logger = logging.getLogger(__name__)
 
 # Websites are scanned one at a time, in the order requested, so a new scan waits for the current one to finish
 scan_lock = asyncio.Lock()
-queued_website_urls: set[str] = set()
+
+# The crawl of each website that is queued or being scanned, by URL, so it can be cancelled
+queued_crawls: dict[str, asyncio.Task[WebsiteUpdate | None]] = {}
 
 
 def send_notification(recipient_email: EmailString, report: str, subject: str):
@@ -64,25 +65,58 @@ def send_monitoring_started_notifications(website: WebsiteRead) -> None:
             logger.exception(f"Failed to send monitoring started email to {recipient.email}")
 
 
-@asynccontextmanager
-async def queued_scan(url: str) -> AsyncGenerator[None]:
-    """Waits for the scans requested before this one to finish, then lets the website be scanned.
+async def _crawl_in_turn(crawl: Callable[[], Awaitable[WebsiteUpdate | None]]) -> WebsiteUpdate | None:
+    """Waits for the scans requested before this one to finish, then crawls the website."""
+    async with scan_lock:
+        return await crawl()
+
+
+async def queued_crawl(url: str, crawl: Callable[[], Awaitable[WebsiteUpdate | None]]) -> WebsiteUpdate | None:
+    """Crawls a website once the scans requested before it have finished.
+
+    The crawl runs as its own task, so `cancel_scan()` can stop it whether it is waiting its turn or
+    already crawling, without stopping whatever requested it (e.g. a scan of all websites).
 
     Args:
-        url (str): The URL of the website to scan.
+        url (str): The URL of the website to crawl.
+        crawl (Callable[[], Awaitable[WebsiteUpdate | None]]): Starts the crawl once it is this website's turn.
+
+    Returns:
+        WebsiteUpdate | None: The updates found by the crawl.
 
     Raises:
         ScanAlreadyQueuedError: If the website is already queued or being scanned.
+        ScanCancelledError: If the scan was cancelled before it finished.
     """
-    if url in queued_website_urls:
+    if url in queued_crawls:
         raise ScanAlreadyQueuedError(url)
 
-    queued_website_urls.add(url)
+    crawl_task = asyncio.create_task(_crawl_in_turn(crawl))
+    queued_crawls[url] = crawl_task
     try:
-        async with scan_lock:
-            yield
+        return await crawl_task
+    except asyncio.CancelledError:
+        current_task = asyncio.current_task()
+        if current_task and current_task.cancelling():
+            raise  # The app is shutting down, rather than the scan being cancelled
+        raise ScanCancelledError(url) from None
     finally:
-        queued_website_urls.remove(url)
+        del queued_crawls[url]
+
+
+def cancel_scan(url: str) -> bool:
+    """Cancels a website's scan, whether it is waiting its turn or already crawling.
+
+    Nothing found by a cancelled scan is saved.
+
+    Args:
+        url (str): The URL of the website whose scan to cancel.
+
+    Returns:
+        bool: True if the scan was cancelled, or False if the website was not queued or being scanned.
+    """
+    crawl_task = queued_crawls.get(url)
+    return crawl_task is not None and crawl_task.cancel()
 
 
 async def scan_website(
@@ -116,12 +150,12 @@ async def scan_website(
     Raises:
         TrafficError: Re-raised if custom delay/concurrent parameters were set during a rate-limited scan.
         ScanAlreadyQueuedError: If the website is already queued or being scanned.
+        ScanCancelledError: If the scan was cancelled before it finished.
     """
     try:
-        async with queued_scan(website.url):
-            website_updates: WebsiteUpdate | None = await get_website_updates(
-                client, website, max_pages, delay, concurrent, init
-            )
+        website_updates: WebsiteUpdate | None = await queued_crawl(
+            website.url, lambda: get_website_updates(client, website, max_pages, delay, concurrent, init)
+        )
     except TrafficError as e:
         logger.error(f"Temporary ban or severe rate limit detected for {website.url}: {e}")
         if delay or concurrent:
@@ -198,6 +232,9 @@ async def scan_all_websites() -> str | None:
                 report: str | None = await scan_website(client, website)
             except ScanAlreadyQueuedError:
                 logger.info(f"{website.url} has been skipped as it is already queued or being scanned.")
+                continue
+            except ScanCancelledError:
+                logger.info(f"{website.url} has been skipped as its scan was cancelled.")
                 continue
             except Exception:
                 logger.exception(f"Scan failed for {website.url}, continuing with the remaining websites.")

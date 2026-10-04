@@ -929,6 +929,7 @@ input::placeholder {
 .guide-back,
 #add-critical-page-input,
 #add-recipient-email-input,
+.cancel-scan-button,
 .delete-website-button,
 .delete-critical-page-button,
 .delete-recipient-button {
@@ -955,6 +956,7 @@ input::placeholder {
 .guide-back:active,
 #add-critical-page-input:active,
 #add-recipient-email-input:active,
+.cancel-scan-button:active,
 .delete-website-button:active,
 .delete-critical-page-button:active,
 .delete-recipient-button:active {
@@ -1039,6 +1041,7 @@ button:disabled {
 }
 
 /* Destructive */
+.cancel-scan-button,
 .delete-website-button,
 .delete-critical-page-button,
 .delete-recipient-button {
@@ -1050,6 +1053,7 @@ button:disabled {
     border: 1px solid var(--danger-border);
 }
 
+.cancel-scan-button:hover,
 .delete-website-button:hover,
 .delete-critical-page-button:hover,
 .delete-recipient-button:hover {

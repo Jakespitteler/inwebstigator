@@ -19,7 +19,14 @@ from app.frontend.api.utils import ContentBlockRecord, DailyRecord, TextChangeRe
 from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead, CriticalPageUpdate
 from app.models.recipient_models import RecipientCreate, RecipientUpdate
 from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
-from app.scanner import scan_all_websites, scan_website, send_monitoring_started_notifications, send_notification
+from app.scanner import (
+    cancel_scan,
+    queued_crawls,
+    scan_all_websites,
+    scan_website,
+    send_monitoring_started_notifications,
+    send_notification,
+)
 
 ROOT_ROUTER = APIRouter()
 templates = Jinja2Templates(directory=resource_path("app", "frontend", "templates"))
@@ -125,6 +132,7 @@ def get_dashboard(session: SessionDep, request: Request):
             "default_delay": config.web_crawler_default_delay,
             "default_concurrent": config.web_crawler_default_concurrent,
             "default_days_between_scans": config.scheduler_default_days_between_scans,
+            "queued_website_urls": set(queued_crawls),
         },
     )
 
@@ -227,6 +235,18 @@ async def manually_scan_website(
                 send_notification(recipient_email, report, subject="Manual Website Scan")
 
         return report
+
+
+@SCANNER_ROUTER.post("/cancel", response_model=bool)
+async def cancel_website_scan(url: str = Form(...)) -> bool:
+    """Cancels a website's scan from the UI, whether it is waiting its turn or already running.
+
+    Nothing found by the cancelled scan is saved, and the request that started it fails with a 409 status.
+
+    Returns:
+        bool: True if the scan was cancelled, or False if it had already finished.
+    """
+    return cancel_scan(url)
 
 
 # ======================

@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from collections.abc import Awaitable, Iterator
+from collections.abc import Awaitable, Iterable, Iterator
 
 import httpx2
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -103,6 +103,29 @@ async def fetch_internal_links_from_url(
             return url, [], None
 
 
+async def _gather_or_cancel[T](awaitables: Iterable[Awaitable[T]]) -> list[T]:
+    """Runs awaitables concurrently and returns their results in order, like `asyncio.gather()`.
+
+    Unlike `asyncio.gather()`, if one fails the others are cancelled before the error is raised.
+    Otherwise they would keep requesting pages in the background from a website the crawl has
+    given up on (even one that has rate limited us), while the next website is being scanned.
+
+    Args:
+        awaitables: The awaitables to run concurrently.
+
+    Returns:
+        The result of each awaitable, in the order given.
+    """
+    tasks: list[asyncio.Future[T]] = [asyncio.ensure_future(awaitable) for awaitable in awaitables]
+    try:
+        return await asyncio.gather(*tasks)
+    except Exception:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)  # Wait until they have all stopped
+        raise
+
+
 async def crawl_site(
     client: httpx2.AsyncClient,
     url: str,
@@ -158,7 +181,7 @@ async def crawl_site(
             )
             for current_url in batch
         )
-        batch_results: list[tuple[str, list[str], int | None]] = await asyncio.gather(*tasks)
+        batch_results: list[tuple[str, list[str], int | None]] = await _gather_or_cancel(tasks)
 
         batch_403_count = 0
         for visited_url, internal_links, status_code in batch_results:
