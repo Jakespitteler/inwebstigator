@@ -80,3 +80,15 @@ class WebConnectionError(WebCrawlerError):
 
     def __init__(self, url: str) -> None:
         super().__init__(f"Network traffic issue (Timeout/Connection drop) reaching {url=}.")
+
+
+class ScanAlreadyQueuedError(WebCrawlerError):
+    """Exception raised when a scan is requested for a website that is already queued or being scanned.
+
+    Attributes:
+        url: The URL of the website that is already queued or being scanned.
+    """
+
+    def __init__(self, url: str) -> None:
+        self.url: str = url
+        super().__init__(f"{url} is already queued or being scanned.")

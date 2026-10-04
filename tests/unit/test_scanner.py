@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from contextlib import nullcontext
 from datetime import datetime, timedelta
@@ -12,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app import scanner
 from app.backend.format_message import monitoring_started_html
-from app.core.errors import TrafficError, WebConnectionError
+from app.core.errors import ScanAlreadyQueuedError, TrafficError, WebConnectionError
 from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
 from app.models.critical_page_models import CriticalPageRead, CriticalPageUpdate
@@ -411,6 +412,61 @@ async def test_scan_website_connection_error_handling(populated_website: Website
     mock_reset_failed_attempts.assert_not_called()
     assert isinstance(report, str)
     assert "Site unreachable" in report
+
+
+@pytest.mark.anyio
+async def test_scans_run_one_at_a_time_in_the_order_requested(populated_website: WebsiteRead, mocker: MockerFixture):
+    """Tests a scan requested while another is running waits for it to finish instead of running alongside it."""
+    events: list[str] = []
+
+    async def crawl(client: httpx2.AsyncClient, website: WebsiteRead, *args: object) -> None:
+        events.append(f"start {website.url}")
+        await asyncio.sleep(0.01)
+        events.append(f"finish {website.url}")
+
+    mocker.patch("app.scanner.scan_lock", asyncio.Lock())  # A lock for this test's event loop
+    mocker.patch("app.scanner.get_website_updates", side_effect=crawl)
+    mocker.patch.object(WebsiteService, "reset_failed_attempts")
+    second_website = populated_website.model_copy(update={"url": "https://second.com"})
+    client = mocker.AsyncMock(spec=httpx2.AsyncClient)
+
+    await asyncio.gather(scanner.scan_website(client, populated_website), scanner.scan_website(client, second_website))
+
+    assert events == [
+        f"start {populated_website.url}",
+        f"finish {populated_website.url}",
+        "start https://second.com",
+        "finish https://second.com",
+    ]
+
+
+@pytest.mark.anyio
+async def test_a_website_already_queued_or_being_scanned_is_not_queued_again(
+    populated_website: WebsiteRead, mocker: MockerFixture
+):
+    """Tests the same website cannot be in the scan queue twice, whether it is being scanned or still waiting."""
+    finish_scan = asyncio.Event()
+
+    async def crawl(*args: object) -> None:
+        await finish_scan.wait()
+
+    mocker.patch("app.scanner.scan_lock", asyncio.Lock())  # A lock for this test's event loop
+    mocker.patch("app.scanner.get_website_updates", side_effect=crawl)
+    mocker.patch.object(WebsiteService, "reset_failed_attempts")
+    waiting_website = populated_website.model_copy(update={"url": "https://waiting.com"})
+    client = mocker.AsyncMock(spec=httpx2.AsyncClient)
+    scans = [
+        asyncio.create_task(scanner.scan_website(client, website)) for website in (populated_website, waiting_website)
+    ]
+    await asyncio.sleep(0)
+
+    for website in (populated_website, waiting_website):
+        with pytest.raises(ScanAlreadyQueuedError):
+            await scanner.scan_website(client, website)
+
+    finish_scan.set()
+    await asyncio.gather(*scans)
+    assert scanner.queued_website_urls == set()  # Both can be queued again now they have finished
 
 
 # ======================================

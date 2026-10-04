@@ -1711,6 +1711,10 @@
                 ".run-scan-button"
             );
 
+        // Scans run one at a time, so only refresh once every scan started here has finished.
+        // Refreshing sooner would lose track of the scans still waiting.
+        let scansInProgress = 0;
+
         runScanButtons.forEach((button) => {
 
             button.addEventListener(
@@ -1727,7 +1731,7 @@
 
                     button.disabled = true;
                     message.textContent =
-                        "Running scan...";
+                        "Scan queued. It runs once any scan already in progress has finished...";
 
                     const formData =
                         new FormData();
@@ -1736,6 +1740,8 @@
                         "url",
                         websiteUrl
                     );
+
+                    scansInProgress++;
 
                     try {
 
@@ -1750,14 +1756,14 @@
 
                         if (!response.ok) {
                             throw new Error(
-                                "Unable to complete scan."
+                                response.status === 409
+                                    ? "This website is already queued or being scanned."
+                                    : "Unable to complete scan."
                             );
                         }
 
                         message.textContent =
                             "Scan completed.";
-
-                        window.location.reload();
 
                     } catch (error) {
 
@@ -1765,6 +1771,14 @@
                             error.message;
 
                         button.disabled = false;
+                        return;
+
+                    } finally {
+                        scansInProgress--;
+                    }
+
+                    if (scansInProgress === 0) {
+                        window.location.reload();
                     }
                 }
             );

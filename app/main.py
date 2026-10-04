@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import config
-from app.core.errors import IntegrityError, NotFoundError, WebConnectionError
+from app.core.errors import IntegrityError, NotFoundError, ScanAlreadyQueuedError, WebConnectionError
 from app.core.logging import setup_logging
 from app.core.paths import resource_path
 from app.db.core import engine
@@ -77,6 +77,24 @@ async def integrity_error_handler(request: Request, exc: IntegrityError):
     """
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
+        content={"detail": str(exc)},
+    )
+
+
+@app.exception_handler(ScanAlreadyQueuedError)
+async def scan_already_queued_handler(request: Request, exc: ScanAlreadyQueuedError):
+    """
+    Handles ScanAlreadyQueuedError exceptions by returning a 409 status.
+
+    Args:
+        request: The incoming request.
+        exc: The ScanAlreadyQueuedError exception.
+
+    Returns:
+        A JSONResponse with a 409 status.
+    """
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
         content={"detail": str(exc)},
     )
 

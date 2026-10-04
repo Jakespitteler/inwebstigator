@@ -1,6 +1,8 @@
+import asyncio
 import logging
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import AsyncGenerator, Sequence
+from contextlib import asynccontextmanager
 from datetime import datetime, time, timedelta
 
 from httpx2 import AsyncClient
@@ -8,7 +10,7 @@ from httpx2 import AsyncClient
 from app.backend.email_service import build_message, send_email
 from app.backend.engine import get_website_updates
 from app.backend.format_message import ScanStatus, generate_scan_report_html, monitoring_started_html
-from app.core.errors import TrafficError, WebConnectionError
+from app.core.errors import ScanAlreadyQueuedError, TrafficError, WebConnectionError
 from app.db.core import db_context
 from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
@@ -18,6 +20,10 @@ from app.models.recipient_models import RecipientUpdate
 from app.models.website_models import WebsiteRead, WebsiteUpdate
 
 logger = logging.getLogger(__name__)
+
+# Websites are scanned one at a time, in the order requested, so a new scan waits for the current one to finish
+scan_lock = asyncio.Lock()
+queued_website_urls: set[str] = set()
 
 
 def send_notification(recipient_email: EmailString, report: str, subject: str):
@@ -58,6 +64,27 @@ def send_monitoring_started_notifications(website: WebsiteRead) -> None:
             logger.exception(f"Failed to send monitoring started email to {recipient.email}")
 
 
+@asynccontextmanager
+async def queued_scan(url: str) -> AsyncGenerator[None]:
+    """Waits for the scans requested before this one to finish, then lets the website be scanned.
+
+    Args:
+        url (str): The URL of the website to scan.
+
+    Raises:
+        ScanAlreadyQueuedError: If the website is already queued or being scanned.
+    """
+    if url in queued_website_urls:
+        raise ScanAlreadyQueuedError(url)
+
+    queued_website_urls.add(url)
+    try:
+        async with scan_lock:
+            yield
+    finally:
+        queued_website_urls.remove(url)
+
+
 async def scan_website(
     client: AsyncClient,
     website: WebsiteRead,
@@ -70,7 +97,8 @@ async def scan_website(
     generates an HTML scan report.
 
     Automatically handles rate limits and unreachable sites by applying database
-    cooldown periods to the affected website record.
+    cooldown periods to the affected website record. Waits for any scan already
+    running to finish first.
 
     Args:
         client (AsyncClient): The HTTPX asynchronous client for making web requests.
@@ -87,11 +115,13 @@ async def scan_website(
 
     Raises:
         TrafficError: Re-raised if custom delay/concurrent parameters were set during a rate-limited scan.
+        ScanAlreadyQueuedError: If the website is already queued or being scanned.
     """
     try:
-        website_updates: WebsiteUpdate | None = await get_website_updates(
-            client, website, max_pages, delay, concurrent, init
-        )
+        async with queued_scan(website.url):
+            website_updates: WebsiteUpdate | None = await get_website_updates(
+                client, website, max_pages, delay, concurrent, init
+            )
     except TrafficError as e:
         logger.error(f"Temporary ban or severe rate limit detected for {website.url}: {e}")
         if delay or concurrent:
@@ -166,6 +196,9 @@ async def scan_all_websites() -> str | None:
 
             try:
                 report: str | None = await scan_website(client, website)
+            except ScanAlreadyQueuedError:
+                logger.info(f"{website.url} has been skipped as it is already queued or being scanned.")
+                continue
             except Exception:
                 logger.exception(f"Scan failed for {website.url}, continuing with the remaining websites.")
                 report = None

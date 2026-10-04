@@ -220,3 +220,16 @@ def test_manual_scan_records_scan_time(
     last_scan_at = website.last_scan_at
     assert last_scan_at is not None and last_scan_at >= before
     assert _latest_scan_text(api_client) == f"Latest scan: {last_scan_at:%d %b %Y, %H:%M}"
+
+
+def test_manual_scan_of_a_website_already_queued_is_refused(
+    api_client: TestClient, test_website: website_models.WebsiteRead, mocker: MockerFixture
+) -> None:
+    """Tests "Run Scan Now" for a website already queued or being scanned is refused rather than queued twice."""
+    mocker.patch("app.scanner.queued_website_urls", {test_website.url})
+    mock_get_website_updates = mocker.patch("app.scanner.get_website_updates")
+
+    response = api_client.post("/scanner/run", data={"url": test_website.url})
+
+    assert response.status_code == 409, response.text
+    mock_get_website_updates.assert_not_called()
