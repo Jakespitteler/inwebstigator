@@ -620,12 +620,6 @@
                         <div class="website-summary">
 
                             <p>
-                                <strong>Critical pages:</strong>
-                                {{ website.critical_pages | length
-                                   if website.critical_pages else 0 }}
-                            </p>
-
-                            <p>
                                 <strong>Internal pages:</strong>
                                 {{ website.internal_links | length
                                    if website.internal_links else 0 }}
