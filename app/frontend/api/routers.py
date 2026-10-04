@@ -15,7 +15,14 @@ from app.db.services.critical_page_service import CriticalPageService
 from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
 from app.frontend.api.db_router_factory import SessionDep, create_crud_router
-from app.frontend.api.utils import ContentBlockRecord, DailyRecord, TextChangeRecord, build_word_diff, website_name
+from app.frontend.api.utils import (
+    ContentBlockRecord,
+    DailyRecord,
+    TextChangeRecord,
+    build_word_diff,
+    scan_time,
+    website_name,
+)
 from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead, CriticalPageUpdate
 from app.models.recipient_models import RecipientCreate, RecipientUpdate
 from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
@@ -24,6 +31,7 @@ from app.scanner import scan_all_websites, scan_website, send_monitoring_started
 ROOT_ROUTER = APIRouter()
 templates = Jinja2Templates(directory=resource_path("app", "frontend", "templates"))
 templates.env.filters["website_name"] = website_name  # pyright: ignore[reportUnknownMemberType]
+templates.env.filters["scan_time"] = scan_time  # pyright: ignore[reportUnknownMemberType]
 
 
 # ======================
@@ -101,6 +109,7 @@ def get_dashboard(session: SessionDep, request: Request):
                     DailyRecord(
                         url=critical_page.url,
                         website_url=website.url,
+                        last_scan_at=website.last_scan_at,
                         changed=changed,
                         added=added,
                         removed=removed,
@@ -111,16 +120,11 @@ def get_dashboard(session: SessionDep, request: Request):
                     )
                 )
 
-    last_scans: list[datetime] = [website.last_scan_at for website in websites if website.last_scan_at]
-    # %H rather than %-I, which is not supported on Windows where the desktop app runs
-    daily_date: str | None = max(last_scans).strftime("%d %b %Y, %H:%M") if last_scans else None
-
     return templates.TemplateResponse(
         request=request,
         name="index.html",
         context={
             "daily_records": daily_records,
-            "daily_date": daily_date,
             "websites": websites,
             "default_delay": config.web_crawler_default_delay,
             "default_concurrent": config.web_crawler_default_concurrent,
