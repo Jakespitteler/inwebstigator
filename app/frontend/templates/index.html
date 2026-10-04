@@ -506,9 +506,9 @@
                                 <input
                                     type="number"
                                     id="new-website-days"
-                                    value="{{ default_days_between_scans | int }}"
-                                    min="1"
-                                    step="1"
+                                    value="{{ default_days_between_scans }}"
+                                    min="0.5"
+                                    step="any"
                                     required
                                 >
                             </div>
@@ -847,8 +847,8 @@
                                         type="number"
                                         class="days-between-scans"
                                         value="{{ website.days_between_scans }}"
-                                        min="1"
-                                        step="1"
+                                        min="0.5"
+                                        step="any"
                                         required
                                     >
 
@@ -1251,9 +1251,8 @@
                                             document.getElementById("new-website-concurrent").value,
                                             10
                                         ),
-                                        days_between_scans: parseInt(
-                                            document.getElementById("new-website-days").value,
-                                            10
+                                        days_between_scans: parseFloat(
+                                            document.getElementById("new-website-days").value
                                         )
                                     })
                                 }
@@ -1643,11 +1642,10 @@
                         );
 
                     const daysBetweenScans =
-                        parseInt(
+                        parseFloat(
                             form.querySelector(
                                 ".days-between-scans"
-                            ).value,
-                            10
+                            ).value
                         );
 
                     const message =
