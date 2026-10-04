@@ -25,7 +25,7 @@ class Config(BaseSettings):
     smtp_host: str = ""
     smtp_port: int = 465
 
-    web_crawler_default_max_pages: int = 50000
+    web_crawler_default_max_pages: int = 50_000
     web_crawler_default_delay: float = 0.5
     web_crawler_max_delay: float = 3
     web_crawler_default_concurrent: int = 5

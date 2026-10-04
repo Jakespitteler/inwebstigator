@@ -545,6 +545,7 @@
                             Adding the website runs its first scan straight away, which can
                             take several minutes for a large site. The first scan saves each
                             page as a starting point, and you'll be told about changes after that.
+                            Cancelling the first scan cancels adding the website.
                         </p>
 
                         <dl id="guide-review" class="guide-review"></dl>
@@ -564,6 +565,10 @@
                         <div class="guide-nav">
                             <button type="button" id="guide-back" class="guide-back">Back</button>
                             <button type="button" id="guide-next" class="guide-next">Next</button>
+                            <!-- Before the submit button, so it doesn't appear under the cursor after clicking it -->
+                            <button type="button" id="guide-cancel-scan" class="cancel-scan-button" hidden>
+                                Cancel Scan
+                            </button>
                             <button type="submit" id="guide-submit" class="guide-next" hidden>Add Website</button>
                         </div>
 
@@ -616,6 +621,15 @@
                             class="run-scan-message"
                             aria-live="polite"
                         ></p>
+
+                        {% if not website.active and website.deactivated_reason == "too_large" %}
+                            <p class="website-notice">
+                                <strong>Too large to scan.</strong>
+                                This website has more than {{ "{:,}".format(max_pages) }} pages, which is
+                                more than Inwebstigator will scan, so it has been deactivated and is no
+                                longer scanned automatically.
+                            </p>
+                        {% endif %}
 
                         <button
                             type="button"
@@ -1189,6 +1203,80 @@
 
 
 
+        // The website whose first scan is running, while it is being added
+        const guideCancelScan =
+            document.getElementById(
+                "guide-cancel-scan"
+            );
+
+        let websiteBeingAdded = null;
+        let addingCancelled = false;
+
+        // Cancel the first scan of the website being added, which cancels adding the website
+        if (guideCancelScan) {
+
+            guideCancelScan.addEventListener(
+                "click",
+                async () => {
+
+                    const message =
+                        document.getElementById(
+                            "website-form-message"
+                        );
+
+                    const formData =
+                        new FormData();
+
+                    formData.append(
+                        "url",
+                        websiteBeingAdded
+                    );
+
+                    // Set before asking, as the add request can finish before the cancel request does
+                    addingCancelled = true;
+                    guideCancelScan.disabled = true;
+                    message.textContent =
+                        "Cancelling scan...";
+
+                    try {
+
+                        const response =
+                            await fetch(
+                                "/scanner/cancel",
+                                {
+                                    method: "POST",
+                                    body: formData
+                                }
+                            );
+
+                        if (!response.ok) {
+                            throw new Error(
+                                "Unable to cancel scan."
+                            );
+                        }
+
+                        const cancelled =
+                            await response.json();
+
+                        if (!cancelled) {
+                            throw new Error(
+                                "The scan could not be cancelled, as it had already finished."
+                            );
+                        }
+
+                    } catch (error) {
+
+                        addingCancelled = false;
+                        guideCancelScan.disabled = false;
+                        message.textContent =
+                            error.message;
+                    }
+                }
+            );
+        }
+
+
+
         // Add a new website
         const addWebsiteForm =
             document.getElementById(
@@ -1243,6 +1331,10 @@
                         "Adding website and running its first scan. This can take several minutes...";
 
                     guideSubmit.disabled = true;
+                    websiteBeingAdded = websiteUrl;
+                    addingCancelled = false;
+                    guideCancelScan.disabled = false;
+                    guideCancelScan.hidden = false;
 
                     try {
 
@@ -1277,8 +1369,13 @@
                             );
 
                         if (!response.ok) {
+                            // 409 means the first scan was cancelled, or the website is already being scanned
                             throw new Error(
-                                "Unable to add website."
+                                response.status !== 409
+                                    ? "Unable to add website."
+                                    : addingCancelled
+                                        ? "Scan cancelled. The website was not added."
+                                        : (await response.json()).detail
                             );
                         }
 
@@ -1290,6 +1387,10 @@
                             error.message;
 
                         guideSubmit.disabled = false;
+
+                    } finally {
+                        websiteBeingAdded = null;
+                        guideCancelScan.hidden = true;
                     }
                 }
             );
@@ -1582,9 +1683,16 @@
                         const websiteUrl =
                             button.dataset.websiteUrl;
 
+                        const scanning =
+                            !button.closest(".website-card").querySelector(
+                                ".cancel-scan-button"
+                            ).hidden;
+
                         const confirmed =
                             window.confirm(
-                                `Delete ${websiteUrl}?`
+                                scanning
+                                    ? `Delete ${websiteUrl}? Its scan will be cancelled.`
+                                    : `Delete ${websiteUrl}?`
                             );
 
                         if (!confirmed) {

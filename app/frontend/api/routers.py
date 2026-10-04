@@ -1,19 +1,22 @@
+import uuid
 from collections.abc import Sequence
+from contextlib import suppress
 from datetime import datetime
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import FileResponse
 from fastapi.templating import Jinja2Templates
 from httpx2 import AsyncClient
 
 from app.backend.engine import get_critical_page_updates
 from app.core.config import config
-from app.core.errors import NotFoundError
+from app.core.errors import NotFoundError, ScanCancelledError
 from app.core.paths import resource_path
 from app.db.core import db_context
 from app.db.services.critical_page_service import CriticalPageService
 from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
+from app.db.utils.interfaces import CRUDOperation
 from app.frontend.api.db_router_factory import SessionDep, create_crud_router
 from app.frontend.api.utils import ContentBlockRecord, DailyRecord, TextChangeRecord, build_word_diff, website_name
 from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead, CriticalPageUpdate
@@ -132,6 +135,7 @@ def get_dashboard(session: SessionDep, request: Request):
             "default_delay": config.web_crawler_default_delay,
             "default_concurrent": config.web_crawler_default_concurrent,
             "default_days_between_scans": config.scheduler_default_days_between_scans,
+            "max_pages": config.web_crawler_default_max_pages,
             "queued_website_urls": set(queued_crawls),
         },
     )
@@ -153,25 +157,48 @@ SCANNER_ROUTER = APIRouter(prefix="/scanner", tags=["Scanner"])
 # TODO: May be good to change "Add Website" to "Initialise Website"
 
 
+def _discard_website(website_id: uuid.UUID) -> None:
+    """Deletes a website whose first scan was cancelled, so cancelling the scan cancels adding the website.
+
+    A website that has already been deleted is left alone, as deleting a website also cancels its scan.
+
+    Args:
+        website_id (uuid.UUID): The ID of the website to delete.
+    """
+    with db_context() as session, suppress(NotFoundError):
+        WebsiteService(session).delete(website_id)
+
+
 @SCANNER_ROUTER.post("/initial_scan", response_model=None)
 async def website_initial_scan(session: SessionDep, model_create: WebsiteCreate) -> None:
     """Registers a new website in the database, triggers an immediate initial crawl and
     emails the website's recipients to confirm it is now being monitored.
 
+    If the first scan is cancelled the website is not added, and the request fails with a 409 status.
+    A website too large to scan is kept but deactivated, so its recipients are not told it is being monitored.
+
     Args:
         session (SessionDep): Database session dependency.
         model_create (WebsiteCreate): Payload containing details to create the website record.
+
+    Raises:
+        ScanCancelledError: If the website's first scan was cancelled.
     """
     website: WebsiteRead = WebsiteService(session).create(model_create)
     session.commit()
 
-    async with AsyncClient() as client:
-        await scan_website(client, website, init=True)
+    try:
+        async with AsyncClient() as client:
+            await scan_website(client, website, init=True)
+    except ScanCancelledError:
+        _discard_website(website.id)
+        raise
 
     with db_context() as session:
-        WebsiteService(session).update(id=website.id, model_update=WebsiteUpdate(last_scan_at=datetime.now()))
+        website = WebsiteService(session).update(id=website.id, model_update=WebsiteUpdate(last_scan_at=datetime.now()))
 
-    send_monitoring_started_notifications(website)
+    if website.active:
+        send_monitoring_started_notifications(website)
 
 
 @SCANNER_ROUTER.post("/initial_critical_page_scan", response_model=None)
@@ -272,4 +299,27 @@ WEBSITE_ROUTER: APIRouter = create_crud_router(
     service_class=WebsiteService,
     create_class=WebsiteCreate,
     update_class=WebsiteUpdate,
+    exclude={CRUDOperation.DELETE},  # Replaced below, as deleting a website also cancels its scan
 )
+
+
+@WEBSITE_ROUTER.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_website(session: SessionDep, id: uuid.UUID) -> None:
+    """Deletes a website, cancelling its scan if it is queued or being scanned.
+
+    The deletion is committed before the scan is cancelled, so a cancelled first scan (which deletes
+    the website it was adding) finds the website already gone instead of trying to delete it as well.
+
+    Args:
+        session (SessionDep): Database session dependency.
+        id (uuid.UUID): The ID of the website to delete.
+
+    Raises:
+        NotFoundError: If no website has the ID.
+    """
+    website_service = WebsiteService(session)
+    website: WebsiteRead = website_service.get(id)
+    website_service.delete(id)
+    session.commit()
+
+    cancel_scan(website.url)

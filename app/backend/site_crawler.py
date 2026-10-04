@@ -12,7 +12,7 @@ from app.backend.utils.links import (
     normalise_url,
 )
 from app.core.config import config
-from app.core.errors import TrafficError, WebConnectionError
+from app.core.errors import TrafficError, WebConnectionError, WebsiteTooLargeError
 
 logger = logging.getLogger(__name__)
 
@@ -139,11 +139,13 @@ async def crawl_site(
     Traverses internal links in batched concurrent async requests, tracking visited and queued
     URLs. Monitors batch HTTP responses to detect site-wide blockades or firewall restrictions.
 
+    A website with more pages than the limit is refused rather than partly crawled, as comparing
+    a different partial crawl each scan would report pages being added and removed that never were.
+
     Args:
         client: The HTTP client instance used to execute network requests.
         url: The entry point URL string from which the crawler discovers links.
-        max_pages: The maximum number of unique internal pages to visit before stopping.
-            Defaults to 5000.
+        max_pages: The most unique internal pages the crawler will visit. Defaults to 5000.
         max_concurrent: The maximum number of concurrent HTTP requests permitted.
             Defaults to 10.
         delay: The time in seconds to pause before fetching individual URLs. Defaults to 0.
@@ -156,6 +158,7 @@ async def crawl_site(
     Raises:
         TrafficError: If a single batch encounters 403 Forbidden responses equal to or exceeding
             batch_403_threshold, indicating firewall blocking or access denial.
+        WebsiteTooLargeError: If the limit is reached while there are still pages left to visit.
     """
     semaphore = asyncio.Semaphore(max_concurrent)
 
@@ -199,10 +202,10 @@ async def crawl_site(
                 f"Site-wide block detected: Encountered {batch_403_count} 403 Forbidden responses in a single batch."
             )
             raise TrafficError(url, 403)
+    # The crawl only stops with pages left to visit when it has reached the limit. Queued links that
+    # were already reached by following a redirect from another link are not counted as left to visit.
+    if any(link not in visited for link in queue):
+        raise WebsiteTooLargeError(url, max_pages)
 
-    if len(visited) >= max_pages:
-        logger.warning(f"Crawler exceeded the {max_pages=}, stopping crawler...")
-    else:
-        logger.info(f"Crawl completed. Exhausted all discoverable links. Total visited: {len(visited)}")
-
+    logger.info(f"Crawl completed. Exhausted all discoverable links. Total visited: {len(visited)}")
     return visited

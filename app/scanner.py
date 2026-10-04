@@ -9,7 +9,14 @@ from httpx2 import AsyncClient
 from app.backend.email_service import build_message, send_email
 from app.backend.engine import get_website_updates
 from app.backend.format_message import ScanStatus, generate_scan_report_html, monitoring_started_html
-from app.core.errors import ScanAlreadyQueuedError, ScanCancelledError, TrafficError, WebConnectionError
+from app.core.errors import (
+    NotFoundError,
+    ScanAlreadyQueuedError,
+    ScanCancelledError,
+    TrafficError,
+    WebConnectionError,
+    WebsiteTooLargeError,
+)
 from app.db.core import db_context
 from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
@@ -131,8 +138,8 @@ async def scan_website(
     generates an HTML scan report.
 
     Automatically handles rate limits and unreachable sites by applying database
-    cooldown periods to the affected website record. Waits for any scan already
-    running to finish first.
+    cooldown periods to the affected website record, and deactivates websites with
+    more pages than the crawler will scan. Waits for any scan already running to finish first.
 
     Args:
         client (AsyncClient): The HTTPX asynchronous client for making web requests.
@@ -172,6 +179,11 @@ async def scan_website(
         with db_context() as session:
             action_message: str = WebsiteService(session).handle_connection_error(website.id)
         return generate_scan_report_html(website, status=ScanStatus.CONNECTION_ERROR, message=action_message)
+    except WebsiteTooLargeError as e:
+        logger.warning(f"Website too large to scan: {e}")
+        with db_context() as session:
+            action_message: str = WebsiteService(session).handle_too_large(website.id, e.max_pages)
+        return generate_scan_report_html(website, status=ScanStatus.TOO_LARGE, message=action_message)
 
     with db_context() as session:
         website_service = WebsiteService(session)
@@ -193,6 +205,25 @@ async def scan_website(
     )
 
 
+def _get_latest_state(website: WebsiteRead) -> WebsiteRead | None:
+    """Gets the latest saved state of a website, or None if it has been deleted.
+
+    A scan of every website can take hours, so each website is re-read just before its turn
+    to pick up changes made since the run started (e.g. it being deleted or deactivated).
+
+    Args:
+        website (WebsiteRead): The website as it was when the run started.
+
+    Returns:
+        WebsiteRead | None: The website as it is now, or None if it has since been deleted.
+    """
+    with db_context() as session:
+        try:
+            return WebsiteService(session).get(website.id)
+        except NotFoundError:
+            return None
+
+
 async def scan_all_websites() -> str | None:
     """Asynchronously scans all active, non-cooldown websites registered to a recipient.
 
@@ -200,7 +231,8 @@ async def scan_all_websites() -> str | None:
     if any scan reports were generated.
 
     A website whose scan fails unexpectedly is logged and skipped, and a failed email is logged
-    and skipped, so one problem cannot stop the other websites being scanned or reported.
+    and skipped, so one problem cannot stop the other websites being scanned or reported. A website
+    deleted during the run is skipped, or its scan cancelled if it was being scanned.
 
     Returns:
         str | None: Consolidated HTML list of scan reports if updates/errors occurred,
@@ -215,7 +247,11 @@ async def scan_all_websites() -> str | None:
     reports_by_recipient: dict[EmailString, list[str]] = defaultdict(list)
     all_reports: list[str] = []
     async with AsyncClient() as client:
-        for website in websites:
+        for listed_website in websites:
+            website: WebsiteRead | None = _get_latest_state(listed_website)
+            if website is None:
+                logger.info(f"{listed_website.url} has been skipped as it was deleted during the run.")
+                continue
             if not website.active:
                 logger.warning(f"{website.url} has been skipped as it has been deactivated.")
                 continue

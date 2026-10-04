@@ -100,6 +100,7 @@ class DBWebsite(Base):
     last_scan_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    deactivated_reason: Mapped[str | None] = mapped_column(String, nullable=True)  # A DeactivationReason
     failed_attempts_at_min_speed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     on_cooldown_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

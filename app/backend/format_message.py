@@ -11,6 +11,7 @@ class ScanStatus(StrEnum):
     CONNECTION_ERROR = "connection_error"
     SKIPPED_DEACTIVATED = "skipped_deactivated"
     SKIPPED_COOLDOWN = "skipped_cooldown"
+    TOO_LARGE = "too_large"
 
 
 def _safe(text: str) -> str:
@@ -40,6 +41,7 @@ def generate_scan_report_html(
         ScanStatus.CONNECTION_ERROR: ("Connection Failure Report", "#cf222e"),
         ScanStatus.SKIPPED_DEACTIVATED: ("Scan Skipped (Deactivated)", "#9a6700"),
         ScanStatus.SKIPPED_COOLDOWN: ("Scan Skipped (Cooldown Active)", "#9a6700"),
+        ScanStatus.TOO_LARGE: ("Scan Refused (Website Too Large)", "#9a6700"),
     }
     title_prefix, header_color = status_config.get(status, ("Website Report", "#1f2328"))
 

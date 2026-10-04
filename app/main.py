@@ -13,6 +13,7 @@ from app.core.errors import (
 from app.core.logging import setup_logging
 from app.core.paths import resource_path
 from app.db.core import engine
+from app.db.migrations import add_missing_columns
 from app.db.schema import Base
 from app.frontend.api import routers
 from app.scheduler import schedule_scans
@@ -20,7 +21,7 @@ from app.scheduler import schedule_scans
 setup_logging()
 
 Base.metadata.create_all(bind=engine)
-
+add_missing_columns(engine, Base.metadata)  # Brings databases made by older versions of the app up to date
 if config.automatic_scans:
     app = FastAPI(title=config.app_name, lifespan=schedule_scans)
 else:

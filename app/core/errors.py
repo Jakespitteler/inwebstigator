@@ -82,6 +82,20 @@ class WebConnectionError(WebCrawlerError):
         super().__init__(f"Network traffic issue (Timeout/Connection drop) reaching {url=}.")
 
 
+class WebsiteTooLargeError(WebCrawlerError):
+    """Exception raised when a website has more pages than the crawler will scan.
+
+    Attributes:
+        url: The URL of the website that is too large to scan.
+        max_pages: The most pages the crawler would scan.
+    """
+
+    def __init__(self, url: str, max_pages: int) -> None:
+        self.url: str = url
+        self.max_pages: int = max_pages
+        super().__init__(f"{url} has more than {max_pages:,} pages, which is more than the crawler will scan.")
+
+
 class ScanAlreadyQueuedError(WebCrawlerError):
     """Exception raised when a scan is requested for a website that is already queued or being scanned.
 

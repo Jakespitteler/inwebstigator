@@ -5,7 +5,7 @@ import httpx2
 import pytest
 
 from app.backend.site_crawler import crawl_site, fetch_internal_links_from_url
-from app.core.errors import TrafficError, WebConnectionError
+from app.core.errors import TrafficError, WebConnectionError, WebsiteTooLargeError
 from tests.conftest import RequestHandler
 
 # ========================
@@ -94,16 +94,37 @@ async def test_crawl_site_success_and_skips_404(
 
 
 @pytest.mark.anyio
-async def test_crawl_site_respects_max_pages(
+async def test_crawl_site_refuses_a_website_with_more_pages_than_max_pages(
     test_url: str,
     website_handler: RequestHandler,
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
 ):
-    """Tests that the crawler stops exactly at the max_pages limit."""
-    async with mock_client_factory(website_handler) as client:
-        visited: set[str] = await crawl_site(client, test_url, max_pages=2)
+    """Tests a website with more pages than the limit is refused, rather than partly crawled."""
+    requested_urls: list[str] = []
 
-    assert len(visited) == 2
+    def counting_handler(request: httpx2.Request) -> httpx2.Response:
+        requested_urls.append(str(request.url))
+        return website_handler(request)
+
+    async with mock_client_factory(counting_handler) as client:
+        with pytest.raises(WebsiteTooLargeError) as exc_info:
+            await crawl_site(client, test_url, max_pages=2)
+
+    assert exc_info.value.max_pages == 2
+    assert len(requested_urls) == 2  # The limit is never exceeded
+
+
+@pytest.mark.anyio
+async def test_crawl_site_allows_a_website_with_exactly_max_pages(
+    test_url: str,
+    website_handler: RequestHandler,
+    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
+):
+    """Tests a website with exactly as many pages as the limit is crawled in full."""
+    async with mock_client_factory(website_handler) as client:
+        visited: set[str] = await crawl_site(client, test_url, max_pages=6)
+
+    assert len(visited) == 6
 
 
 @pytest.mark.anyio

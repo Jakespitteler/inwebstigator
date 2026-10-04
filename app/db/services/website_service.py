@@ -15,7 +15,7 @@ from app.db.services.recipient_service import RecipientService
 from app.db.utils.interfaces import CRUDService
 from app.models.critical_page_models import CriticalPageCreate
 from app.models.recipient_models import RecipientCreate
-from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
+from app.models.website_models import DeactivationReason, WebsiteCreate, WebsiteRead, WebsiteUpdate
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -128,7 +128,8 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         """Updates attributes of an existing website record and syncs its sub-resources.
 
         Handles updates to website URLs, batch updates for monitored critical pages,
-        and batch additions/removals of internal links.
+        and batch additions/removals of internal links. Re-activating a website clears
+        why it was deactivated.
 
         Args:
             id: The UUID identifier of the website record to update.
@@ -147,6 +148,8 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
             exclude_unset=True,
             exclude={"critical_page_updates", "recipient_emails"},
         )
+        if model_update.active:
+            update_data["deactivated_reason"] = None
 
         recipient_service = RecipientService(self._db)
         if model_update.add_recipient_emails:
@@ -297,6 +300,27 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
             model_update=WebsiteUpdate(failed_attempts_at_min_speed=website.failed_attempts_at_min_speed + 1),
         )
         return "Website placed on cooldown."
+
+    def handle_too_large(self, id: uuid.UUID, max_pages: int) -> str:
+        """Deactivates a website with more pages than the crawler will scan, recording why so the
+        dashboard can tell the user.
+
+        Args:
+            id (uuid.UUID): Unique identifier of the website that is too large to scan.
+            max_pages (int): The most pages the crawler would scan.
+
+        Returns:
+            str: Status action message explaining the website has been deactivated.
+        """
+        website: WebsiteRead = self.update(
+            id=id,
+            model_update=WebsiteUpdate(active=False, deactivated_reason=DeactivationReason.TOO_LARGE),
+        )
+        logger.warning(f"Website {website.url} deactivated as it has more than {max_pages:,} pages.")
+        return (
+            f"This website has more than {max_pages:,} pages, which is more than the crawler will scan, "
+            "so it has been deactivated and will no longer be scanned automatically."
+        )
 
     def handle_connection_error(self, website_id: uuid.UUID) -> str:
         """Handles unreachable site errors by setting a standard 2-hour cooldown period.

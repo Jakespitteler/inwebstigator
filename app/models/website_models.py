@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -13,6 +14,12 @@ DEFAULT_DELAY: float = config.web_crawler_default_delay
 DEFAULT_CONCURRENT: int = config.web_crawler_default_concurrent
 DEFAULT_DAYS_BETWEEN_SCANS: float = config.scheduler_default_days_between_scans
 MINIMUM_DAYS_BETWEEN_SCANS: float = config.scheduler_minimum_days_between_scans
+
+
+class DeactivationReason(StrEnum):
+    """Why the app deactivated a website itself, so the dashboard can tell the user."""
+
+    TOO_LARGE = "too_large"
 
 
 class WebsiteCreate(BaseModel):
@@ -36,6 +43,7 @@ class WebsiteRead(BaseModel):
 
     last_scan_at: datetime | None = None
     active: bool
+    deactivated_reason: DeactivationReason | None = None
     failed_attempts_at_min_speed: int
     on_cooldown_until: datetime | None = None
 
@@ -55,6 +63,7 @@ class WebsiteUpdate(BaseModel):
 
     last_scan_at: datetime | None = None
     active: bool | None = None
+    deactivated_reason: DeactivationReason | None = None
     failed_attempts_at_min_speed: int | None = None
     on_cooldown_until: datetime | None = None
 

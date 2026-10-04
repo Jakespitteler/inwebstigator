@@ -1,18 +1,26 @@
+import asyncio
 import uuid
+from collections.abc import Iterator
 from contextlib import nullcontext
 from datetime import datetime
 
 import pytest
 from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
-from httpx2 import Response
+from httpx2 import ASGITransport, AsyncClient, MockTransport, Response
 from pydantic import BaseModel
 from pytest_mock import MockerFixture
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import config
+from app.core.errors import ScanCancelledError, WebsiteTooLargeError
+from app.db.core import get_db_session
 from app.db.schema import Base, DBWebsite
 from app.frontend.api import routers
+from app.main import app
 from app.models import critical_page_models, recipient_models, website_models
+from app.scanner import queued_crawls
 
 
 class TestCRUDRouters:
@@ -265,3 +273,156 @@ def test_dashboard_shows_cancel_button_only_for_websites_being_scanned(
         assert run_button is not None and cancel_button is not None
         assert run_button.has_attr("disabled") is scanning
         assert cancel_button.has_attr("hidden") is not scanning
+
+
+# ==========================
+#  Adding and deleting websites mid-scan
+# ==========================
+
+
+def test_deleting_a_website_cancels_its_scan(
+    api_client: TestClient, session: Session, test_website: website_models.WebsiteRead, mocker: MockerFixture
+) -> None:
+    """Tests deleting a website that is queued or being scanned cancels its scan as well as deleting it."""
+    mock_crawl = mocker.Mock()
+    mocker.patch.dict("app.scanner.queued_crawls", {test_website.url: mock_crawl})
+
+    response = api_client.delete(f"/websites/{test_website.id}")
+
+    assert response.status_code == 204, response.text
+    mock_crawl.cancel.assert_called_once()
+    assert session.get(DBWebsite, test_website.id) is None
+
+
+def test_cancelling_the_first_scan_does_not_add_the_website(
+    api_client: TestClient, session: Session, mocker: MockerFixture
+) -> None:
+    """Tests cancelling a new website's first scan cancels adding it, so no website is left without a baseline."""
+    mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
+    mocker.patch("app.frontend.api.routers.scan_website", side_effect=ScanCancelledError("https://example.com"))
+    mock_send_monitoring_started = mocker.patch("app.frontend.api.routers.send_monitoring_started_notifications")
+
+    response = api_client.post("/scanner/initial_scan", json={"url": "https://example.com"})
+
+    assert response.status_code == 409, response.text
+    assert session.scalars(select(DBWebsite)).all() == []
+    mock_send_monitoring_started.assert_not_called()
+
+
+def test_adding_a_website_too_large_to_scan_deactivates_it(
+    api_client: TestClient, session: Session, mocker: MockerFixture
+) -> None:
+    """Tests a new website too large to scan is kept but deactivated, its recipients are not told it is being
+    monitored, and the dashboard says why it was deactivated."""
+    main_url = "https://example.com"
+
+    def mock_client() -> AsyncClient:
+        return AsyncClient(transport=MockTransport(lambda request: Response(200, text="<p>Home page.</p>")))
+
+    mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
+    mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
+    mocker.patch("app.frontend.api.routers.AsyncClient", side_effect=mock_client)
+    mocker.patch("app.backend.engine.crawl_site", side_effect=WebsiteTooLargeError(main_url, max_pages=50_000))
+    mock_send_monitoring_started = mocker.patch("app.frontend.api.routers.send_monitoring_started_notifications")
+
+    response = api_client.post(
+        "/scanner/initial_scan", json={"url": main_url, "recipient_emails": ["someone@example.com"]}
+    )
+
+    assert response.status_code == 200, response.text
+    website = session.scalars(select(DBWebsite)).one()
+    assert website.active is False
+    assert website.deactivated_reason == website_models.DeactivationReason.TOO_LARGE
+    mock_send_monitoring_started.assert_not_called()
+
+    notice = _website_notice(api_client, main_url)
+    assert notice is not None
+    assert f"more than {config.web_crawler_default_max_pages:,} pages" in notice
+
+
+def _website_notice(api_client: TestClient, url: str) -> str | None:
+    """Returns the notice on a website's dashboard card saying why it was deactivated, or None if it has none."""
+    dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
+    delete_button = dashboard.select_one(f'.delete-website-button[data-website-url="{url}"]')
+    assert delete_button is not None
+    card = delete_button.find_parent(class_="website-card")
+    assert card is not None
+    notice = card.select_one(".website-notice")
+    return " ".join(notice.get_text().split()) if notice else None
+
+
+def test_dashboard_only_shows_too_large_notice_while_deactivated_for_being_too_large(
+    api_client: TestClient, session: Session
+) -> None:
+    """Tests the "too large to scan" notice is shown for a website deactivated for being too large, and not for
+    one deactivated by the user or one that has been re-activated."""
+    session.add_all(
+        [
+            DBWebsite(url="https://too-large.example.com", active=False, deactivated_reason="too_large"),
+            DBWebsite(url="https://switched-off.example.com", active=False),
+        ]
+    )
+    session.flush()
+    reactivated = DBWebsite(url="https://reactivated.example.com", active=False, deactivated_reason="too_large")
+    session.add(reactivated)
+    session.flush()
+    api_client.patch(f"/websites/{reactivated.id}", json={"active": True})
+
+    assert _website_notice(api_client, "https://too-large.example.com") is not None
+    assert _website_notice(api_client, "https://switched-off.example.com") is None
+    assert _website_notice(api_client, "https://reactivated.example.com") is None
+
+
+# ==========================
+#  Cancelling a website's first scan, end to end
+# ==========================
+
+
+@pytest.fixture
+def first_scan_in_progress(mocker: MockerFixture, session: Session) -> Iterator[asyncio.Event]:
+    """Makes a new website's first scan run until it is cancelled, and runs the app against the test database.
+
+    Returns:
+        An event that is set once the first scan has started crawling.
+    """
+    crawl_started = asyncio.Event()
+
+    async def crawl_until_cancelled(*args: object) -> None:
+        crawl_started.set()
+        await asyncio.Event().wait()
+
+    mocker.patch("app.scanner.scan_lock", asyncio.Lock())  # A lock for this test's event loop
+    mocker.patch("app.scanner.get_website_updates", side_effect=crawl_until_cancelled)
+    mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
+    mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
+    app.dependency_overrides[get_db_session] = lambda: session
+    yield crawl_started
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("cancel_by", ["cancelling the scan", "deleting the website"])
+async def test_stopping_a_new_websites_first_scan_leaves_no_website(
+    first_scan_in_progress: asyncio.Event, session: Session, cancel_by: str
+) -> None:
+    """Tests the first scan of a website being added can be stopped from the wizard's "Cancel Scan" button or by
+    deleting the website, either way leaving no website behind and no scan running."""
+    url = "https://example.com"
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        adding = asyncio.create_task(client.post("/scanner/initial_scan", json={"url": url}))
+        await first_scan_in_progress.wait()
+
+        if cancel_by == "cancelling the scan":
+            response = await client.post("/scanner/cancel", data={"url": url})
+            assert response.json() is True
+        else:
+            website = session.scalars(select(DBWebsite).where(DBWebsite.url == url)).one()
+            response = await client.delete(f"/websites/{website.id}")
+            assert response.status_code == 204, response.text
+
+        async with asyncio.timeout(5):  # Fails rather than hangs if the scan was not stopped
+            added = await adding
+
+    assert added.status_code == 409, added.text
+    assert session.scalars(select(DBWebsite)).all() == []
+    assert queued_crawls == {}
