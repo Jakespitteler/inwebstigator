@@ -778,9 +778,9 @@ a.change-item-text {
 }
 
 
-/* COLLAPSIBLE WEBSITE CARDS */
+/* COLLAPSIBLE CARDS (website cards and update records) */
 
-.website-card:not(.expanded) {
+[data-collapsible]:not(.expanded) {
     cursor: pointer;
 }
 
@@ -791,7 +791,7 @@ a.change-item-text {
     flex-shrink: 0;
 }
 
-.website-toggle {
+.card-toggle {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -807,26 +807,63 @@ a.change-item-text {
     transition: background 0.15s ease, color 0.15s ease;
 }
 
-.website-toggle:hover {
+.card-toggle:hover {
     color: var(--text-primary);
     background: var(--control-bg-hover);
 }
 
-.website-toggle svg {
+.card-toggle svg {
     transition: transform 0.2s ease;
 }
 
-.website-card.expanded .website-toggle svg {
+[data-collapsible].expanded .card-toggle svg {
     transform: rotate(180deg);
 }
 
-.website-card-body {
+.card-body {
     margin-top: 18px;
     border-top: 1px solid var(--border-md);
 }
 
-.website-card-body[hidden] {
+.card-body[hidden] {
     display: none;
+}
+
+.change-record-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px 20px;
+}
+
+.change-record-identity {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.change-record-header .page-url {
+    margin-bottom: 10px;
+}
+
+.change-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0;
+}
+
+.change-summary span {
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: var(--content-bg);
+    border: 1px solid var(--content-border);
+}
+
+.change-record .card-body {
+    padding-top: 18px;
 }
 
 .main-page-badge {
