@@ -1356,3 +1356,111 @@ button:disabled {
         padding: 10px;
     }
 }
+
+
+/* DELETE CONFIRMATION DIALOG */
+
+.confirm-dialog {
+    width: min(440px, calc(100vw - 32px));
+    padding: 24px;
+    color: var(--text-primary);
+    background: var(--surface-opaque);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--card-shadow-hover);
+    font-family: var(--font);
+}
+
+.confirm-dialog::backdrop {
+    background: rgba(10, 6, 24, 0.45);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+
+.confirm-dialog h2 {
+    margin: 0 0 10px;
+    font-family: var(--font-display);
+    font-size: 19px;
+    overflow-wrap: anywhere;
+}
+
+.confirm-dialog p {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
+}
+
+.confirm-dialog-type-row {
+    margin-top: 18px;
+}
+
+.confirm-dialog-type-row label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 13.5px;
+    color: var(--text-secondary);
+}
+
+.confirm-dialog-type-row strong {
+    color: var(--text-primary);
+    overflow-wrap: anywhere;
+}
+
+.confirm-dialog-type-row input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    font-family: var(--font);
+    font-size: 14px;
+    color: var(--text-primary);
+    background: var(--control-bg);
+    border: 1px solid var(--control-border);
+    border-radius: var(--radius-sm);
+}
+
+.confirm-dialog-type-row input:focus {
+    outline: none;
+    border-color: var(--focus-border);
+    box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.confirm-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 22px;
+}
+
+.confirm-dialog-cancel,
+.confirm-dialog-confirm {
+    padding: 9px 18px;
+    border-radius: var(--radius-md);
+    font-family: var(--font);
+    font-size: 13.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.confirm-dialog-cancel {
+    color: var(--text-primary);
+    background: var(--control-bg);
+    border: 1px solid var(--control-border);
+}
+
+.confirm-dialog-cancel:hover {
+    background: var(--control-bg-hover);
+}
+
+.confirm-dialog-confirm {
+    color: #fff;
+    background: var(--danger-solid);
+    border: 1px solid var(--danger-solid);
+}
+
+.confirm-dialog-confirm:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
