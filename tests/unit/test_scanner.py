@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app import scanner
 from app.backend.format_message import monitoring_started_html
+from app.backend.site_crawler import CrawlResult
 from app.core.errors import TrafficError, WebConnectionError
 from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
@@ -167,7 +168,7 @@ async def test_main_url_content_is_scanned_and_shown_in_updates(
     website = service.create(WebsiteCreate(url=main_url))
 
     mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
-    mocker.patch("app.backend.engine.crawl_site", return_value=set())
+    mocker.patch("app.backend.engine.crawl_site", return_value=CrawlResult())
     requested_urls: list[str] = []
     html = "<html><body><p>Original main page content.</p></body></html>"
 
@@ -226,7 +227,9 @@ async def test_adding_a_website_saves_a_baseline_and_only_later_changes_are_repo
     mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
     mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
     mocker.patch("app.frontend.api.routers.AsyncClient", side_effect=mock_client)
-    crawl = mocker.patch("app.backend.engine.crawl_site", return_value={main_url, f"{main_url}/about"})
+    crawl = mocker.patch(
+        "app.backend.engine.crawl_site", return_value=CrawlResult(visited={main_url, f"{main_url}/about"})
+    )
 
     response = api_client.post("/scanner/initial_scan", json={"url": main_url})
     assert response.status_code == 200, response.text
@@ -240,7 +243,7 @@ async def test_adding_a_website_saves_a_baseline_and_only_later_changes_are_repo
 
     # Next scan: the page text changes and a new internal page appears
     html = html.replace("$100", "$120")
-    crawl.return_value = {main_url, f"{main_url}/about", f"{main_url}/new-page"}
+    crawl.return_value = CrawlResult(visited={main_url, f"{main_url}/about", f"{main_url}/new-page"})
     website = WebsiteService(session).get_by_url(main_url)
     async with mock_client() as client:
         report = await scanner.scan_website(client, website)
@@ -277,7 +280,7 @@ async def test_scan_report_only_includes_changes_found_by_that_scan(session: Ses
         return httpx2.Response(200, text=pages[str(request.url).rstrip("/")])
 
     mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
-    mocker.patch("app.backend.engine.crawl_site", return_value={main_url})
+    mocker.patch("app.backend.engine.crawl_site", return_value=CrawlResult(visited={main_url}))
     service = WebsiteService(session)
     website = service.create(WebsiteCreate(url=main_url, critical_pages=[f"{main_url}/fees", f"{main_url}/dates"]))
 
@@ -317,7 +320,7 @@ async def test_scan_after_a_failed_first_scan_saves_a_baseline_instead_of_report
         assert await scanner.scan_website(client, website) is not None  # the connection error is reported
 
         crawl.side_effect = None
-        crawl.return_value = crawled
+        crawl.return_value = CrawlResult(visited=crawled)
         assert await scanner.scan_website(client, service.get(website.id)) is None
 
     saved = service.get(website.id)

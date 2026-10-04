@@ -267,6 +267,8 @@ def website_handler(test_url: str, test_html_content: str) -> RequestHandler:
                 </html>
                 """,
             )
+        elif url in (f"{test_url}about", f"{test_url}contact"):
+            return httpx2.Response(200, text="<p>Static page</p>")
         elif url == f"{test_url}page1.html":
             return httpx2.Response(200, text='<a href="/page2.html">Page 2</a> <a href="/">Home</a>')
         elif url == f"{test_url}page2.html":

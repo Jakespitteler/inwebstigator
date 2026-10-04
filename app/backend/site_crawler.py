@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Iterator
+from dataclasses import dataclass, field
 
 import httpx2
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -15,6 +16,26 @@ from app.core.config import config
 from app.core.errors import TrafficError, WebConnectionError
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class CrawlResult:
+    """The pages a crawl found, plus how much of the site it could not check.
+
+    Attributes:
+        visited: Normalised URLs of every page the crawler reached, including failed ones.
+        failed: The subset of visited pages that could not be loaded (non-200 or request error).
+        hit_page_limit: True when the crawl stopped at max_pages with pages still queued.
+    """
+
+    visited: set[str] = field(default_factory=set[str])
+    failed: set[str] = field(default_factory=set[str])
+    hit_page_limit: bool = False
+
+    @property
+    def failed_ratio(self) -> float:
+        """Share of visited pages that failed to load, from 0.0 to 1.0."""
+        return len(self.failed) / len(self.visited) if self.visited else 0.0
 
 
 @retry(
@@ -68,10 +89,10 @@ async def fetch_internal_links_from_url(
             html_content: str
             html_content, absolute_url = await fetch_content_from_url(client, url)
 
-            # Ensure redirect was not to an external site
+            # Ensure redirect was not to an external site. The page loaded fine, so it isn't counted as failed.
             if not is_internal_web_page(base_url, check_url=absolute_url):
                 logger.warning(f"Skipping {url=} as it redirected outside the website to {absolute_url}.")
-                return url, [], None
+                return url, [], 200
 
             links: list[str] = extract_links_from_html(
                 base_url=base_url,
@@ -110,7 +131,7 @@ async def crawl_site(
     max_concurrent: int = 10,
     delay: float = 0,
     batch_403_threshold: int = 20,
-) -> set[str]:
+) -> CrawlResult:
     """Asynchronously crawls a website starting from an entry URL up to a maximum page limit.
 
     Traverses internal links in batched concurrent async requests, tracking visited and queued
@@ -128,7 +149,8 @@ async def crawl_site(
             that triggers a site-wide block exception. Defaults to 20.
 
     Returns:
-        A set of normalized internal URL strings visited during the crawl.
+        A CrawlResult with the normalized internal URLs visited, which of them failed to load,
+        and whether the crawl stopped at max_pages before running out of links.
 
     Raises:
         TrafficError: If a single batch encounters 403 Forbidden responses equal to or exceeding
@@ -138,6 +160,7 @@ async def crawl_site(
 
     url = normalise_url(url)
     visited: set[str] = set()
+    failed: set[str] = set()
     queued: set[str] = {url}
     queue: list[str] = [url]
 
@@ -166,6 +189,8 @@ async def crawl_site(
                 batch_403_count += 1
 
             visited.add(normalise_url(visited_url))
+            if status_code != 200:
+                failed.add(normalise_url(visited_url))
             for link in internal_links:
                 if link not in visited and link not in queued:
                     queued.add(link)
@@ -177,9 +202,15 @@ async def crawl_site(
             )
             raise TrafficError(url, 403)
 
-    if len(visited) >= max_pages:
+    # Links still queued means the limit cut the crawl short, not that the site ran out of pages
+    hit_page_limit: bool = bool(queue)
+
+    if hit_page_limit:
         logger.warning(f"Crawler exceeded the {max_pages=}, stopping crawler...")
     else:
         logger.info(f"Crawl completed. Exhausted all discoverable links. Total visited: {len(visited)}")
 
-    return visited
+    if failed:
+        logger.warning(f"{url}: {len(failed)} of {len(visited)} pages failed to load during the crawl.")
+
+    return CrawlResult(visited=visited, failed=failed, hit_page_limit=hit_page_limit)

@@ -5,7 +5,7 @@ import uuid
 from httpx2 import AsyncClient
 
 from app.backend.diff_checker import compare_page_content, find_link_difference
-from app.backend.site_crawler import crawl_site
+from app.backend.site_crawler import CrawlResult, crawl_site
 from app.backend.utils.html_parser import parse_html
 from app.backend.utils.http_client import fetch_content_from_url
 from app.backend.utils.links import extract_links_from_html, separate_document_links
@@ -20,6 +20,15 @@ DEFAULT_MAX_PAGES: int = config.web_crawler_default_max_pages
 DEFAULT_DELAY: float = config.web_crawler_default_delay
 DEFAULT_CONCURRENT: int = config.web_crawler_default_concurrent
 BATCH_402_THRESHOLD_SECONDS: int = config.web_crawler_batch_402_threshold_seconds
+MAX_FAILED_PAGE_RATIO: float = config.web_crawler_max_failed_page_ratio
+
+
+def _crawl_is_incomplete(crawl: CrawlResult) -> bool:
+    """A crawl that stopped at the page limit, or where too many pages failed, missed part of the site.
+
+    Pages it did not reach would otherwise be reported as removed, so its removals can't be trusted.
+    """
+    return crawl.hit_page_limit or crawl.failed_ratio > MAX_FAILED_PAGE_RATIO
 
 
 def _website_has_been_updated(updates: WebsiteUpdate) -> bool:
@@ -108,7 +117,8 @@ async def get_website_updates(
 
     Returns:
         WebsiteUpdate: A schema object containing updates to critical pages and computed
-        differences for internal links (added/removed).
+        differences for internal links (added/removed). Removed links are left empty when the
+        crawl was incomplete (see `_crawl_is_incomplete`), so unreachable pages aren't reported as deleted.
     """
     updates = WebsiteUpdate(url=stored_website.url)
 
@@ -132,16 +142,15 @@ async def get_website_updates(
             critical_page_updates[critical_page.id] = result
     updates.critical_page_updates = critical_page_updates or None
 
-    current_internal_links: list[str] = list(
-        await crawl_site(
-            client,
-            url=stored_website.url,
-            delay=delay or stored_website.recommended_delay,
-            max_concurrent=concurrent or stored_website.recommended_concurrent,
-            max_pages=max_pages or DEFAULT_MAX_PAGES,
-            batch_403_threshold=BATCH_402_THRESHOLD_SECONDS,
-        )
+    crawl: CrawlResult = await crawl_site(
+        client,
+        url=stored_website.url,
+        delay=delay or stored_website.recommended_delay,
+        max_concurrent=concurrent or stored_website.recommended_concurrent,
+        max_pages=max_pages or DEFAULT_MAX_PAGES,
+        batch_403_threshold=BATCH_402_THRESHOLD_SECONDS,
     )
+    current_internal_links: list[str] = list(crawl.visited)
     if init or not stored_website.internal_links:
         updates.initial_internal_links = current_internal_links
         logger.info(f"{len(updates.initial_internal_links)=}")
@@ -150,6 +159,15 @@ async def get_website_updates(
             previous_state=[link.url for link in stored_website.internal_links],
             current_state=current_internal_links,
         )
+
+        # Leaving them out also keeps them stored, so the next complete crawl still compares against them
+        if updates.recent_removed_internal_links and _crawl_is_incomplete(crawl):
+            logger.warning(
+                f"Not reporting {len(updates.recent_removed_internal_links)} removed pages for {stored_website.url}: "
+                f"{len(crawl.failed)} of {len(crawl.visited)} pages failed, {crawl.hit_page_limit=}"
+            )
+            updates.recent_removed_internal_links = []
+
         logger.info(f"{updates.recent_added_internal_links=}")
         logger.info(f"{updates.recent_removed_internal_links=}")
 

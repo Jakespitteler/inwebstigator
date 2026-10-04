@@ -31,7 +31,7 @@ BATCH_403_THRESHOLD: int = 30
 async def main() -> set[str]:
     """Runs crawl site function on a real website"""
     async with httpx2.AsyncClient(headers=HEADERS, timeout=SECONDS_TIMEOUT) as client:
-        return await crawl_site(
+        crawl = await crawl_site(
             client,
             URL,
             max_pages=MAX_PAGES,
@@ -39,6 +39,7 @@ async def main() -> set[str]:
             delay=SECONDS_DELAY,
             batch_403_threshold=BATCH_403_THRESHOLD,
         )
+        return crawl.visited
 
 
 if __name__ == "__main__":

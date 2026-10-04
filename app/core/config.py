@@ -32,6 +32,8 @@ class Config(BaseSettings):
     web_crawler_min_concurrent: int = 1
     web_crawler_batch_402_threshold_seconds: int = 50
     web_crawler_max_failed_attempts_at_min_speed: int = 3
+    # Above this share of failed pages a crawl is too incomplete to trust its "removed" pages
+    web_crawler_max_failed_page_ratio: float = 0.2
 
     fetch_site_retry_max_attempts: int = 5
     fetch_site_retry_min_wait_seconds: int = 2

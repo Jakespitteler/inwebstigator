@@ -84,7 +84,7 @@ async def test_crawl_site_success_and_skips_404(
 ):
     """Tests that the crawler successfully navigates valid pages and gracefully skips 404s."""
     async with mock_client_factory(website_handler) as client:
-        visited: set[str] = await crawl_site(client, test_url, max_pages=10)
+        visited: set[str] = (await crawl_site(client, test_url, max_pages=10)).visited
 
     assert len(visited) == 6
     assert test_url in visited
@@ -101,7 +101,7 @@ async def test_crawl_site_respects_max_pages(
 ):
     """Tests that the crawler stops exactly at the max_pages limit."""
     async with mock_client_factory(website_handler) as client:
-        visited: set[str] = await crawl_site(client, test_url, max_pages=2)
+        visited: set[str] = (await crawl_site(client, test_url, max_pages=2)).visited
 
     assert len(visited) == 2
 
@@ -117,7 +117,7 @@ async def test_crawl_site_respects_delay(
 
     delay_time: float = 0.05  # 50ms
     async with mock_client_factory(handler) as client:
-        visited: set[str] = await crawl_site(client, test_url, delay=delay_time, max_pages=2)
+        visited: set[str] = (await crawl_site(client, test_url, delay=delay_time, max_pages=2)).visited
 
     assert len(visited) == 2
     assert timestamps[1] - timestamps[0] >= delay_time
@@ -170,7 +170,7 @@ async def test_crawl_site_non_fatal_errors(
 ):
     """Tests that non-fatal errors handle gracefully, returning empty links."""
     async with mock_client_factory(handler) as client:
-        visited: set[str] = await crawl_site(client, test_url)
+        visited: set[str] = (await crawl_site(client, test_url)).visited
 
     assert len(visited) == 1
     assert test_url in visited
@@ -196,7 +196,51 @@ async def test_crawl_site_follows_homepage_redirect_to_www(
         return httpx2.Response(404)
 
     async with mock_client_factory(handler) as client:
-        visited: set[str] = await crawl_site(client, "https://example.com", max_pages=10)
+        visited: set[str] = (await crawl_site(client, "https://example.com", max_pages=10)).visited
 
     assert "https://www.example.com/about" in visited
     assert any(url.endswith("/contact") for url in visited)
+
+
+@pytest.mark.anyio
+async def test_crawl_site_reports_failed_pages(
+    test_url: str,
+    website_handler: RequestHandler,
+    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
+):
+    """Tests that pages which fail to load are recorded, so callers can tell how complete the crawl was."""
+    async with mock_client_factory(website_handler) as client:
+        crawl = await crawl_site(client, test_url, max_pages=10)
+
+    assert crawl.failed == {f"{test_url}404-page.html"}
+    assert crawl.failed_ratio == pytest.approx(1 / 6)
+    assert crawl.hit_page_limit is False
+
+
+@pytest.mark.anyio
+async def test_crawl_site_flags_hitting_page_limit(
+    test_url: str,
+    website_handler: RequestHandler,
+    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
+):
+    """Tests that stopping at max_pages with links still queued is flagged as hitting the limit."""
+    async with mock_client_factory(website_handler) as client:
+        crawl = await crawl_site(client, test_url, max_pages=2)
+
+    assert crawl.hit_page_limit is True
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("handler", ["server_error_handler", "request_error_handler", "unexpected_error_handler"])
+async def test_crawl_site_counts_non_fatal_errors_as_failed(
+    test_url: str,
+    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
+    handler: str,
+    request: pytest.FixtureRequest,
+):
+    """Tests that skipped pages count as failed rather than silently disappearing."""
+    async with mock_client_factory(request.getfixturevalue(handler)) as client:
+        crawl = await crawl_site(client, test_url)
+
+    assert crawl.failed == {test_url}
+    assert crawl.failed_ratio == 1.0

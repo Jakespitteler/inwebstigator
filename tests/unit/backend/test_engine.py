@@ -7,6 +7,7 @@ import pytest
 from pytest_mock import MockerFixture
 
 from app.backend.engine import get_critical_page_updates, get_website_updates
+from app.backend.site_crawler import CrawlResult
 from app.core.errors import TrafficError
 from app.models.critical_page_models import CriticalPageRead, CriticalPageUpdate
 from app.models.internal_link_models import InternalLinkRead
@@ -208,7 +209,7 @@ async def test_get_website_updates_returns_none_when_nothing_changed(
     mocker: MockerFixture,
 ):
     """Tests a scan that finds no changes and has no baselines to save returns None, so nothing is written."""
-    mocker.patch("app.backend.engine.crawl_site", return_value={test_internal_link.url})
+    mocker.patch("app.backend.engine.crawl_site", return_value=CrawlResult(visited={test_internal_link.url}))
     website = test_website.model_copy(update={"critical_pages": [], "internal_links": [test_internal_link]})
 
     assert await get_website_updates(mocker.Mock(), website, None, None, None) is None
@@ -225,7 +226,7 @@ async def test_get_website_updates_saves_internal_link_baseline(
     """Tests a website with no saved internal links (e.g. its first scan failed), or any website on an init
     scan, saves its crawled links as a baseline rather than reporting them all as added."""
     crawled = {test_website.url, f"{test_website.url}about"}
-    mocker.patch("app.backend.engine.crawl_site", return_value=crawled)
+    mocker.patch("app.backend.engine.crawl_site", return_value=CrawlResult(visited=crawled))
     website = test_website.model_copy(
         update={"critical_pages": [], "internal_links": [test_internal_link] if init else []}
     )
@@ -248,7 +249,7 @@ async def test_get_website_updates_returns_new_page_baseline_without_changes(
     mocker: MockerFixture,
 ):
     """Tests a newly added critical page is returned so its baseline is saved, without counting as a change."""
-    mocker.patch("app.backend.engine.crawl_site", return_value={test_internal_link.url})
+    mocker.patch("app.backend.engine.crawl_site", return_value=CrawlResult(visited={test_internal_link.url}))
     new_page = test_critical_page.model_copy(update={"text_body": None, "links": None, "documents": None})
     website = test_website.model_copy(update={"critical_pages": [new_page], "internal_links": [test_internal_link]})
     html = "<html><body><p>New page.</p></body></html>"
@@ -285,7 +286,10 @@ async def test_get_website_updates_skips_a_broken_critical_page(
     mocker: MockerFixture,
 ):
     """Tests one critical page failing (e.g. deleted, now 404) does not stop the other pages and crawl."""
-    mocker.patch("app.backend.engine.crawl_site", return_value={test_website.url, f"{test_website.url}new-page"})
+    mocker.patch(
+        "app.backend.engine.crawl_site",
+        return_value=CrawlResult(visited={test_website.url, f"{test_website.url}new-page"}),
+    )
     working_page = test_critical_page.model_copy(update={"text_body": "<html><body><p>Old text.</p></body></html>"})
     broken_page = test_critical_page.model_copy(
         update={"id": uuid.uuid4(), "url": f"{test_website.url}deleted-page", "text_body": "<p>Was here.</p>"}
@@ -367,3 +371,77 @@ def test_website_update_change_detection(updates: WebsiteUpdate, changed_page_id
     """Tests only real changes count as changes, and pages that only saved a baseline are not reported."""
     assert updates.changed_page_ids == changed_page_ids
     assert updates.has_changes is has_changes
+
+
+# ======================================
+# get_website_updates: incomplete crawls
+# ======================================
+
+
+def _site_handler(test_url: str, pages: int, failing: int) -> RequestHandler:
+    """A home page linking to `pages` pages, of which the first `failing` return 500."""
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        url: str = str(request.url)
+        if url == test_url:
+            links = "".join(f'<a href="/page{i}.html">Page {i}</a>' for i in range(pages))
+            return httpx2.Response(200, text=links)
+        for i in range(failing):
+            if url == f"{test_url}page{i}.html":
+                return httpx2.Response(500)
+        return httpx2.Response(200, text="<p>Page</p>")
+
+    return handler
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("pages", "failing", "removals_reported"),
+    [
+        (4, 0, True),  # 0 of 5 pages failed
+        (4, 1, True),  # 1 of 5 failed: exactly 20%, still trusted
+        (4, 2, False),  # 2 of 5 failed: 40%, too incomplete
+    ],
+)
+async def test_get_website_updates_skips_removals_when_too_many_pages_fail(
+    test_website: WebsiteRead,
+    test_internal_link: InternalLinkRead,
+    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
+    pages: int,
+    failing: int,
+    removals_reported: bool,
+):
+    """Tests that a crawl with over 20% failed pages doesn't report pages it couldn't reach as removed."""
+    stored_website = test_website.model_copy(update={"internal_links": [test_internal_link]})
+
+    async with mock_client_factory(_site_handler(test_website.url, pages, failing)) as client:
+        updates: WebsiteUpdate | None = await get_website_updates(
+            client=client, stored_website=stored_website, max_pages=10, delay=0, concurrent=2
+        )
+
+    # New pages are still reported either way
+    assert updates
+    assert updates.recent_added_internal_links
+
+    if removals_reported:
+        assert updates.recent_removed_internal_links == [test_internal_link.url]
+    else:
+        assert not updates.recent_removed_internal_links
+
+
+@pytest.mark.anyio
+async def test_get_website_updates_skips_removals_when_page_limit_hit(
+    test_website: WebsiteRead,
+    test_internal_link: InternalLinkRead,
+    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
+):
+    """Tests that stopping at max_pages doesn't report the pages it never got to as removed."""
+    stored_website = test_website.model_copy(update={"internal_links": [test_internal_link]})
+
+    async with mock_client_factory(_site_handler(test_website.url, pages=4, failing=0)) as client:
+        updates: WebsiteUpdate | None = await get_website_updates(
+            client=client, stored_website=stored_website, max_pages=2, delay=0, concurrent=2
+        )
+
+    assert updates
+    assert not updates.recent_removed_internal_links
