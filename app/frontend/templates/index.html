@@ -577,7 +577,11 @@
 
                 {% for website in websites %}
 
-                    <div class="website-card">
+                    <div
+                        class="website-card"
+                        data-website-id="{{ website.id }}"
+                        data-website-name="{{ website.url | website_name }}"
+                    >
 
                         <div class="website-card-header">
                             <div class="website-identity">
@@ -592,19 +596,41 @@
                                 </a>
                             </div>
 
-                            <button
-                                type="button"
-                                class="run-scan-button"
-                                data-website-url="{{ website.url }}"
-                            >
-                                Run Scan Now
-                            </button>
+                            <div class="website-card-actions">
+                                <button
+                                    type="button"
+                                    class="run-scan-button"
+                                    data-website-url="{{ website.url }}"
+                                >
+                                    Run Scan Now
+                                </button>
+
+                                <button
+                                    type="button"
+                                    class="website-toggle"
+                                    aria-expanded="false"
+                                    aria-controls="website-details-{{ website.id }}"
+                                    aria-label="Show details for {{ website.url | website_name }}"
+                                >
+                                    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                                        <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor"
+                                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
 
                         <p
                             class="run-scan-message"
                             aria-live="polite"
                         ></p>
+
+                        <!-- Everything below is hidden until the card is expanded -->
+                        <div
+                            class="website-card-body"
+                            id="website-details-{{ website.id }}"
+                            hidden
+                        >
 
                         <button
                             type="button"
@@ -875,6 +901,8 @@
 
                         </details>
 
+                        </div>
+
                     </div>
 
                 {% endfor %}
@@ -1113,6 +1141,73 @@
                 }
             });
         }
+
+        // Website cards start collapsed; clicking anywhere on one opens it.
+        // Open cards are remembered for this session, as adding an email or page reloads the dashboard.
+        const EXPANDED_WEBSITES_KEY = "inwebstigator-expanded-websites";
+
+        function readExpandedWebsites() {
+            try {
+                return new Set(JSON.parse(sessionStorage.getItem(EXPANDED_WEBSITES_KEY)) || []);
+            } catch (error) {
+                return new Set();  // Storage unavailable or unreadable, so start with every card closed
+            }
+        }
+
+        const expandedWebsites = readExpandedWebsites();
+
+        function setWebsiteExpanded(card, expanded) {
+            const toggle = card.querySelector(".website-toggle");
+
+            document.getElementById(toggle.getAttribute("aria-controls")).hidden = !expanded;
+            card.classList.toggle("expanded", expanded);
+            toggle.setAttribute("aria-expanded", String(expanded));
+            toggle.setAttribute(
+                "aria-label",
+                `${expanded ? "Hide" : "Show"} details for ${card.dataset.websiteName}`
+            );
+
+            if (expanded) {
+                expandedWebsites.add(card.dataset.websiteId);
+            } else {
+                expandedWebsites.delete(card.dataset.websiteId);
+            }
+
+            try {
+                sessionStorage.setItem(EXPANDED_WEBSITES_KEY, JSON.stringify([...expandedWebsites]));
+            } catch (error) {
+                // Not remembering open cards is fine
+            }
+        }
+
+        document.querySelectorAll(".website-card").forEach((card) => {
+            if (expandedWebsites.has(card.dataset.websiteId)) {
+                setWebsiteExpanded(card, true);
+            }
+
+            card.addEventListener("click", (event) => {
+                const expanded = card.classList.contains("expanded");
+
+                if (event.target.closest(".website-toggle")) {
+                    setWebsiteExpanded(card, !expanded);
+                    return;
+                }
+
+                // Links, buttons and form fields keep doing their own job, and selecting text isn't a click
+                if (event.target.closest("a, button, input, select, textarea, label, summary, form")
+                        || window.getSelection().toString()) {
+                    return;
+                }
+
+                if (!expanded) {
+                    setWebsiteExpanded(card, true);
+                } else if (event.target.closest(".website-card-header")) {
+                    setWebsiteExpanded(card, false);
+                }
+            });
+        });
+
+
 
         // Add extra critical-page fields when creating a website
         const addCriticalPageButton =

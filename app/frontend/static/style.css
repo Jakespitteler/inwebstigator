@@ -777,6 +777,58 @@ a.change-item-text {
     margin-top: 14px;
 }
 
+
+/* COLLAPSIBLE WEBSITE CARDS */
+
+.website-card:not(.expanded) {
+    cursor: pointer;
+}
+
+.website-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.website-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border: 1px solid var(--control-border);
+    border-radius: 50%;
+    color: var(--text-secondary);
+    background: var(--control-bg);
+    box-shadow: var(--control-shadow);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.website-toggle:hover {
+    color: var(--text-primary);
+    background: var(--control-bg-hover);
+}
+
+.website-toggle svg {
+    transition: transform 0.2s ease;
+}
+
+.website-card.expanded .website-toggle svg {
+    transform: rotate(180deg);
+}
+
+.website-card-body {
+    margin-top: 18px;
+    border-top: 1px solid var(--border-md);
+}
+
+.website-card-body[hidden] {
+    display: none;
+}
+
 .main-page-badge {
     flex-shrink: 0;
     padding: 3px 10px;
