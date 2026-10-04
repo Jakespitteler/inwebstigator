@@ -175,7 +175,7 @@ async def website_initial_scan(session: SessionDep, model_create: WebsiteCreate)
     emails the website's recipients to confirm it is now being monitored.
 
     If the first scan is cancelled the website is not added, and the request fails with a 409 status.
-    A website too large to scan is kept but deactivated, so its recipients are not told it is being monitored.
+    A website too large to scan is kept but deactivated, and only its critical pages are watched.
 
     Args:
         session (SessionDep): Database session dependency.
@@ -197,8 +197,7 @@ async def website_initial_scan(session: SessionDep, model_create: WebsiteCreate)
     with db_context() as session:
         website = WebsiteService(session).update(id=website.id, model_update=WebsiteUpdate(last_scan_at=datetime.now()))
 
-    if website.active:
-        send_monitoring_started_notifications(website)
+    send_monitoring_started_notifications(website)
 
 
 @SCANNER_ROUTER.post("/initial_critical_page_scan", response_model=None)

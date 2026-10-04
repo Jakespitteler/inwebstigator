@@ -613,7 +613,7 @@
                                 data-website-url="{{ website.url }}"
                                 {% if website.url in queued_website_urls %}disabled{% endif %}
                             >
-                                Run Scan Now
+                                {% if website.active %}Run Scan Now{% else %}Scan Critical Pages Now{% endif %}
                             </button>
                         </div>
 
@@ -622,12 +622,19 @@
                             aria-live="polite"
                         ></p>
 
-                        {% if not website.active and website.deactivated_reason == "too_large" %}
-                            <p class="website-notice">
-                                <strong>Too large to scan.</strong>
-                                This website has more than {{ "{:,}".format(max_pages) }} pages, which is
-                                more than Inwebstigator will scan, so it has been deactivated and is no
-                                longer scanned automatically.
+                        <!-- Inactive websites are still scanned, but only their critical pages -->
+                        {% if not website.active %}
+                            {% set too_large = website.deactivated_reason == "too_large" %}
+                            <p class="website-notice{% if too_large %} website-notice-warning{% endif %}">
+                                {% if too_large %}
+                                    <strong>Too large to scan.</strong>
+                                    This website has more than {{ "{:,}".format(max_pages) }} pages, which is
+                                    more than Inwebstigator will scan, so it has been deactivated.
+                                {% else %}
+                                    <strong>Inactive.</strong>
+                                {% endif %}
+                                Only its critical pages are checked for changes. New and removed pages on
+                                the rest of the website are not looked for.
                             </p>
                         {% endif %}
 
@@ -827,6 +834,11 @@
                                         >
                                         Active
                                     </label>
+
+                                    <p class="scan-setting-help">
+                                        Inactive websites only have their critical pages checked.
+                                        The rest of the website is not crawled for new or removed pages.
+                                    </p>
 
                                 </div>
 
@@ -1812,8 +1824,8 @@
                             );
                         }
 
-                        message.textContent =
-                            "Settings saved.";
+                        // Reload the page instead of showing a success message
+                        window.location.reload();
 
                     } catch (error) {
 

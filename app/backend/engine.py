@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import uuid
+from collections.abc import Sequence
 
 from httpx2 import AsyncClient
 
@@ -85,6 +86,68 @@ async def get_critical_page_updates(
     return updates
 
 
+async def _gather_critical_page_updates(
+    client: AsyncClient,
+    critical_pages: Sequence[CriticalPageRead],
+    init: bool,
+) -> dict[uuid.UUID, CriticalPageUpdate]:
+    """Checks each critical page for changes at the same time.
+
+    Failures are gathered per page, so one broken page (e.g. deleted, now a 404) is skipped
+    instead of stopping the rest of the pages being checked.
+
+    Args:
+        client (AsyncClient): The HTTP client used for fetching page content.
+        critical_pages (Sequence[CriticalPageRead]): The stored state of each critical page.
+        init (bool): Re-save each page's current state as its baseline.
+
+    Returns:
+        dict[uuid.UUID, CriticalPageUpdate]: The updates for each page that changed or saved a baseline, by page ID.
+
+    Raises:
+        TrafficError: If a page was rate limited, as a rate limit applies to the whole website.
+    """
+    results = await asyncio.gather(
+        *(get_critical_page_updates(client, stored_page, init) for stored_page in critical_pages),
+        return_exceptions=True,
+    )
+    critical_page_updates: dict[uuid.UUID, CriticalPageUpdate] = {}
+    for critical_page, result in zip(critical_pages, results, strict=True):
+        if isinstance(result, BaseException):
+            # A rate limit applies to the whole site, so it is raised to put the website on cooldown.
+            # Anything that is not an Exception (e.g. cancellation on shutdown) must not be swallowed.
+            if isinstance(result, TrafficError) or not isinstance(result, Exception):
+                raise result  # e.g. cancellation when the app is shutting down
+            logger.warning(
+                f"Skipping critical page {critical_page.url} this scan as it could not be checked: {result!r}"
+            )
+        elif result is not None:
+            critical_page_updates[critical_page.id] = result
+    return critical_page_updates
+
+
+async def get_critical_page_only_updates(
+    client: AsyncClient,
+    stored_website: WebsiteRead,
+    init: bool = False,
+) -> WebsiteUpdate | None:
+    """Checks a website's critical pages for changes, without crawling the rest of the website.
+
+    Used for inactive websites (e.g. one too large to crawl), whose critical pages are still watched.
+
+    Args:
+        client (AsyncClient): The HTTP client used for fetching page content.
+        stored_website (WebsiteRead): The current state of the website retrieved from the database.
+        init (bool, optional): Re-save each critical page's current state as its baseline. Defaults to False.
+
+    Returns:
+        WebsiteUpdate | None: The updates to the website's critical pages, or None if nothing changed.
+    """
+    critical_page_updates = await _gather_critical_page_updates(client, stored_website.critical_pages, init)
+    updates = WebsiteUpdate(url=stored_website.url, critical_page_updates=critical_page_updates or None)
+    return updates if _website_has_been_updated(updates) else None
+
+
 async def get_website_updates(
     client: AsyncClient,
     stored_website: WebsiteRead,
@@ -111,25 +174,7 @@ async def get_website_updates(
         differences for internal links (added/removed).
     """
     updates = WebsiteUpdate(url=stored_website.url)
-
-    # Gather failures per page, so one broken page (e.g. deleted, now a 404) is skipped
-    # instead of stopping the rest of the website from being checked
-    results = await asyncio.gather(
-        *(get_critical_page_updates(client, stored_page, init) for stored_page in stored_website.critical_pages),
-        return_exceptions=True,
-    )
-    critical_page_updates: dict[uuid.UUID, CriticalPageUpdate] = {}
-    for critical_page, result in zip(stored_website.critical_pages, results, strict=True):
-        if isinstance(result, BaseException):
-            # A rate limit applies to the whole site, so it is raised to put the website on cooldown.
-            # Anything that is not an Exception (e.g. cancellation on shutdown) must not be swallowed.
-            if isinstance(result, TrafficError) or not isinstance(result, Exception):
-                raise result  # e.g. cancellation when the app is shutting down
-            logger.warning(
-                f"Skipping critical page {critical_page.url} this scan as it could not be checked: {result!r}"
-            )
-        elif result is not None:
-            critical_page_updates[critical_page.id] = result
+    critical_page_updates = await _gather_critical_page_updates(client, stored_website.critical_pages, init)
     updates.critical_page_updates = critical_page_updates or None
 
     current_internal_links: list[str] = list(

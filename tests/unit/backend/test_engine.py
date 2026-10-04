@@ -6,7 +6,7 @@ import httpx2
 import pytest
 from pytest_mock import MockerFixture
 
-from app.backend.engine import get_critical_page_updates, get_website_updates
+from app.backend.engine import get_critical_page_only_updates, get_critical_page_updates, get_website_updates
 from app.core.errors import TrafficError
 from app.models.critical_page_models import CriticalPageRead, CriticalPageUpdate
 from app.models.internal_link_models import InternalLinkRead
@@ -140,6 +140,46 @@ async def test_get_critical_page_updates_saves_baseline(
     assert not updates.has_changes
     for recent_field in RECENT_PAGE_FIELDS:
         assert not getattr(updates, recent_field), recent_field
+
+
+# ======================================
+# get_critical_page_only_updates
+# ======================================
+
+
+@pytest.mark.anyio
+async def test_get_critical_page_only_updates_checks_critical_pages_without_crawling(
+    test_website: WebsiteRead,
+    test_critical_page: CriticalPageRead,
+    website_handler: RequestHandler,
+    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
+    mocker: MockerFixture,
+):
+    """Tests only the critical pages are checked, so a website too large to crawl can still be watched."""
+    crawl = mocker.patch("app.backend.engine.crawl_site")
+    website = test_website.model_copy(update={"critical_pages": [test_critical_page], "internal_links": []})
+
+    async with mock_client_factory(website_handler) as client:
+        updates: WebsiteUpdate | None = await get_critical_page_only_updates(client, website)
+
+    crawl.assert_not_called()
+    assert updates is not None
+    assert updates.critical_page_updates is not None
+    assert updates.critical_page_updates[test_critical_page.id].text_body is not None  # The page's baseline
+    assert updates.initial_internal_links is None
+    assert not updates.recent_added_internal_links
+    assert not updates.recent_removed_internal_links
+
+
+@pytest.mark.anyio
+async def test_get_critical_page_only_updates_returns_none_when_nothing_changed(
+    test_website: WebsiteRead,
+    mocker: MockerFixture,
+):
+    """Tests a check that finds nothing to save returns None, so nothing is written."""
+    website = test_website.model_copy(update={"critical_pages": []})
+
+    assert await get_critical_page_only_updates(mocker.Mock(), website) is None
 
 
 # ======================================

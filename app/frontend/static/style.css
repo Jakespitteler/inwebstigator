@@ -777,15 +777,22 @@ a.change-item-text {
     margin-top: 14px;
 }
 
-/* Why the app deactivated a website itself, e.g. it is too large to scan */
+/* Explains that an inactive website only has its critical pages scanned, and why it is inactive */
 .website-notice {
     margin: 14px 0 0;
     padding: 10px 14px;
     font-size: 13.5px;
+    color: var(--text-secondary);
+    background: var(--accent-light);
+    border: 1px solid var(--border-md);
+    border-radius: var(--radius-md);
+}
+
+/* The app deactivated the website itself, e.g. it is too large to scan */
+.website-notice-warning {
     color: var(--danger-text);
     background: var(--danger-bg);
-    border: 1px solid var(--danger-border);
-    border-radius: var(--radius-md);
+    border-color: var(--danger-border);
 }
 
 .main-page-badge {
@@ -912,6 +919,12 @@ input::placeholder {
 .scan-setting-row input[type="checkbox"] {
     margin-right: 6px;
     accent-color: var(--accent);
+}
+
+.scan-setting-help {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--text-tertiary);
 }
 
 .form-group {

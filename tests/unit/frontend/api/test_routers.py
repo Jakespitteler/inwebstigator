@@ -312,8 +312,8 @@ def test_cancelling_the_first_scan_does_not_add_the_website(
 def test_adding_a_website_too_large_to_scan_deactivates_it(
     api_client: TestClient, session: Session, mocker: MockerFixture
 ) -> None:
-    """Tests a new website too large to scan is kept but deactivated, its recipients are not told it is being
-    monitored, and the dashboard says why it was deactivated."""
+    """Tests a new website too large to scan is kept but deactivated, its critical pages are still watched (so its
+    recipients are told monitoring has started), and the dashboard says why it was deactivated."""
     main_url = "https://example.com"
 
     def mock_client() -> AsyncClient:
@@ -333,7 +333,8 @@ def test_adding_a_website_too_large_to_scan_deactivates_it(
     website = session.scalars(select(DBWebsite)).one()
     assert website.active is False
     assert website.deactivated_reason == website_models.DeactivationReason.TOO_LARGE
-    mock_send_monitoring_started.assert_not_called()
+    assert website.critical_pages[0].text_body == "<p>Home page.</p>"  # The main page's baseline was saved
+    mock_send_monitoring_started.assert_called_once()
 
     notice = _website_notice(api_client, main_url)
     assert notice is not None
@@ -351,15 +352,24 @@ def _website_notice(api_client: TestClient, url: str) -> str | None:
     return " ".join(notice.get_text().split()) if notice else None
 
 
-def test_dashboard_only_shows_too_large_notice_while_deactivated_for_being_too_large(
+def _run_scan_button_text(api_client: TestClient, url: str) -> str:
+    """Returns the text of a website's run scan button on the dashboard."""
+    dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
+    button = dashboard.select_one(f'.run-scan-button[data-website-url="{url}"]')
+    assert button is not None
+    return " ".join(button.get_text().split())
+
+
+def test_dashboard_explains_inactive_websites_only_have_critical_pages_scanned(
     api_client: TestClient, session: Session
 ) -> None:
-    """Tests the "too large to scan" notice is shown for a website deactivated for being too large, and not for
-    one deactivated by the user or one that has been re-activated."""
+    """Tests an inactive website's card says only its critical pages are scanned (and why, if it was too large),
+    its scan button says so too, and active websites, including re-activated ones, show neither."""
     session.add_all(
         [
             DBWebsite(url="https://too-large.example.com", active=False, deactivated_reason="too_large"),
             DBWebsite(url="https://switched-off.example.com", active=False),
+            DBWebsite(url="https://active.example.com"),
         ]
     )
     session.flush()
@@ -368,9 +378,30 @@ def test_dashboard_only_shows_too_large_notice_while_deactivated_for_being_too_l
     session.flush()
     api_client.patch(f"/websites/{reactivated.id}", json={"active": True})
 
-    assert _website_notice(api_client, "https://too-large.example.com") is not None
-    assert _website_notice(api_client, "https://switched-off.example.com") is None
-    assert _website_notice(api_client, "https://reactivated.example.com") is None
+    too_large_notice = _website_notice(api_client, "https://too-large.example.com")
+    assert too_large_notice is not None
+    assert too_large_notice.startswith("Too large to scan.")
+    assert "Only its critical pages are checked" in too_large_notice
+
+    switched_off_notice = _website_notice(api_client, "https://switched-off.example.com")
+    assert switched_off_notice is not None
+    assert switched_off_notice.startswith("Inactive.")
+    assert "Only its critical pages are checked" in switched_off_notice
+
+    for url in ["https://too-large.example.com", "https://switched-off.example.com"]:
+        assert _run_scan_button_text(api_client, url) == "Scan Critical Pages Now"
+    for url in ["https://active.example.com", "https://reactivated.example.com"]:
+        assert _website_notice(api_client, url) is None
+        assert _run_scan_button_text(api_client, url) == "Run Scan Now"
+
+
+def test_scan_settings_explain_what_inactive_means(api_client: TestClient, test_website: website_models.WebsiteRead):
+    """Tests the "Active" setting explains that an inactive website still has its critical pages checked."""
+    dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
+    help_text = dashboard.select_one(".scan-settings .scan-setting-help")
+
+    assert help_text is not None
+    assert "only have their critical pages checked" in help_text.get_text()
 
 
 # ==========================

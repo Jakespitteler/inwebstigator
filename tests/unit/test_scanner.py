@@ -155,6 +155,18 @@ def test_send_monitoring_started_notifications_continues_after_a_failed_send(
     assert mock_send_notification.call_args.kwargs["recipient_email"] == other_recipient.email
 
 
+def test_monitoring_started_html_says_only_critical_pages_are_watched_on_an_inactive_website(
+    populated_website: WebsiteRead,
+):
+    """Tests recipients of an inactive website (e.g. one too large to scan) are told only its pages listed are
+    watched, and recipients of an active website are not."""
+    inactive_body = monitoring_started_html(populated_website.model_copy(update={"active": False}), 7)
+    active_body = monitoring_started_html(populated_website.model_copy(update={"active": True}), 7)
+
+    assert "only the pages above are checked" in inactive_body
+    assert "only the pages above are checked" not in active_body
+
+
 def test_monitoring_started_html_escapes_urls_and_describes_schedule(populated_website: WebsiteRead):
     """Tests the confirmation body escapes URLs and states the scan and confirmation intervals."""
     website = populated_website.model_copy(
@@ -433,8 +445,8 @@ async def test_scan_website_connection_error_handling(populated_website: Website
 
 @pytest.mark.anyio
 async def test_scan_website_deactivates_a_website_too_large_to_scan(session: Session, mocker: MockerFixture):
-    """Tests a website with more pages than the crawler will scan is deactivated, saying why, and nothing from
-    the scan is saved."""
+    """Tests a website with more pages than the crawler will scan is deactivated, saying why, and its critical
+    pages are still checked straight away, without saving anything from the refused crawl."""
     main_url = "https://example.com"
     mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
     mocker.patch("app.backend.engine.crawl_site", side_effect=WebsiteTooLargeError(main_url, max_pages=50_000))
@@ -449,12 +461,69 @@ async def test_scan_website_deactivates_a_website_too_large_to_scan(session: Ses
     assert report is not None
     assert "Website Too Large" in report
     assert "more than 50,000 pages" in report
+    assert "critical pages are still checked" in report
 
     saved = service.get(website.id)
     assert saved.active is False
     assert saved.deactivated_reason == DeactivationReason.TOO_LARGE
     assert saved.internal_links == []
-    assert saved.critical_pages[0].text_body is None  # The main page's baseline was not saved
+    assert saved.critical_pages[0].text_body == "<p>Home page.</p>"  # Its baseline is saved for the next scan
+
+
+@pytest.mark.anyio
+async def test_changes_found_when_a_website_becomes_too_large_are_still_reported(
+    session: Session, mocker: MockerFixture
+):
+    """Tests the scan that finds a website has grown too large still reports changes on its critical pages."""
+    main_url = "https://example.com"
+    html = "<html><body><p>The fee is $100.</p></body></html>"
+    mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
+    crawl = mocker.patch("app.backend.engine.crawl_site", return_value={main_url})
+    service = WebsiteService(session)
+    website = service.create(WebsiteCreate(url=main_url))
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, text=html)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
+        assert await scanner.scan_website(client, website) is None  # baseline
+
+        html = html.replace("$100", "$120")
+        crawl.side_effect = WebsiteTooLargeError(main_url, max_pages=50_000)
+        report = await scanner.scan_website(client, service.get(website.id))
+
+    assert report is not None
+    assert "Website Too Large" in report
+    assert "$120" in report
+    assert crawl.call_count == 2  # The critical pages were checked again without crawling the website
+
+
+@pytest.mark.anyio
+async def test_inactive_website_only_has_its_critical_pages_scanned(session: Session, mocker: MockerFixture):
+    """Tests an inactive website is not crawled, but changes on its critical pages are still found and reported."""
+    main_url = "https://example.com"
+    html = "<html><body><p>Applications close in May.</p></body></html>"
+    mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
+    crawl = mocker.patch("app.backend.engine.crawl_site")
+    service = WebsiteService(session)
+    website = service.create(WebsiteCreate(url=main_url))
+    service.update(id=website.id, model_update=WebsiteUpdate(active=False))
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, text=html)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
+        assert await scanner.scan_website(client, service.get(website.id)) is None  # baseline
+
+        html = html.replace("May", "June")
+        report = await scanner.scan_website(client, service.get(website.id))
+
+    assert report is not None
+    assert "June" in report
+    crawl.assert_not_called()
+    saved = service.get(website.id)
+    assert saved.active is False
+    assert saved.internal_links == []
 
 
 @pytest.mark.anyio
@@ -576,12 +645,11 @@ async def test_stopping_the_app_mid_scan_is_not_mistaken_for_cancelling_the_scan
 
 @pytest.mark.anyio
 @pytest.mark.usefixtures("websites_unchanged_during_run")
-async def test_scan_all_websites_skips_inactive_cooldown_and_recent_scans(
+async def test_scan_all_websites_skips_cooldown_and_recent_scans(
     populated_website: WebsiteRead,
     mocker: MockerFixture,
 ):
-    """Tests that inactive websites, websites on active cooldown, or websites scanned too recently are skipped."""
-    inactive_site = populated_website.model_copy(update={"id": 1, "active": False, "url": "https://inactive.com"})
+    """Tests that websites on active cooldown, or websites scanned too recently are skipped."""
     cooldown_site = populated_website.model_copy(
         update={
             "id": 2,
@@ -604,7 +672,7 @@ async def test_scan_all_websites_skips_inactive_cooldown_and_recent_scans(
     mocker.patch.object(
         WebsiteService,
         "get_all",
-        return_value=[inactive_site, cooldown_site, recently_scanned_site],
+        return_value=[cooldown_site, recently_scanned_site],
     )
     mock_scan_website = mocker.patch("app.scanner.scan_website")
     mock_send_notification = mocker.patch("app.scanner.send_notification")
@@ -737,12 +805,36 @@ async def test_scan_all_websites_uses_settings_changed_during_the_run(
     populated_website: WebsiteRead,
     mocker: MockerFixture,
 ):
-    """Tests a website deactivated after the run started is skipped, as it is checked again just before its turn."""
-    website = _due_website(populated_website, "https://deactivated.com", "deactivated@gmail.com")
+    """Tests a website put on cooldown after the run started is skipped, as it is checked again just before its
+    turn."""
+    website = _due_website(populated_website, "https://cooldown.com", "cooldown@gmail.com")
+    cooled_down = website.model_copy(update={"on_cooldown_until": datetime.now() + timedelta(hours=2)})
     mocker.patch.object(WebsiteService, "get_all", return_value=[website])
-    mocker.patch.object(WebsiteService, "get", return_value=website.model_copy(update={"active": False}))
+    mocker.patch.object(WebsiteService, "get", return_value=cooled_down)
     mock_scan_website = mocker.patch("app.scanner.scan_website")
 
     assert await scanner.scan_all_websites() is None
 
     mock_scan_website.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("websites_unchanged_during_run")
+async def test_scan_all_websites_still_scans_inactive_websites(
+    populated_website: WebsiteRead,
+    mocker: MockerFixture,
+):
+    """Tests an inactive website is still scanned (for its critical pages) and its report emailed."""
+    inactive = _due_website(populated_website, "https://inactive.com", "inactive@gmail.com").model_copy(
+        update={"active": False}
+    )
+    mocker.patch.object(WebsiteService, "get_all", return_value=[inactive])
+    mock_scan_website = mocker.patch("app.scanner.scan_website", return_value="<li>critical page report</li>")
+    mock_send_notification = mocker.patch("app.scanner.send_notification")
+    mocker.patch.object(WebsiteService, "update")
+
+    result = await scanner.scan_all_websites()
+
+    assert [call.args[1] for call in mock_scan_website.call_args_list] == [inactive]
+    assert [call.args[0] for call in mock_send_notification.call_args_list] == ["inactive@gmail.com"]
+    assert result == "<li>critical page report</li>"

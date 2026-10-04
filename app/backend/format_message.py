@@ -212,6 +212,8 @@ def _format_days(days: float) -> str:
 def monitoring_started_html(website: WebsiteRead, days_between_health_checks: float) -> str:
     """Generates the HTML body of the email confirming a website is now being monitored.
 
+    An inactive website (e.g. one too large to scan) is said to only have its critical pages watched.
+
     Args:
         website (WebsiteRead): The website that has started being monitored.
         days_between_health_checks (float): How often the recipient is told nothing has changed.
@@ -226,6 +228,12 @@ def monitoring_started_html(website: WebsiteRead, days_between_health_checks: fl
         if critical_pages
         else ""
     )
+    inactive_section = (
+        ""
+        if website.active
+        else '<p style="margin: 16px 0 0;">This website is inactive, so only the pages above are checked. '
+        "New and removed pages on the rest of the website are not looked for.</p>"
+    )
     return (
         "<div style=\"font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; "
         "background-color: #ffffff; color: #1f2328; line-height: 1.5; padding: 20px; max-width: 800px; "
@@ -236,6 +244,7 @@ def monitoring_started_html(website: WebsiteRead, days_between_health_checks: fl
         f"It is checked every {_format_days(website.days_between_scans)}, and you will be emailed "
         "when a change is found.</p>"
         f"{critical_pages_section}"
+        f"{inactive_section}"
         '<p style="margin: 16px 0 0;">If nothing changes, you will get a short confirmation email every '
         f"{_format_days(days_between_health_checks)} so you know monitoring is still running.</p>"
         '<hr style="border: 0; height: 1px; background: #d0d7de; margin: 25px 0;">'

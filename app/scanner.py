@@ -7,7 +7,7 @@ from datetime import datetime, time, timedelta
 from httpx2 import AsyncClient
 
 from app.backend.email_service import build_message, send_email
-from app.backend.engine import get_website_updates
+from app.backend.engine import get_critical_page_only_updates, get_website_updates
 from app.backend.format_message import ScanStatus, generate_scan_report_html, monitoring_started_html
 from app.core.errors import (
     NotFoundError,
@@ -126,6 +126,62 @@ def cancel_scan(url: str) -> bool:
     return crawl_task is not None and crawl_task.cancel()
 
 
+async def _check_for_updates(
+    client: AsyncClient,
+    website: WebsiteRead,
+    max_pages: int | None,
+    delay: float | None,
+    concurrent: int | None,
+    init: bool,
+) -> WebsiteUpdate | None:
+    """Finds what has changed on a website since its last scan.
+
+    An inactive website only has its critical pages checked, as crawling the rest of the website
+    is what it has been switched off from (e.g. because it has too many pages to crawl).
+
+    Args:
+        client (AsyncClient): The HTTPX asynchronous client for making web requests.
+        website (WebsiteRead): The website to check.
+        max_pages (int | None): The maximum number of pages to crawl, or None for the default.
+        delay (float | None): Time in seconds to wait between requests, or None for the website's own.
+        concurrent (int | None): Maximum number of concurrent connections, or None for the website's own.
+        init (bool): Re-save the website's current state as its baseline.
+
+    Returns:
+        WebsiteUpdate | None: The updates found, or None if nothing changed.
+    """
+    if not website.active:
+        return await get_critical_page_only_updates(client, website, init)
+    return await get_website_updates(client, website, max_pages, delay, concurrent, init)
+
+
+async def _handle_too_large_website(client: AsyncClient, website: WebsiteRead, max_pages: int, init: bool) -> str:
+    """Deactivates a website with more pages than the crawler will scan, then checks its critical pages,
+    which are still watched while it is inactive, rather than leaving them until its next scan.
+
+    Args:
+        client (AsyncClient): The HTTPX asynchronous client for making web requests.
+        website (WebsiteRead): The website found to be too large.
+        max_pages (int): The most pages the crawler would scan.
+        init (bool): Re-save the critical pages' current state as their baseline.
+
+    Returns:
+        str: The HTML report saying the website was deactivated, followed by any changes found on its critical pages.
+
+    Raises:
+        ScanCancelledError: If the check of the critical pages was cancelled before it finished.
+    """
+    with db_context() as session:
+        website_service = WebsiteService(session)
+        action_message: str = website_service.handle_too_large(website.id, max_pages)
+        inactive_website: WebsiteRead = website_service.get(website.id)
+
+    too_large_report: str = generate_scan_report_html(website, status=ScanStatus.TOO_LARGE, message=action_message)
+    # The website is now inactive, so this scan only checks its critical pages and cannot find it too large again
+    critical_page_report: str | None = await scan_website(client, inactive_website, init=init)
+    return too_large_report + (critical_page_report or "")
+
+
 async def scan_website(
     client: AsyncClient,
     website: WebsiteRead,
@@ -139,7 +195,8 @@ async def scan_website(
 
     Automatically handles rate limits and unreachable sites by applying database
     cooldown periods to the affected website record, and deactivates websites with
-    more pages than the crawler will scan. Waits for any scan already running to finish first.
+    more pages than the crawler will scan. An inactive website only has its critical pages
+    checked. Waits for any scan already running to finish first.
 
     Args:
         client (AsyncClient): The HTTPX asynchronous client for making web requests.
@@ -161,7 +218,7 @@ async def scan_website(
     """
     try:
         website_updates: WebsiteUpdate | None = await queued_crawl(
-            website.url, lambda: get_website_updates(client, website, max_pages, delay, concurrent, init)
+            website.url, lambda: _check_for_updates(client, website, max_pages, delay, concurrent, init)
         )
     except TrafficError as e:
         logger.error(f"Temporary ban or severe rate limit detected for {website.url}: {e}")
@@ -181,9 +238,7 @@ async def scan_website(
         return generate_scan_report_html(website, status=ScanStatus.CONNECTION_ERROR, message=action_message)
     except WebsiteTooLargeError as e:
         logger.warning(f"Website too large to scan: {e}")
-        with db_context() as session:
-            action_message: str = WebsiteService(session).handle_too_large(website.id, e.max_pages)
-        return generate_scan_report_html(website, status=ScanStatus.TOO_LARGE, message=action_message)
+        return await _handle_too_large_website(client, website, e.max_pages, init)
 
     with db_context() as session:
         website_service = WebsiteService(session)
@@ -225,7 +280,8 @@ def _get_latest_state(website: WebsiteRead) -> WebsiteRead | None:
 
 
 async def scan_all_websites() -> str | None:
-    """Asynchronously scans all active, non-cooldown websites registered to a recipient.
+    """Asynchronously scans all non-cooldown websites that are due a scan. Inactive websites
+    only have their critical pages checked.
 
     Updates the recipient's `last_scan_at` metadata and dispatches an HTML email notification
     if any scan reports were generated.
@@ -251,9 +307,6 @@ async def scan_all_websites() -> str | None:
             website: WebsiteRead | None = _get_latest_state(listed_website)
             if website is None:
                 logger.info(f"{listed_website.url} has been skipped as it was deleted during the run.")
-                continue
-            if not website.active:
-                logger.warning(f"{website.url} has been skipped as it has been deactivated.")
                 continue
             if website.on_cooldown_until and website.on_cooldown_until > datetime.now():
                 logger.warning(f"{website.url} has been skipped as it is on cooldown.")

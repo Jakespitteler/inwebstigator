@@ -319,7 +319,8 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         logger.warning(f"Website {website.url} deactivated as it has more than {max_pages:,} pages.")
         return (
             f"This website has more than {max_pages:,} pages, which is more than the crawler will scan, "
-            "so it has been deactivated and will no longer be scanned automatically."
+            "so it has been deactivated. Its critical pages are still checked for changes, "
+            "but the rest of the website is no longer scanned."
         )
 
     def handle_connection_error(self, website_id: uuid.UUID) -> str:
