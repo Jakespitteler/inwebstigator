@@ -69,6 +69,7 @@ class WebsiteRead(BaseModel):
 
     recent_added_internal_links: list[URLString] | None = None
     recent_removed_internal_links: list[URLString] | None = None
+    internal_links_last_changed_at: datetime | None = None
 
 
 class WebsiteUpdate(BaseModel):
@@ -92,6 +93,7 @@ class WebsiteUpdate(BaseModel):
     initial_internal_links: list[URLString] | None = None
     recent_added_internal_links: list[URLString] | None = None
     recent_removed_internal_links: list[URLString] | None = None
+    internal_links_last_changed_at: datetime | None = None
 
     @property
     def changed_page_ids(self) -> set[uuid.UUID]:

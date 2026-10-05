@@ -25,7 +25,16 @@ from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
 from app.db.utils.interfaces import CRUDOperation
 from app.frontend.api.db_router_factory import SessionDep, create_crud_router
-from app.frontend.api.utils import ContentBlockRecord, DailyRecord, TextChangeRecord, build_word_diff, website_name
+from app.frontend.api.utils import (
+    ContentBlockRecord,
+    DailyRecord,
+    TextChangeRecord,
+    WebsiteDailyRecord,
+    build_word_diff,
+    format_timestamp,
+    newest_first,
+    website_name,
+)
 from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead, CriticalPageUpdate
 from app.models.recipient_models import RecipientCreate, RecipientUpdate
 from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
@@ -37,10 +46,12 @@ from app.scanner import (
     send_monitoring_started_notifications,
     send_notification,
 )
+from app.scheduler import next_scheduled_check, restart_scan_countdown
 
 ROOT_ROUTER = APIRouter()
 templates = Jinja2Templates(directory=resource_path("app", "frontend", "templates"))
 templates.env.filters["website_name"] = website_name  # pyright: ignore[reportUnknownMemberType]
+templates.env.filters["format_timestamp"] = format_timestamp  # pyright: ignore[reportUnknownMemberType]
 
 
 # ======================
@@ -52,9 +63,11 @@ templates.env.filters["website_name"] = website_name  # pyright: ignore[reportUn
 def get_dashboard(session: SessionDep, request: Request):
     websites: Sequence[WebsiteRead] = WebsiteService(session).get_all()
 
-    daily_records: list[DailyRecord] = []
+    website_records: list[WebsiteDailyRecord] = []
 
     for website in websites:
+        page_records: list[DailyRecord] = []
+
         for critical_page in website.critical_pages:
             changed: list[TextChangeRecord] = []
             added: list[ContentBlockRecord] = []
@@ -114,7 +127,7 @@ def get_dashboard(session: SessionDep, request: Request):
             )
 
             if has_changes:
-                daily_records.append(
+                page_records.append(
                     DailyRecord(
                         url=critical_page.url,
                         website_url=website.url,
@@ -125,19 +138,31 @@ def get_dashboard(session: SessionDep, request: Request):
                         links_removed=links_removed,
                         documents_added=documents_added,
                         documents_removed=documents_removed,
+                        changed_at=critical_page.last_changed_at,
                     )
                 )
 
-    last_scans: list[datetime] = [website.last_scan_at for website in websites if website.last_scan_at]
-    # %H rather than %-I, which is not supported on Windows where the desktop app runs
-    daily_date: str | None = max(last_scans).strftime("%d %b %Y, %H:%M") if last_scans else None
+        internal_links_added = list(website.recent_added_internal_links or [])
+        internal_links_removed = list(website.recent_removed_internal_links or [])
+
+        # Only websites with a changed critical page or internal link get a card on the updates page
+        if page_records or internal_links_added or internal_links_removed:
+            website_records.append(
+                WebsiteDailyRecord(
+                    website_url=website.url,
+                    pages=newest_first(page_records),
+                    internal_links_added=internal_links_added,
+                    internal_links_removed=internal_links_removed,
+                    internal_links_changed_at=website.internal_links_last_changed_at,
+                )
+            )
 
     return templates.TemplateResponse(
         request=request,
         name="index.html",
         context={
-            "daily_records": daily_records,
-            "daily_date": daily_date,
+            "website_records": newest_first(website_records),
+            "next_check": next_scheduled_check(),
             "websites": websites,
             "default_delay": config.web_crawler_default_delay,
             "default_concurrent": config.web_crawler_default_concurrent,
@@ -334,13 +359,16 @@ async def critical_page_initial_scan(
 
 @SCANNER_ROUTER.post("/run_all", response_model=str | None)
 async def scan_websites() -> str | None:
-    """Triggers an asynchronous scan across all active, non-cooldown websites
-    registered to the currently logged-in recipient.
+    """Scans every website now for "Run All Scans", emailing each recipient one report of all the changes found.
+
+    Websites that are not due a scan yet are included, while websites on cooldown are still skipped. The countdown
+    to the next scheduled check restarts, as every website is being scanned now.
 
     Returns:
         str | None: Consolidated HTML list of scan reports if updates occurred, otherwise None.
     """
-    return await scan_all_websites()
+    restart_scan_countdown()
+    return await scan_all_websites(ignore_schedule=True)
 
 
 @SCANNER_ROUTER.post("/run", response_model=str | None)

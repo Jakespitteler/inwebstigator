@@ -9,8 +9,8 @@ from app.core.config import config
 
 # The most removed blocks each added block is compared with when looking for edits. Normal sized changes are
 # well under this so every pair is compared, but it stops a full page rewrite taking minutes to compare.
-MAX_COMPARISONS_PER_BLOCK: int = 20
-TEXT_SIMILARITY_THRESHOLD: float = config.text_similarity_threshold
+MAX_COMPARISONS_PER_BLOCK: int = config.diff_checker_max_comparisons_per_block
+TEXT_SIMILARITY_THRESHOLD: float = config.diff_checker_text_similarity_threshold
 
 
 class _UnmatchedBlock(NamedTuple):

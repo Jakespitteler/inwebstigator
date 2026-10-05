@@ -12,8 +12,10 @@ from app.core.config import config
 from app.db.services.recipient_service import RecipientService
 from app.models.recipient_models import RecipientRead
 from app.scheduler import (
+    SCAN_JOB_ID,
     _scan_then_send_health_checks,  # pyright: ignore[reportPrivateUsage]
     _send_health_check_if_no_change,  # pyright: ignore[reportPrivateUsage]
+    restart_scan_countdown,
     schedule_scans,
     scheduler,
 )
@@ -174,6 +176,33 @@ async def test_scan_then_send_health_checks_sends_no_health_checks_when_the_scan
         await _scan_then_send_health_checks()
 
     mock_health_check.assert_not_called()
+
+
+# ======================================
+# restart_scan_countdown Tests
+# ======================================
+
+
+def test_restart_scan_countdown_gives_the_scan_job_a_new_interval_from_now(mocker: MockerFixture):
+    """Tests the scan job gets a fresh interval trigger, which next fires one full interval from now."""
+    mocker.patch.object(scheduler, "get_job", return_value=mocker.Mock())
+    mock_reschedule_job = mocker.patch.object(scheduler, "reschedule_job")
+
+    restart_scan_countdown()
+
+    mock_reschedule_job.assert_called_once_with(
+        SCAN_JOB_ID, trigger="interval", days=config.scheduler_minimum_days_between_scans
+    )
+
+
+def test_restart_scan_countdown_does_nothing_when_automatic_scans_are_off(mocker: MockerFixture):
+    """Tests nothing is rescheduled when there is no scan job, as automatic scans are not running."""
+    mocker.patch.object(scheduler, "get_job", return_value=None)
+    mock_reschedule_job = mocker.patch.object(scheduler, "reschedule_job")
+
+    restart_scan_countdown()
+
+    mock_reschedule_job.assert_not_called()
 
 
 # ======================================

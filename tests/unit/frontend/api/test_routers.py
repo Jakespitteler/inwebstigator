@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.config import config
 from app.core.errors import ScanCancelledError, WebsiteTooLargeError
 from app.db.core import get_db_session
-from app.db.schema import Base, DBRecipient, DBWebsite
+from app.db.schema import Base, DBCriticalPage, DBRecipient, DBWebsite
 from app.frontend.api import routers
 from app.main import app
 from app.models import critical_page_models, recipient_models, website_models
@@ -182,40 +182,78 @@ class TestCriticalPageRouter(TestCRUDRouters):
 # ==========================
 
 
-def _latest_scan_text(api_client: TestClient) -> str | None:
-    """Returns the dashboard's "Latest scan" line, or None if it is not shown."""
+def _next_check_text(api_client: TestClient) -> str | None:
+    """Returns the dashboard's "Next scheduled check" line, or None if it is not shown."""
     response = api_client.get("/")
     assert response.status_code == 200, response.text
     line = BeautifulSoup(response.text, "html.parser").select_one(".week-range")
     return " ".join(line.get_text().split()) if line else None
 
 
-def test_dashboard_shows_most_recent_scan_across_websites(api_client: TestClient, session: Session) -> None:
-    """Tests the dashboard shows when the most recently scanned website was last scanned."""
+def test_dashboard_shows_next_scheduled_check(api_client: TestClient, mocker: MockerFixture) -> None:
+    """Tests the dashboard shows when the scheduler next checks which websites are due a scan."""
+    mocker.patch("app.frontend.api.routers.next_scheduled_check", return_value=datetime(2026, 10, 5, 21, 30))
+
+    assert _next_check_text(api_client) == "Next scheduled check: 05 Oct 2026, 21:30"
+
+
+def test_dashboard_hides_next_check_when_scans_are_not_scheduled(api_client: TestClient, mocker: MockerFixture) -> None:
+    """Tests the "Next scheduled check" line is left out when automatic scans are not running."""
+    mocker.patch("app.frontend.api.routers.next_scheduled_check", return_value=None)
+
+    assert _next_check_text(api_client) is None
+
+
+def _changed_page(url: str, changed_at: datetime) -> DBCriticalPage:
+    """Creates a critical page with a recent change that was found at the given time."""
+    return DBCriticalPage(url=url, recent_links_added=[f"{url}/new-link"], last_changed_at=changed_at)
+
+
+def test_updates_are_listed_most_recent_change_first(api_client: TestClient, session: Session) -> None:
+    """Tests websites, and each website's critical pages, are listed most recent change first with when it was found."""
     session.add_all(
         [
-            DBWebsite(url="https://older.example.com", last_scan_at=datetime(2026, 9, 28, 9, 5)),
-            DBWebsite(url="https://newer.example.com", last_scan_at=datetime(2026, 10, 1, 14, 30)),
-            DBWebsite(url="https://never-scanned.example.com"),
+            DBWebsite(
+                url="https://older.example.com",
+                critical_pages=[_changed_page("https://older.example.com", datetime(2026, 10, 1, 9, 0))],
+            ),
+            DBWebsite(
+                url="https://newer.example.com",
+                critical_pages=[
+                    _changed_page("https://newer.example.com", datetime(2026, 10, 2, 9, 0)),
+                    _changed_page("https://newer.example.com/news", datetime(2026, 10, 4, 9, 0)),
+                ],
+            ),
         ]
     )
     session.flush()
 
-    assert _latest_scan_text(api_client) == "Latest scan: 01 Oct 2026, 14:30"
+    dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
+    website_names = [name.get_text(strip=True) for name in dashboard.select(".website-change-record .website-name")]
+    page_urls = [url.get_text(strip=True) for url in dashboard.select(".page-change-record .page-url")]
+    change_times = [" ".join(time.get_text().split()) for time in dashboard.select(".page-change-record .change-time")]
+
+    assert website_names == ["newer.example.com", "older.example.com"]
+    assert page_urls == ["https://newer.example.com/news", "https://newer.example.com", "https://older.example.com"]
+    assert change_times == ["Changed 04 Oct 2026, 09:00", "Changed 02 Oct 2026, 09:00", "Changed 01 Oct 2026, 09:00"]
 
 
-def test_dashboard_hides_latest_scan_when_nothing_scanned(api_client: TestClient, session: Session) -> None:
-    """Tests the "Latest scan" line is left out until a website has been scanned."""
-    session.add(DBWebsite(url="https://never-scanned.example.com"))
-    session.flush()
+def test_run_all_scans_every_website_and_restarts_the_countdown(api_client: TestClient, mocker: MockerFixture) -> None:
+    """Tests "Run All Scans" restarts the countdown to the next scheduled check and scans every website, due or not."""
+    mock_restart_scan_countdown = mocker.patch("app.frontend.api.routers.restart_scan_countdown")
+    mock_scan_all_websites = mocker.patch("app.frontend.api.routers.scan_all_websites", return_value=None)
 
-    assert _latest_scan_text(api_client) is None
+    response = api_client.post("/scanner/run_all")
+
+    assert response.status_code == 200, response.text
+    mock_restart_scan_countdown.assert_called_once()
+    mock_scan_all_websites.assert_awaited_once_with(ignore_schedule=True)
 
 
 def test_manual_scan_records_scan_time(
     api_client: TestClient, session: Session, test_website: website_models.WebsiteRead, mocker: MockerFixture
 ) -> None:
-    """Tests "Run Scan Now" records when the website was scanned, so the dashboard and scheduler see it."""
+    """Tests "Run Scan Now" records when the website was scanned, so the scheduler sees it."""
     mocker.patch("app.frontend.api.routers.scan_website", return_value=None)
     mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
     before = datetime.now()
@@ -227,7 +265,6 @@ def test_manual_scan_records_scan_time(
     assert website
     last_scan_at = website.last_scan_at
     assert last_scan_at is not None and last_scan_at >= before
-    assert _latest_scan_text(api_client) == f"Latest scan: {last_scan_at:%d %b %Y, %H:%M}"
 
 
 def test_manual_scan_of_a_website_already_queued_is_refused(

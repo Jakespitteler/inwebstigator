@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -28,6 +29,7 @@ class CriticalPageRead(BaseModel):
     recent_text_added: list[ContentBlock] | None = None
     recent_text_removed: list[ContentBlock] | None = None
     recent_text_changed: list[ChangedBlock] | None = None
+    last_changed_at: datetime | None = None
 
     consecutive_failures: int = 0
     last_failure_reason: str | None = None
@@ -46,6 +48,7 @@ class CriticalPageUpdate(BaseModel):
     recent_text_added: list[ContentBlock] | None = None
     recent_text_removed: list[ContentBlock] | None = None
     recent_text_changed: list[ChangedBlock] | None = None
+    last_changed_at: datetime | None = None
 
     consecutive_failures: int | None = None
     last_failure_reason: str | None = None

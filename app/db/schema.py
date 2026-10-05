@@ -84,6 +84,7 @@ class DBCriticalPage(Base):
 
     consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     last_failure_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class DBWebsite(Base):
@@ -118,3 +119,4 @@ class DBWebsite(Base):
     recipients: Mapped[list[DBRecipient]] = relationship(secondary=website_recipient_association)
     recent_added_internal_links: Mapped[list[str]] = mapped_column(JSON, nullable=True)
     recent_removed_internal_links: Mapped[list[str]] = mapped_column(JSON, nullable=True)
+    internal_links_last_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

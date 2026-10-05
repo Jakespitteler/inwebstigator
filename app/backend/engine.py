@@ -2,6 +2,7 @@ import asyncio
 import logging
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
 
 from httpx2 import AsyncClient, HTTPStatusError, RequestError
 
@@ -87,6 +88,7 @@ async def get_critical_page_updates(
         return None
     recent_changes = updates.model_dump(exclude_unset=True, exclude={"url", "links", "documents", "text_body"})
     logger.info(f"Changes found on {stored_page.url}: {recent_changes}")
+    updates.last_changed_at = datetime.now()
     return updates
 
 
@@ -241,6 +243,8 @@ async def get_website_updates(
         )
         logger.info(f"{updates.recent_added_internal_links=}")
         logger.info(f"{updates.recent_removed_internal_links=}")
+        if updates.recent_added_internal_links or updates.recent_removed_internal_links:
+            updates.internal_links_last_changed_at = datetime.now()
 
     if _website_has_been_updated(updates):
         return updates

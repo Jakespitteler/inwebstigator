@@ -34,9 +34,9 @@ class Config(BaseSettings):
     smtp_host: str = ""
     smtp_port: int = 465
     smtp_timeout_seconds: int = 30
-    imap_host: str = ""  # Defaults to the SMTP host with "smtp." swapped for "imap."
+    imap_host: str = ""
     imap_port: int = 993
-    email_bounce_wait_seconds: int = 30  # How long to wait for a bounce after a confirmation email is sent
+    email_bounce_wait_seconds: int = 30
     email_bounce_poll_seconds: int = 3
 
     web_crawler_default_max_pages: int = 50_000
@@ -52,9 +52,10 @@ class Config(BaseSettings):
     fetch_site_retry_max_wait_seconds: int = 15
     fetch_site_retry_multiplier: int = 1
 
-    critical_page_alert_after_failures: int = 2  # Failed scans in a row before a critical page is reported
+    critical_page_alert_after_failures: int = 2
 
-    text_similarity_threshold: float = 0.6  # TODO may have to drop to 0
+    diff_checker_text_similarity_threshold: float = 0.6  # TODO may have to drop to 0
+    diff_checker_max_comparisons_per_block: int = 20
 
     email_retry_max_attempts: int = 3
     email_retry_min_wait_seconds: int = 2

@@ -727,6 +727,34 @@ async def test_scan_all_websites_skips_cooldown_and_recent_scans(
     assert result is None
 
 
+@pytest.mark.anyio
+@pytest.mark.usefixtures("websites_unchanged_during_run")
+async def test_scan_all_websites_ignoring_the_schedule_scans_websites_not_due_but_skips_cooldown(
+    populated_website: WebsiteRead,
+    mocker: MockerFixture,
+):
+    """Tests "Run All Scans" also scans websites scanned too recently, while websites on cooldown are still skipped."""
+    cooldown_site = populated_website.model_copy(
+        update={"url": "https://cooldown.com", "on_cooldown_until": datetime.now() + timedelta(days=1)}
+    )
+    recently_scanned_site = populated_website.model_copy(
+        update={
+            "url": "https://scanned.com",
+            "on_cooldown_until": None,
+            "last_scan_at": datetime.now(),
+            "days_between_scans": 7,
+        }
+    )
+    mocker.patch.object(WebsiteService, "get_all", return_value=[cooldown_site, recently_scanned_site])
+    mock_scan_website = mocker.patch("app.scanner.scan_website", return_value=None)
+    mocker.patch.object(WebsiteService, "update")
+
+    await scanner.scan_all_websites(ignore_schedule=True)
+
+    mock_scan_website.assert_awaited_once()
+    assert mock_scan_website.call_args.args[1].url == recently_scanned_site.url
+
+
 def _due_website(website: WebsiteRead, url: str, recipient_email: str) -> WebsiteRead:
     """Returns a copy of the website that is due a scan, with a single recipient."""
     recipient = website.recipients[0].model_copy(update={"email": recipient_email})

@@ -279,7 +279,7 @@ def _get_latest_state(website: WebsiteRead) -> WebsiteRead | None:
             return None
 
 
-async def scan_all_websites() -> str | None:
+async def scan_all_websites(ignore_schedule: bool = False) -> str | None:
     """Asynchronously scans all non-cooldown websites that are due a scan. Inactive websites
     only have their critical pages checked.
 
@@ -289,6 +289,10 @@ async def scan_all_websites() -> str | None:
     A website whose scan fails unexpectedly is logged and skipped, and a failed email is logged
     and skipped, so one problem cannot stop the other websites being scanned or reported. A website
     deleted during the run is skipped, or its scan cancelled if it was being scanned.
+
+    Args:
+        ignore_schedule (bool, optional): Also scan websites that are not due a scan yet, e.g. for
+            "Run All Scans" on the dashboard. Websites on cooldown are still skipped. Defaults to False.
 
     Returns:
         str | None: Consolidated HTML list of scan reports if updates/errors occurred,
@@ -311,9 +315,14 @@ async def scan_all_websites() -> str | None:
             if website.on_cooldown_until and website.on_cooldown_until > datetime.now():
                 logger.warning(f"{website.url} has been skipped as it is on cooldown.")
                 continue
-            if website.last_scan_at and (
-                run_started_at - datetime.combine(website.last_scan_at.date(), time.min)  # Start of the day
-            ) < timedelta(days=website.days_between_scans):
+            if (
+                not ignore_schedule
+                and website.last_scan_at
+                and (
+                    run_started_at - datetime.combine(website.last_scan_at.date(), time.min)  # Start of the day
+                )
+                < timedelta(days=website.days_between_scans)
+            ):
                 logger.info(f"{website.url} has been skipped as there has not been enough time since last scan.")
                 continue
 
