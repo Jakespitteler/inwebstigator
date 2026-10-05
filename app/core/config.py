@@ -18,7 +18,13 @@ class Config(BaseSettings):
     app_name: str = "inwebstigator"
     automatic_scans: bool = True
 
+    user_data_dir: Path = Path.home() / "AppData" / "Local" / app_name
+    user_data_dir.mkdir(parents=True, exist_ok=True)
+
     db_name: str = f"{app_name}.db"
+    db_path: Path = user_data_dir / db_name
+
+    webview_storage_dir: Path = user_data_dir / "webview"
 
     email: str = ""
     email_password: SecretStr = SecretStr("")
@@ -51,10 +57,8 @@ class Config(BaseSettings):
 
     @property
     def db_url(self) -> str:
-        user_data_dir = Path.home() / "AppData" / "Local" / self.app_name
-        user_data_dir.mkdir(parents=True, exist_ok=True)
-        db_path = user_data_dir / self.db_name
-        return f"sqlite:///{db_path.as_posix()}"
+        self.user_data_dir.mkdir(parents=True, exist_ok=True)
+        return f"sqlite:///{self.db_path.as_posix()}"
 
     @property
     def test_db_url(self) -> str:

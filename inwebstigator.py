@@ -27,6 +27,7 @@ import uvicorn
 import webview
 from PIL import Image
 
+from app.core.config import config
 from app.core.paths import resource_path
 
 ROOT: Path = resource_path()
@@ -36,6 +37,8 @@ sys.path.insert(0, str(ROOT))
 import app.main
 
 DEFAULT_HOST: str = "127.0.0.1"
+PREFERRED_PORT: int = 48731
+WEBVIEW_STORAGE_DIR: Path = config.webview_storage_dir
 START_PATH: str = "/"
 
 STARTUP_TIMEOUT_SECONDS: int = 15 * 60
@@ -185,6 +188,17 @@ def find_free_port() -> int:
         return s.getsockname()[1]
 
 
+def is_port_free(port: int) -> bool:
+    """Return True if nothing is listening on the given local port."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex((DEFAULT_HOST, port)) != 0
+
+
+def choose_port() -> int:
+    """Use the preferred port when it is free, otherwise fall back to any free port."""
+    return PREFERRED_PORT if is_port_free(PREFERRED_PORT) else find_free_port()
+
+
 class BackgroundServer:
     """Runs uvicorn in a daemon thread and lets the window wait for it and stop it."""
 
@@ -225,7 +239,7 @@ class BackgroundServer:
 
 def main() -> None:
     global allow_close
-    server = BackgroundServer(find_free_port())
+    server = BackgroundServer(choose_port())
     server.start()
 
     webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
@@ -337,9 +351,13 @@ def main() -> None:
     # Start pywebview
     # ---------------------------------------------------------
 
+    # private_mode=False lets the window keep its storage (e.g. the chosen theme) between launches
+    WEBVIEW_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
     webview.start(
         show_app_when_ready,
         debug="--debug" in sys.argv,
+        private_mode=False,
+        storage_path=str(WEBVIEW_STORAGE_DIR),
     )
 
     # ---------------------------------------------------------
