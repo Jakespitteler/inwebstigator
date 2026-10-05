@@ -99,7 +99,7 @@
             aria-labelledby="updates-tab" tabindex="0" hidden>
         <div class="section-heading">
 
-            <h2 class="section-title">Daily Changes</h2>
+            <h2 class="section-title">Changes since last scan</h2>
 
             {% if next_check %}
                 <p class="week-range">
@@ -109,7 +109,7 @@
 
         </div>
 
-        <!-- DAILY CHANGES -->
+        <!-- CHANGES SINCE LAST SCAN -->
         <section id="daily-changes">
 
             {% if website_records %}
@@ -699,9 +699,9 @@
                                 <input
                                     type="number"
                                     id="new-website-days"
-                                    value="{{ default_days_between_scans | int }}"
-                                    min="1"
-                                    step="1"
+                                    value="{{ default_days_between_scans }}"
+                                    min="{{ minimum_days_between_scans }}"
+                                    step="any"
                                     required
                                 >
                             </div>
@@ -713,6 +713,7 @@
                                     id="new-website-delay"
                                     value="{{ default_delay }}"
                                     min="0"
+                                    max="{{ max_delay }}"
                                     step="0.1"
                                     required
                                 >
@@ -724,7 +725,7 @@
                                     type="number"
                                     id="new-website-concurrent"
                                     value="{{ default_concurrent }}"
-                                    min="1"
+                                    min="{{ min_concurrent }}"
                                     step="1"
                                     required
                                 >
@@ -874,12 +875,6 @@
 
 
                         <div class="website-summary">
-
-                            <p>
-                                <strong>Critical pages:</strong>
-                                {{ website.critical_pages | length
-                                   if website.critical_pages else 0 }}
-                            </p>
 
                             <p>
                                 <strong>Internal pages:</strong>
@@ -1079,6 +1074,7 @@
                                         class="scan-delay"
                                         value="{{ website.recommended_delay }}"
                                         min="0"
+                                        max="{{ max_delay }}"
                                         step="0.1"
                                         required
                                     >
@@ -1097,7 +1093,7 @@
                                         type="number"
                                         class="scan-concurrent"
                                         value="{{ website.recommended_concurrent }}"
-                                        min="1"
+                                        min="{{ min_concurrent }}"
                                         step="1"
                                         required
                                     >
@@ -1114,8 +1110,8 @@
                                         type="number"
                                         class="days-between-scans"
                                         value="{{ website.days_between_scans }}"
-                                        min="1"
-                                        step="1"
+                                        min="{{ minimum_days_between_scans }}"
+                                        step="any"
                                         required
                                     >
 
@@ -1680,9 +1676,8 @@
                                             document.getElementById("new-website-concurrent").value,
                                             10
                                         ),
-                                        days_between_scans: parseInt(
-                                            document.getElementById("new-website-days").value,
-                                            10
+                                        days_between_scans: parseFloat(
+                                            document.getElementById("new-website-days").value
                                         )
                                     })
                                 }
@@ -2088,11 +2083,10 @@
                         );
 
                     const daysBetweenScans =
-                        parseInt(
+                        parseFloat(
                             form.querySelector(
                                 ".days-between-scans"
-                            ).value,
-                            10
+                            ).value
                         );
 
                     const message =
