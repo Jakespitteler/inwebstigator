@@ -191,6 +191,9 @@ async def crawl_site(
             if status_code == 403:
                 batch_403_count += 1
 
+            if status_code != 200:
+                continue
+
             visited.add(normalise_url(visited_url))
             for link in internal_links:
                 if link not in visited and link not in queued:

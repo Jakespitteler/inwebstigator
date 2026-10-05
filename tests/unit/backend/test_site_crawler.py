@@ -82,15 +82,12 @@ async def test_crawl_site_success_and_skips_404(
     website_handler: RequestHandler,
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
 ):
-    """Tests that the crawler successfully navigates valid pages and gracefully skips 404s."""
+    """Tests that the crawler successfully navigates valid pages and leaves out pages it cannot reach (404s)."""
     async with mock_client_factory(website_handler) as client:
         visited: set[str] = await crawl_site(client, test_url, max_pages=10)
 
-    assert len(visited) == 6
-    assert test_url in visited
-    assert f"{test_url}page1.html" in visited
-    assert f"{test_url}page2.html" in visited
-    assert f"{test_url}404-page.html" in visited
+    assert visited == {test_url, f"{test_url}page1.html", f"{test_url}page2.html"}
+    assert f"{test_url}404-page.html" not in visited
 
 
 @pytest.mark.anyio
@@ -103,8 +100,10 @@ async def test_crawl_site_refuses_a_website_with_more_pages_than_max_pages(
     requested_urls: list[str] = []
 
     def counting_handler(request: httpx2.Request) -> httpx2.Response:
-        requested_urls.append(str(request.url))
-        return website_handler(request)
+        response: httpx2.Response = website_handler(request)
+        if response.is_success:  # Pages that cannot be reached do not count towards the limit
+            requested_urls.append(str(request.url))
+        return response
 
     async with mock_client_factory(counting_handler) as client:
         with pytest.raises(WebsiteTooLargeError) as exc_info:
@@ -122,9 +121,9 @@ async def test_crawl_site_allows_a_website_with_exactly_max_pages(
 ):
     """Tests a website with exactly as many pages as the limit is crawled in full."""
     async with mock_client_factory(website_handler) as client:
-        visited: set[str] = await crawl_site(client, test_url, max_pages=6)
+        visited: set[str] = await crawl_site(client, test_url, max_pages=3)
 
-    assert len(visited) == 6
+    assert len(visited) == 3
 
 
 @pytest.mark.anyio
@@ -189,12 +188,11 @@ async def test_crawl_site_non_fatal_errors(
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
     handler: RequestHandler,
 ):
-    """Tests that non-fatal errors handle gracefully, returning empty links."""
+    """Tests that non-fatal errors are handled gracefully, leaving the unreachable page out of the links."""
     async with mock_client_factory(handler) as client:
         visited: set[str] = await crawl_site(client, test_url)
 
-    assert len(visited) == 1
-    assert test_url in visited
+    assert visited == set()
 
 
 @pytest.mark.anyio
