@@ -9,6 +9,7 @@ Features:
 - The tray's Open option shows the application again.
 - The tray's Hide option hides the application.
 - The tray's Quit option completely exits the application.
+- Pressing Ctrl+C in the terminal also completely exits the application.
 """
 
 import contextlib
@@ -26,6 +27,7 @@ import uvicorn
 import webview
 from PIL import Image
 
+from app.core.config import config
 from app.core.paths import resource_path
 
 ROOT: Path = resource_path()
@@ -34,10 +36,15 @@ sys.path.insert(0, str(ROOT))
 
 import app.main
 
-DEFAULT_HOST: str = "127.0.0.1"
+DEFAULT_HOST: str = config.server_host
+PREFERRED_PORT: int = config.server_preferred_port
+WEBVIEW_STORAGE_DIR: Path = config.webview_storage_dir
 START_PATH: str = "/"
 
 STARTUP_TIMEOUT_SECONDS: int = 15 * 60
+
+# The Windows console event sent when Ctrl+C is pressed in the terminal.
+CTRL_C_EVENT: int = 0
 
 # Controls whether the pywebview window is allowed to actually close.
 #
@@ -148,11 +155,48 @@ def ensure_single_instance() -> bool:
     return True
 
 
+@ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)
+def quit_on_ctrl_c(console_event: int) -> bool:
+    """Quit Inwebstigator when Ctrl+C is pressed in the terminal.
+
+    pywebview turns Ctrl+C into a request to close the window, which
+    on_window_closing() would hide to the system tray instead. Windows runs
+    this console handler first, so the window is allowed to close and main()
+    then shuts down the tray icon and server as normal.
+
+    It is defined at module level so it is never garbage-collected while
+    Windows still holds a pointer to it.
+    """
+    global allow_close
+
+    if console_event != CTRL_C_EVENT:
+        return False  # Let Windows handle other console events as normal.
+
+    allow_close = True
+
+    for window in webview.windows:
+        with contextlib.suppress(Exception):
+            window.destroy()
+
+    return True
+
+
 def find_free_port() -> int:
     """Ask the OS for an unused port so the app never clashes with another server."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((DEFAULT_HOST, 0))
         return s.getsockname()[1]
+
+
+def is_port_free(port: int) -> bool:
+    """Return True if nothing is listening on the given local port."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex((DEFAULT_HOST, port)) != 0
+
+
+def choose_port() -> int:
+    """Use the preferred port when it is free, otherwise fall back to any free port."""
+    return PREFERRED_PORT if is_port_free(PREFERRED_PORT) else find_free_port()
 
 
 class BackgroundServer:
@@ -195,7 +239,7 @@ class BackgroundServer:
 
 def main() -> None:
     global allow_close
-    server = BackgroundServer(find_free_port())
+    server = BackgroundServer(choose_port())
     server.start()
 
     webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
@@ -223,6 +267,9 @@ def main() -> None:
         return True
 
     window.events.closing += on_window_closing
+
+    # Let Ctrl+C in the terminal quit the application instead of hiding the window.
+    ctypes.windll.kernel32.SetConsoleCtrlHandler(quit_on_ctrl_c, True)
 
     # ---------------------------------------------------------
     # System tray
@@ -304,9 +351,13 @@ def main() -> None:
     # Start pywebview
     # ---------------------------------------------------------
 
+    # private_mode=False lets the window keep its storage (e.g. the chosen theme) between launches
+    WEBVIEW_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
     webview.start(
         show_app_when_ready,
         debug="--debug" in sys.argv,
+        private_mode=False,
+        storage_path=str(WEBVIEW_STORAGE_DIR),
     )
 
     # ---------------------------------------------------------
@@ -316,8 +367,8 @@ def main() -> None:
     # Normally clicking X does not reach this point because
     # on_window_closing() intercepts the close and hides the window.
     #
-    # If pywebview exits for another reason, make sure everything
-    # is shut down cleanly.
+    # If pywebview exits for another reason (e.g. Ctrl+C in the
+    # terminal), make sure everything is shut down cleanly.
     allow_close = True
 
     tray.stop()

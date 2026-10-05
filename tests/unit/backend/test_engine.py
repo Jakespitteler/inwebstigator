@@ -6,7 +6,7 @@ import httpx2
 import pytest
 from pytest_mock import MockerFixture
 
-from app.backend.engine import get_critical_page_updates, get_website_updates
+from app.backend.engine import get_critical_page_only_updates, get_critical_page_updates, get_website_updates
 from app.core.errors import TrafficError
 from app.models.critical_page_models import CriticalPageRead, CriticalPageUpdate
 from app.models.internal_link_models import InternalLinkRead
@@ -140,6 +140,46 @@ async def test_get_critical_page_updates_saves_baseline(
     assert not updates.has_changes
     for recent_field in RECENT_PAGE_FIELDS:
         assert not getattr(updates, recent_field), recent_field
+
+
+# ======================================
+# get_critical_page_only_updates
+# ======================================
+
+
+@pytest.mark.anyio
+async def test_get_critical_page_only_updates_checks_critical_pages_without_crawling(
+    test_website: WebsiteRead,
+    test_critical_page: CriticalPageRead,
+    website_handler: RequestHandler,
+    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
+    mocker: MockerFixture,
+):
+    """Tests only the critical pages are checked, so a website too large to crawl can still be watched."""
+    crawl = mocker.patch("app.backend.engine.crawl_site")
+    website = test_website.model_copy(update={"critical_pages": [test_critical_page], "internal_links": []})
+
+    async with mock_client_factory(website_handler) as client:
+        updates: WebsiteUpdate | None = await get_critical_page_only_updates(client, website)
+
+    crawl.assert_not_called()
+    assert updates is not None
+    assert updates.critical_page_updates is not None
+    assert updates.critical_page_updates[test_critical_page.id].text_body is not None  # The page's baseline
+    assert updates.initial_internal_links is None
+    assert not updates.recent_added_internal_links
+    assert not updates.recent_removed_internal_links
+
+
+@pytest.mark.anyio
+async def test_get_critical_page_only_updates_returns_none_when_nothing_changed(
+    test_website: WebsiteRead,
+    mocker: MockerFixture,
+):
+    """Tests a check that finds nothing to save returns None, so nothing is written."""
+    website = test_website.model_copy(update={"critical_pages": []})
+
+    assert await get_critical_page_only_updates(mocker.Mock(), website) is None
 
 
 # ======================================
@@ -278,13 +318,13 @@ async def test_get_website_updates_traffic_error(
 
 
 @pytest.mark.anyio
-async def test_get_website_updates_skips_a_broken_critical_page(
+async def test_get_website_updates_records_a_broken_critical_page(
     test_website: WebsiteRead,
     test_critical_page: CriticalPageRead,
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
     mocker: MockerFixture,
 ):
-    """Tests one critical page failing (e.g. deleted, now 404) does not stop the other pages and crawl."""
+    """Tests one critical page failing (e.g. deleted, now 404) is recorded without stopping the other pages."""
     mocker.patch("app.backend.engine.crawl_site", return_value={test_website.url, f"{test_website.url}new-page"})
     working_page = test_critical_page.model_copy(update={"text_body": "<html><body><p>Old text.</p></body></html>"})
     broken_page = test_critical_page.model_copy(
@@ -302,32 +342,75 @@ async def test_get_website_updates_skips_a_broken_critical_page(
 
     assert updates is not None
     assert updates.critical_page_updates is not None
-    assert set(updates.critical_page_updates) == {working_page.id}
+    assert set(updates.critical_page_updates) == {working_page.id, broken_page.id}
     assert updates.critical_page_updates[working_page.id].recent_text_changed
+    assert updates.critical_page_updates[broken_page.id].last_failure_reason == "HTTP 404"
     assert updates.initial_internal_links  # the crawl still ran
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize(
-    "error",
-    [TrafficError(url="https://www.test_website.com/", status_code=429), asyncio.CancelledError()],
-    ids=["rate-limit", "cancellation"],
-)
-async def test_get_website_updates_stops_on_critical_page_rate_limit_or_cancellation(
+async def test_critical_page_bug_is_not_counted_as_the_page_being_unreachable(
     test_website: WebsiteRead,
     test_critical_page: CriticalPageRead,
     mocker: MockerFixture,
-    error: BaseException,
 ):
-    """Tests a rate limit on a critical page (it applies to the whole site) or cancellation (e.g. the app
-    shutting down) stops the scan before the crawl, rather than the page being skipped."""
-    mocker.patch("app.backend.engine.get_critical_page_updates", side_effect=error)
+    """Tests an unexpected error (not a failed fetch) is skipped, rather than counted as a failure."""
+    mocker.patch("app.backend.engine.get_critical_page_updates", side_effect=ValueError("Parsing bug"))
+    website = test_website.model_copy(update={"critical_pages": [test_critical_page]})
+
+    assert await get_critical_page_only_updates(mocker.Mock(), website) is None
+
+
+@pytest.mark.anyio
+async def test_get_website_updates_stops_on_cancellation(
+    test_website: WebsiteRead,
+    test_critical_page: CriticalPageRead,
+    mocker: MockerFixture,
+):
+    """Tests cancellation (e.g. the app shutting down) stops the scan before the crawl, rather than the page
+    being recorded as a failed check."""
+    mocker.patch("app.backend.engine.get_critical_page_updates", side_effect=asyncio.CancelledError())
     crawl = mocker.patch("app.backend.engine.crawl_site")
     website = test_website.model_copy(update={"critical_pages": [test_critical_page]})
 
-    with pytest.raises(type(error)):
+    with pytest.raises(asyncio.CancelledError):
         await get_website_updates(mocker.Mock(), website, None, None, None)
     crawl.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("status_code", "failures_before", "failures_after", "reported"),
+    [
+        (500, 0, 1, False),  # A single failure may be a blip
+        (500, 1, 2, True),  # Reaching the failure limit reports the page
+        (500, 2, 3, False),  # A page that stays down is not reported again
+        (404, 0, 2, True),  # A missing page is reported straight away
+    ],
+)
+async def test_failed_critical_page_check_is_counted_and_reported_once(
+    test_website: WebsiteRead,
+    test_critical_page: CriticalPageRead,
+    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
+    status_code: int,
+    failures_before: int,
+    failures_after: int,
+    reported: bool,
+):
+    """Tests each failed check adds to the page's failure count, and the page is only reported once."""
+    stored_page = test_critical_page.model_copy(update={"consecutive_failures": failures_before})
+    website = test_website.model_copy(update={"critical_pages": [stored_page]})
+
+    async with mock_client_factory(lambda request: httpx2.Response(status_code)) as client:
+        updates: WebsiteUpdate | None = await get_critical_page_only_updates(client, website)
+
+    assert updates is not None
+    assert updates.critical_page_updates is not None
+    page_update = updates.critical_page_updates[stored_page.id]
+    assert page_update.consecutive_failures == failures_after
+    assert page_update.last_failure_reason == f"HTTP {status_code}"
+    assert page_update.text_body is None  # The last good copy is kept
+    assert updates.has_changes is reported
 
 
 # ======================================

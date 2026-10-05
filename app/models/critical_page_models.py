@@ -1,8 +1,10 @@
 import uuid
+from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.backend.diff_checker import ChangedBlock, ContentBlock
+from app.core.config import config
 from app.db.utils.field_types import URLString
 
 
@@ -27,6 +29,10 @@ class CriticalPageRead(BaseModel):
     recent_text_added: list[ContentBlock] | None = None
     recent_text_removed: list[ContentBlock] | None = None
     recent_text_changed: list[ChangedBlock] | None = None
+    last_changed_at: datetime | None = None
+
+    consecutive_failures: int = 0
+    last_failure_reason: str | None = None
 
 
 class CriticalPageUpdate(BaseModel):
@@ -42,6 +48,10 @@ class CriticalPageUpdate(BaseModel):
     recent_text_added: list[ContentBlock] | None = None
     recent_text_removed: list[ContentBlock] | None = None
     recent_text_changed: list[ChangedBlock] | None = None
+    last_changed_at: datetime | None = None
+
+    consecutive_failures: int | None = None
+    last_failure_reason: str | None = None
 
     @property
     def has_changes(self) -> bool:
@@ -54,5 +64,7 @@ class CriticalPageUpdate(BaseModel):
                 self.recent_text_added,
                 self.recent_text_removed,
                 self.recent_text_changed,
+                # Reported once, on the scan the page reaches the failure limit
+                self.consecutive_failures == config.critical_page_alert_after_failures,
             )
         )

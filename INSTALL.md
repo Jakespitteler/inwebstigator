@@ -108,7 +108,7 @@ Click **Save Settings** after changing anything.
 
 | Setting | What it does |
 | --- | --- |
-| **Active** | Untick to pause checking this website without deleting it. |
+| **Active** | Untick to stop crawling the whole website for new and removed pages. Its critical pages are still checked for changes. |
 | **Days between scans** | How often your websites are checked. The default is 1 (daily). |
 | **Days between no-change notifications** | How often you get the "no changes" email when nothing changes. The default is 7 (weekly). |
 | **Request delay** / **Concurrent requests** | How fast Inwebstigator reads a website. Best left as they are unless the team suggests a change. |
@@ -118,7 +118,12 @@ them, or after adding a new website, close Inwebstigator and open it again**
 so the daily schedule picks up the change.
 
 **Run Scan Now** checks the website straight away, instead of waiting for the
-next daily check.
+next daily check. For an inactive website the button says **Scan Critical Pages
+Now**, as only its critical pages are checked.
+
+A website with more pages than Inwebstigator will scan (50,000) is made inactive
+automatically, and its box says it is too large to scan. Its critical pages are
+still checked.
 
 ### Log Out
 

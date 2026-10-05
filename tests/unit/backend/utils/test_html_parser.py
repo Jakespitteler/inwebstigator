@@ -110,9 +110,10 @@ def test_extract_sequential_blocks() -> None:
 
     headings, blocks = extract_sequential_blocks(container, frozenset())
     assert headings == ["Introduction"]
-    assert len(blocks) == 1
-    assert blocks[0].parent_heading == "Introduction"
-    assert blocks[0].text == "Paragraph text"
+    assert [(block.parent_heading, block.block_type, block.text) for block in blocks] == [
+        ("No heading", HTMLBlockType.HEADING_1, "Introduction"),
+        ("Introduction", HTMLBlockType.PARAGRAPH, "Paragraph text"),
+    ]
 
 
 def test_parse_html_full() -> None:
@@ -130,7 +131,7 @@ def test_parse_html_full() -> None:
     page_content: PageContent = parse_html(html_content)
 
     assert page_content.headings == ["Main Title"]
-    assert len(page_content.blocks) == 1
+    assert [block.text for block in page_content.blocks] == ["Main Title", "Some main content text."]
     assert page_content.links == ["https://example.com"]
     assert page_content.last_updated is None
 
@@ -142,6 +143,7 @@ def test_extract_sequential_blocks_captures_list_items() -> None:
 
     _, blocks = extract_sequential_blocks(container, frozenset())
     assert [(block.parent_heading, block.block_type, block.text) for block in blocks] == [
+        ("No heading", HTMLBlockType.HEADING_2, "Fees"),
         ("Fees", HTMLBlockType.LIST_ITEM, "Application fee: $100"),
         ("Fees", HTMLBlockType.LIST_ITEM, "Late fee: $20"),
     ]
@@ -172,6 +174,19 @@ def test_extract_sequential_blocks_does_not_duplicate_nested_blocks() -> None:
         "Paragraph inside a list item",
         "Parent item Child item",
         "Paragraph inside a quote",
+    ]
+
+
+def test_extract_sequential_blocks_does_not_duplicate_headings_nested_in_blocks() -> None:
+    html_content: str = "<div><ul><li><h3>Step 1</h3>Fill in the form</li></ul><p>Then submit it</p></div>"
+    soup: BeautifulSoup = BeautifulSoup(html_content, "html.parser")
+    container: Tag = soup.find("div")  # type: ignore
+
+    headings, blocks = extract_sequential_blocks(container, frozenset())
+    assert headings == ["Step 1"]
+    assert [(block.parent_heading, block.text) for block in blocks] == [
+        ("No heading", "Step 1 Fill in the form"),
+        ("Step 1", "Then submit it"),
     ]
 
 

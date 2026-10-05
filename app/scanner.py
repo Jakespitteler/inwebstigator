@@ -1,14 +1,22 @@
+import asyncio
 import logging
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime, time, timedelta
 
 from httpx2 import AsyncClient
 
 from app.backend.email_service import build_message, send_email
-from app.backend.engine import get_website_updates
+from app.backend.engine import get_critical_page_only_updates, get_website_updates
 from app.backend.format_message import ScanStatus, generate_scan_report_html, monitoring_started_html
-from app.core.errors import TrafficError, WebConnectionError
+from app.core.errors import (
+    NotFoundError,
+    ScanAlreadyQueuedError,
+    ScanCancelledError,
+    TrafficError,
+    WebConnectionError,
+    WebsiteTooLargeError,
+)
 from app.db.core import db_context
 from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
@@ -18,6 +26,12 @@ from app.models.recipient_models import RecipientUpdate
 from app.models.website_models import WebsiteRead, WebsiteUpdate
 
 logger = logging.getLogger(__name__)
+
+# Websites are scanned one at a time, in the order requested, so a new scan waits for the current one to finish
+scan_lock = asyncio.Lock()
+
+# The crawl of each website that is queued or being scanned, by URL, so it can be cancelled
+queued_crawls: dict[str, asyncio.Task[WebsiteUpdate | None]] = {}
 
 
 def send_notification(recipient_email: EmailString, report: str, subject: str):
@@ -58,6 +72,116 @@ def send_monitoring_started_notifications(website: WebsiteRead) -> None:
             logger.exception(f"Failed to send monitoring started email to {recipient.email}")
 
 
+async def _crawl_in_turn(crawl: Callable[[], Awaitable[WebsiteUpdate | None]]) -> WebsiteUpdate | None:
+    """Waits for the scans requested before this one to finish, then crawls the website."""
+    async with scan_lock:
+        return await crawl()
+
+
+async def queued_crawl(url: str, crawl: Callable[[], Awaitable[WebsiteUpdate | None]]) -> WebsiteUpdate | None:
+    """Crawls a website once the scans requested before it have finished.
+
+    The crawl runs as its own task, so `cancel_scan()` can stop it whether it is waiting its turn or
+    already crawling, without stopping whatever requested it (e.g. a scan of all websites).
+
+    Args:
+        url (str): The URL of the website to crawl.
+        crawl (Callable[[], Awaitable[WebsiteUpdate | None]]): Starts the crawl once it is this website's turn.
+
+    Returns:
+        WebsiteUpdate | None: The updates found by the crawl.
+
+    Raises:
+        ScanAlreadyQueuedError: If the website is already queued or being scanned.
+        ScanCancelledError: If the scan was cancelled before it finished.
+    """
+    if url in queued_crawls:
+        raise ScanAlreadyQueuedError(url)
+
+    crawl_task = asyncio.create_task(_crawl_in_turn(crawl))
+    queued_crawls[url] = crawl_task
+    try:
+        return await crawl_task
+    except asyncio.CancelledError:
+        current_task = asyncio.current_task()
+        if current_task and current_task.cancelling():
+            raise  # The app is shutting down, rather than the scan being cancelled
+        raise ScanCancelledError(url) from None
+    finally:
+        del queued_crawls[url]
+
+
+def cancel_scan(url: str) -> bool:
+    """Cancels a website's scan, whether it is waiting its turn or already crawling.
+
+    Nothing found by a cancelled scan is saved.
+
+    Args:
+        url (str): The URL of the website whose scan to cancel.
+
+    Returns:
+        bool: True if the scan was cancelled, or False if the website was not queued or being scanned.
+    """
+    crawl_task = queued_crawls.get(url)
+    return crawl_task is not None and crawl_task.cancel()
+
+
+async def _check_for_updates(
+    client: AsyncClient,
+    website: WebsiteRead,
+    max_pages: int | None,
+    delay: float | None,
+    concurrent: int | None,
+    init: bool,
+) -> WebsiteUpdate | None:
+    """Finds what has changed on a website since its last scan.
+
+    An inactive website only has its critical pages checked, as crawling the rest of the website
+    is what it has been switched off from (e.g. because it has too many pages to crawl).
+
+    Args:
+        client (AsyncClient): The HTTPX asynchronous client for making web requests.
+        website (WebsiteRead): The website to check.
+        max_pages (int | None): The maximum number of pages to crawl, or None for the default.
+        delay (float | None): Time in seconds to wait between requests, or None for the website's own.
+        concurrent (int | None): Maximum number of concurrent connections, or None for the website's own.
+        init (bool): Re-save the website's current state as its baseline.
+
+    Returns:
+        WebsiteUpdate | None: The updates found, or None if nothing changed.
+    """
+    if not website.active:
+        return await get_critical_page_only_updates(client, website, init)
+    return await get_website_updates(client, website, max_pages, delay, concurrent, init)
+
+
+async def _handle_too_large_website(client: AsyncClient, website: WebsiteRead, max_pages: int, init: bool) -> str:
+    """Deactivates a website with more pages than the crawler will scan, then checks its critical pages,
+    which are still watched while it is inactive, rather than leaving them until its next scan.
+
+    Args:
+        client (AsyncClient): The HTTPX asynchronous client for making web requests.
+        website (WebsiteRead): The website found to be too large.
+        max_pages (int): The most pages the crawler would scan.
+        init (bool): Re-save the critical pages' current state as their baseline.
+
+    Returns:
+        str: The HTML report saying the website was deactivated, followed by any changes found on its critical pages.
+
+    Raises:
+        ScanCancelledError: If the check of the critical pages was cancelled before it finished.
+    """
+    with db_context() as session:
+        website_service = WebsiteService(session)
+        action_message: str = website_service.handle_too_large(website.id, max_pages)
+        inactive_website: WebsiteRead = website_service.get(website.id)
+
+    too_large_report: str = generate_scan_report_html(website, status=ScanStatus.TOO_LARGE, message=action_message)
+    # The website is now inactive, so this scan only checks its critical pages and cannot find it too large again
+    critical_page_report: str | None = await scan_website(client, inactive_website, init=init)
+    return too_large_report + (critical_page_report or "")
+
+
 async def scan_website(
     client: AsyncClient,
     website: WebsiteRead,
@@ -70,7 +194,9 @@ async def scan_website(
     generates an HTML scan report.
 
     Automatically handles rate limits and unreachable sites by applying database
-    cooldown periods to the affected website record.
+    cooldown periods to the affected website record, and deactivates websites with
+    more pages than the crawler will scan. An inactive website only has its critical pages
+    checked. Waits for any scan already running to finish first.
 
     Args:
         client (AsyncClient): The HTTPX asynchronous client for making web requests.
@@ -87,10 +213,12 @@ async def scan_website(
 
     Raises:
         TrafficError: Re-raised if custom delay/concurrent parameters were set during a rate-limited scan.
+        ScanAlreadyQueuedError: If the website is already queued or being scanned.
+        ScanCancelledError: If the scan was cancelled before it finished.
     """
     try:
-        website_updates: WebsiteUpdate | None = await get_website_updates(
-            client, website, max_pages, delay, concurrent, init
+        website_updates: WebsiteUpdate | None = await queued_crawl(
+            website.url, lambda: _check_for_updates(client, website, max_pages, delay, concurrent, init)
         )
     except TrafficError as e:
         logger.error(f"Temporary ban or severe rate limit detected for {website.url}: {e}")
@@ -108,6 +236,9 @@ async def scan_website(
         with db_context() as session:
             action_message: str = WebsiteService(session).handle_connection_error(website.id)
         return generate_scan_report_html(website, status=ScanStatus.CONNECTION_ERROR, message=action_message)
+    except WebsiteTooLargeError as e:
+        logger.warning(f"Website too large to scan: {e}")
+        return await _handle_too_large_website(client, website, e.max_pages, init)
 
     with db_context() as session:
         website_service = WebsiteService(session)
@@ -129,14 +260,39 @@ async def scan_website(
     )
 
 
-async def scan_all_websites() -> str | None:
-    """Asynchronously scans all active, non-cooldown websites registered to a recipient.
+def _get_latest_state(website: WebsiteRead) -> WebsiteRead | None:
+    """Gets the latest saved state of a website, or None if it has been deleted.
+
+    A scan of every website can take hours, so each website is re-read just before its turn
+    to pick up changes made since the run started (e.g. it being deleted or deactivated).
+
+    Args:
+        website (WebsiteRead): The website as it was when the run started.
+
+    Returns:
+        WebsiteRead | None: The website as it is now, or None if it has since been deleted.
+    """
+    with db_context() as session:
+        try:
+            return WebsiteService(session).get(website.id)
+        except NotFoundError:
+            return None
+
+
+async def scan_all_websites(ignore_schedule: bool = False) -> str | None:
+    """Asynchronously scans all non-cooldown websites that are due a scan. Inactive websites
+    only have their critical pages checked.
 
     Updates the recipient's `last_scan_at` metadata and dispatches an HTML email notification
     if any scan reports were generated.
 
     A website whose scan fails unexpectedly is logged and skipped, and a failed email is logged
-    and skipped, so one problem cannot stop the other websites being scanned or reported.
+    and skipped, so one problem cannot stop the other websites being scanned or reported. A website
+    deleted during the run is skipped, or its scan cancelled if it was being scanned.
+
+    Args:
+        ignore_schedule (bool, optional): Also scan websites that are not due a scan yet, e.g. for
+            "Run All Scans" on the dashboard. Websites on cooldown are still skipped. Defaults to False.
 
     Returns:
         str | None: Consolidated HTML list of scan reports if updates/errors occurred,
@@ -151,21 +307,33 @@ async def scan_all_websites() -> str | None:
     reports_by_recipient: dict[EmailString, list[str]] = defaultdict(list)
     all_reports: list[str] = []
     async with AsyncClient() as client:
-        for website in websites:
-            if not website.active:
-                logger.warning(f"{website.url} has been skipped as it has been deactivated.")
+        for listed_website in websites:
+            website: WebsiteRead | None = _get_latest_state(listed_website)
+            if website is None:
+                logger.info(f"{listed_website.url} has been skipped as it was deleted during the run.")
                 continue
             if website.on_cooldown_until and website.on_cooldown_until > datetime.now():
                 logger.warning(f"{website.url} has been skipped as it is on cooldown.")
                 continue
-            if website.last_scan_at and (
-                run_started_at - datetime.combine(website.last_scan_at.date(), time.min)  # Start of the day
-            ) < timedelta(days=website.days_between_scans):
+            if (
+                not ignore_schedule
+                and website.last_scan_at
+                and (
+                    run_started_at - datetime.combine(website.last_scan_at.date(), time.min)  # Start of the day
+                )
+                < timedelta(days=website.days_between_scans)
+            ):
                 logger.info(f"{website.url} has been skipped as there has not been enough time since last scan.")
                 continue
 
             try:
                 report: str | None = await scan_website(client, website)
+            except ScanAlreadyQueuedError:
+                logger.info(f"{website.url} has been skipped as it is already queued or being scanned.")
+                continue
+            except ScanCancelledError:
+                logger.info(f"{website.url} has been skipped as its scan was cancelled.")
+                continue
             except Exception:
                 logger.exception(f"Scan failed for {website.url}, continuing with the remaining websites.")
                 report = None

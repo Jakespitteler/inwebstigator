@@ -1,9 +1,20 @@
 import uuid
 from collections.abc import Sequence
+from enum import StrEnum
 from typing import Protocol
 
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+
+
+class CRUDOperation(StrEnum):
+    """The standard operations a CRUD router can provide."""
+
+    GET_ALL = "get_all"
+    GET = "get"
+    CREATE = "create"
+    UPDATE = "update"
+    DELETE = "delete"
 
 
 class CRUDService[READ: BaseModel, CREATE: BaseModel, UPDATE: BaseModel](Protocol):
