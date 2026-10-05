@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from email.message import EmailMessage
 from email.utils import formatdate, make_msgid, parseaddr
 
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception_type, retry_if_not_exception_type, stop_after_attempt, wait_exponential
 
 from app.core.config import config
 
@@ -66,6 +66,10 @@ def build_message(
     return msg
 
 
+# A wrong password or a refused address will fail the same way every time, so is not retried
+PERMANENT_SMTP_ERRORS = (smtplib.SMTPAuthenticationError, smtplib.SMTPRecipientsRefused, smtplib.SMTPSenderRefused)
+
+
 @retry(
     wait=wait_exponential(
         multiplier=config.email_retry_multiplier,
@@ -73,7 +77,8 @@ def build_message(
         max=config.email_retry_max_wait_seconds,
     ),
     stop=stop_after_attempt(config.email_retry_max_attempts),
-    retry=retry_if_exception_type((smtplib.SMTPException, TimeoutError, ConnectionError)),
+    retry=retry_if_exception_type((smtplib.SMTPException, TimeoutError, ConnectionError))
+    & retry_if_not_exception_type(PERMANENT_SMTP_ERRORS),
     reraise=True,
 )
 def send_email(msg: EmailMessage) -> None:
@@ -81,7 +86,8 @@ def send_email(msg: EmailMessage) -> None:
 
     Establishes an SSL connection to the configured SMTP host and port, handles
     authentication if required, and dispatches the email payload. Applies automatic
-    retry logic with exponential backoff for transient network or SMTP errors.
+    retry logic with exponential backoff for transient network or SMTP errors. Permanent SMTP errors
+    (a failed login, or a refused sender or recipient) are raised straight away.
 
     Args:
         msg: The prepared EmailMessage instance to send.

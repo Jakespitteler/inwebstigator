@@ -1,3 +1,4 @@
+import smtplib
 from datetime import UTC, datetime
 from email.message import EmailMessage
 from typing import Any
@@ -148,3 +149,20 @@ def test_send_email_failure_and_retries(monkeypatch: pytest.MonkeyPatch) -> None
 
     # Ensure it tried the configured maximum number of attempts
     assert attempts == 3
+
+
+def test_send_email_does_not_retry_a_permanent_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.backend.email_service.SMTP_HOST", "smtp.example.com")
+    attempts = 0
+
+    def mock_smtp_ssl_raise(*args: Any, **kwargs: Any) -> Any:
+        nonlocal attempts
+        attempts += 1
+        raise smtplib.SMTPAuthenticationError(535, b"Bad credentials")
+
+    monkeypatch.setattr("app.backend.email_service.smtplib.SMTP_SSL", mock_smtp_ssl_raise)
+
+    with pytest.raises(smtplib.SMTPAuthenticationError):
+        send_email(EmailMessage())
+
+    assert attempts == 1

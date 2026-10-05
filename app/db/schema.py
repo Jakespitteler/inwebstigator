@@ -82,6 +82,9 @@ class DBCriticalPage(Base):
     recent_text_removed: Mapped[list[str]] = mapped_column(JSON, nullable=True)
     recent_text_changed: Mapped[list[str]] = mapped_column(JSON, nullable=True)
 
+    consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    last_failure_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+
 
 class DBWebsite(Base):
     __tablename__ = "websites"

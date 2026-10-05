@@ -328,6 +328,48 @@ async def test_scan_report_only_includes_changes_found_by_that_scan(session: Ses
 
 
 @pytest.mark.anyio
+async def test_unreachable_critical_page_is_reported_once_and_reset_when_back(session: Session, mocker: MockerFixture):
+    """Tests a failing critical page is only reported once it has failed scans in a row, is not reported
+    again while it stays down, and has its failure count reset (keeping its last good copy) once it is back."""
+    main_url = "https://example.com"
+    fees_url = f"{main_url}/fees"
+    fees_html = "<html><body><p>The fee is $100.</p></body></html>"
+    fees_status_code = 200
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        if str(request.url).rstrip("/") == fees_url:
+            return httpx2.Response(fees_status_code, text=fees_html)
+        return httpx2.Response(200, text="<html><body><p>Home page.</p></body></html>")
+
+    mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
+    mocker.patch("app.backend.engine.crawl_site", return_value={main_url})
+    service = WebsiteService(session)
+    website = service.create(WebsiteCreate(url=main_url, critical_pages=[fees_url]))
+
+    def fees_page() -> CriticalPageRead:
+        return next(page for page in service.get(website.id).critical_pages if page.url == fees_url)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
+        assert await scanner.scan_website(client, website) is None  # baseline
+
+        fees_status_code = 500
+        assert await scanner.scan_website(client, service.get(website.id)) is None  # may be a blip
+        report = await scanner.scan_website(client, service.get(website.id))
+        assert report is not None
+        assert "Watched Pages Unreachable (1)" in report
+        assert "HTTP 500" in report
+        assert await scanner.scan_website(client, service.get(website.id)) is None  # not reported again
+        assert fees_page().consecutive_failures == 3
+
+        fees_status_code = 200
+        assert await scanner.scan_website(client, service.get(website.id)) is None
+
+    assert fees_page().consecutive_failures == 0
+    assert fees_page().last_failure_reason is None
+    assert fees_page().text_body == fees_html
+
+
+@pytest.mark.anyio
 async def test_scan_after_a_failed_first_scan_saves_a_baseline_instead_of_reporting_everything(
     session: Session, mocker: MockerFixture
 ):

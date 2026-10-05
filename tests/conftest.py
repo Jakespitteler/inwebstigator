@@ -20,7 +20,7 @@ from sqlalchemy.orm import Mapped, Session, declarative_base, mapped_column
 from tenacity import wait_none
 
 from app.backend.email_service import send_email
-from app.backend.site_crawler import fetch_internal_links_from_url
+from app.backend.utils.http_client import fetch_content_from_url
 from app.backend.utils.links import normalise_url
 from app.db import core, repository, schema
 from app.db.utils.field_types import URLString
@@ -117,7 +117,7 @@ def api_client(session: Session) -> Iterator[TestClient]:
 
 @pytest.fixture(autouse=True)
 def disable_retry_wait():
-    fetch_internal_links_from_url.retry.wait = wait_none()  # pyright: ignore[reportFunctionMemberAccess]
+    fetch_content_from_url.retry.wait = wait_none()  # pyright: ignore[reportFunctionMemberAccess]
     send_email.retry.wait = wait_none()  # pyright: ignore[reportFunctionMemberAccess]
     yield
 

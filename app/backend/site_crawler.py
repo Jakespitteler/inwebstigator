@@ -3,7 +3,6 @@ import logging
 from collections.abc import Awaitable, Iterable, Iterator
 
 import httpx2
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.backend.utils.http_client import fetch_content_from_url
 from app.backend.utils.links import (
@@ -11,22 +10,11 @@ from app.backend.utils.links import (
     is_internal_web_page,
     normalise_url,
 )
-from app.core.config import config
 from app.core.errors import TrafficError, WebConnectionError, WebsiteTooLargeError
 
 logger = logging.getLogger(__name__)
 
 
-@retry(
-    wait=wait_exponential(
-        multiplier=config.fetch_site_retry_multiplier,
-        min=config.fetch_site_retry_min_wait_seconds,
-        max=config.fetch_site_retry_max_wait_seconds,
-    ),
-    stop=stop_after_attempt(config.fetch_site_retry_max_attempts),
-    retry=retry_if_exception_type((WebConnectionError, TrafficError)),
-    reraise=True,
-)
 async def fetch_internal_links_from_url(
     client: httpx2.AsyncClient,
     url: str,
@@ -36,8 +24,8 @@ async def fetch_internal_links_from_url(
 ) -> tuple[str, list[str], int | None]:
     """Safely fetches HTML content and extracts internal links under concurrency constraints.
 
-    Uses an asyncio Semaphore to throttle concurrent requests and applies retry logic
-    for connection failures or rate-limiting responses. Ensures redirects remain within the
+    Uses an asyncio Semaphore to throttle concurrent requests. Connection failures and rate-limiting
+    responses are retried by `fetch_content_from_url`. Ensures redirects remain within the
     target base domain scope.
 
     Args:
@@ -85,14 +73,11 @@ async def fetch_internal_links_from_url(
 
         except httpx2.HTTPStatusError as e:
             status_code = e.response.status_code
-
-            if status_code in {429, 502, 503, 504}:
-                raise TrafficError(url, status_code) from e
             logger.warning(f"Skipping {url=} due to page-level HTTP error ({status_code}).")
             return url, [], status_code
 
-        except (httpx2.TimeoutException, httpx2.ConnectError) as e:
-            raise WebConnectionError(url) from e
+        except (TrafficError, WebConnectionError):
+            raise  # Already retried by `fetch_content_from_url`
 
         except httpx2.RequestError as e:
             logger.warning(f"Skipping {url=} due to general request error. Raised: {e}")

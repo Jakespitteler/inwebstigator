@@ -2,6 +2,7 @@ import html
 from datetime import UTC, datetime
 from enum import StrEnum
 
+from app.core.config import config
 from app.models.website_models import WebsiteRead
 
 
@@ -98,10 +99,27 @@ def generate_scan_report_html(
         out.append("</ul>")
 
     if website.critical_pages:
+        # A page that keeps failing is listed as unreachable, rather than with changes from an earlier scan
+        unreachable_pages = [
+            cp for cp in website.critical_pages if cp.consecutive_failures >= config.critical_page_alert_after_failures
+        ]
+        if unreachable_pages:
+            has_changes = True
+            out.append(
+                f'<h3 class="section-title" style="font-size: 18px; color: #cf222e; margin-top: 25px;">Watched Pages Unreachable ({len(unreachable_pages)})</h3>'
+            )
+            out.append('<ul class="change-list" style="padding-left: 20px; margin: 0 0 15px 0;">')
+            for cp in unreachable_pages:
+                out.append(
+                    f'<li style="margin-bottom: 4px;">{_link(cp.url)}: {_safe(cp.last_failure_reason or "Unknown error")} ({cp.consecutive_failures} scans in a row)</li>'
+                )
+            out.append("</ul>")
+
         changed_pages = [
             cp
             for cp in website.critical_pages
-            if any(
+            if cp not in unreachable_pages
+            and any(
                 [
                     cp.recent_links_added,
                     cp.recent_links_removed,

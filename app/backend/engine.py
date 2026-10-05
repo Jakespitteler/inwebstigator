@@ -3,7 +3,7 @@ import logging
 import uuid
 from collections.abc import Sequence
 
-from httpx2 import AsyncClient
+from httpx2 import AsyncClient, HTTPStatusError, RequestError
 
 from app.backend.diff_checker import compare_page_content, find_link_difference
 from app.backend.site_crawler import crawl_site
@@ -11,7 +11,7 @@ from app.backend.utils.html_parser import parse_html
 from app.backend.utils.http_client import fetch_content_from_url
 from app.backend.utils.links import extract_links_from_html, separate_document_links
 from app.core.config import config
-from app.core.errors import TrafficError
+from app.core.errors import TrafficError, WebConnectionError
 from app.models.critical_page_models import CriticalPageRead, CriticalPageUpdate
 from app.models.website_models import WebsiteRead, WebsiteUpdate
 
@@ -21,6 +21,10 @@ DEFAULT_MAX_PAGES: int = config.web_crawler_default_max_pages
 DEFAULT_DELAY: float = config.web_crawler_default_delay
 DEFAULT_CONCURRENT: int = config.web_crawler_default_concurrent
 BATCH_402_THRESHOLD_SECONDS: int = config.web_crawler_batch_402_threshold_seconds
+ALERT_AFTER_FAILURES: int = config.critical_page_alert_after_failures
+
+# The ways fetching a critical page can fail. Anything else is a bug, so is not counted as the page being unreachable.
+FETCH_ERRORS = (HTTPStatusError, RequestError, TrafficError, WebConnectionError)
 
 
 def _website_has_been_updated(updates: WebsiteUpdate) -> bool:
@@ -86,6 +90,39 @@ async def get_critical_page_updates(
     return updates
 
 
+def _failed_check_update(
+    stored_page: CriticalPageRead, error: HTTPStatusError | RequestError | TrafficError | WebConnectionError
+) -> CriticalPageUpdate:
+    """Records a failed check of a critical page. Its saved content is kept to compare with once it is back.
+
+    A missing (404) or gone (410) page counts as having failed enough checks to be reported straight away.
+
+    Args:
+        stored_page (CriticalPageRead): The current state of the critical page retrieved from the database.
+        error: Why the page could not be fetched.
+
+    Returns:
+        CriticalPageUpdate: The page's new failure count and the reason it failed.
+    """
+    status_code: int | None = None
+    if isinstance(error, HTTPStatusError):
+        status_code = error.response.status_code
+    elif isinstance(error, TrafficError):
+        status_code = error.status_code
+
+    if status_code:
+        reason = f"HTTP {status_code}"
+    elif isinstance(error, WebConnectionError):
+        reason = "Connection failed or timed out"
+    else:
+        reason = "Request failed"
+
+    failures: int = stored_page.consecutive_failures + 1
+    if status_code in {404, 410}:
+        failures = max(failures, ALERT_AFTER_FAILURES)
+    return CriticalPageUpdate(url=stored_page.url, consecutive_failures=failures, last_failure_reason=reason)
+
+
 async def _gather_critical_page_updates(
     client: AsyncClient,
     critical_pages: Sequence[CriticalPageRead],
@@ -93,8 +130,9 @@ async def _gather_critical_page_updates(
 ) -> dict[uuid.UUID, CriticalPageUpdate]:
     """Checks each critical page for changes at the same time.
 
-    Failures are gathered per page, so one broken page (e.g. deleted, now a 404) is skipped
-    instead of stopping the rest of the pages being checked.
+    Failures are gathered per page, so one broken page (e.g. deleted, now a 404) is recorded as a failed
+    check instead of stopping the rest of the pages being checked. A page that can be checked again has
+    its failure count reset.
 
     Args:
         client (AsyncClient): The HTTP client used for fetching page content.
@@ -102,10 +140,8 @@ async def _gather_critical_page_updates(
         init (bool): Re-save each page's current state as its baseline.
 
     Returns:
-        dict[uuid.UUID, CriticalPageUpdate]: The updates for each page that changed or saved a baseline, by page ID.
-
-    Raises:
-        TrafficError: If a page was rate limited, as a rate limit applies to the whole website.
+        dict[uuid.UUID, CriticalPageUpdate]: The updates for each page that changed, saved a baseline,
+        failed or recovered, by page ID.
     """
     results = await asyncio.gather(
         *(get_critical_page_updates(client, stored_page, init) for stored_page in critical_pages),
@@ -113,15 +149,23 @@ async def _gather_critical_page_updates(
     )
     critical_page_updates: dict[uuid.UUID, CriticalPageUpdate] = {}
     for critical_page, result in zip(critical_pages, results, strict=True):
+        if isinstance(result, FETCH_ERRORS):
+            logger.warning(f"Critical page {critical_page.url} could not be fetched this scan: {result!r}")
+            critical_page_updates[critical_page.id] = _failed_check_update(critical_page, result)
+            continue
         if isinstance(result, BaseException):
-            # A rate limit applies to the whole site, so it is raised to put the website on cooldown.
             # Anything that is not an Exception (e.g. cancellation on shutdown) must not be swallowed.
-            if isinstance(result, TrafficError) or not isinstance(result, Exception):
+            if not isinstance(result, Exception):
                 raise result  # e.g. cancellation when the app is shutting down
             logger.warning(
                 f"Skipping critical page {critical_page.url} this scan as it could not be checked: {result!r}"
             )
-        elif result is not None:
+            continue
+        if critical_page.consecutive_failures:  # It can be checked again, so reset its failure count
+            result = result or CriticalPageUpdate(url=critical_page.url)
+            result.consecutive_failures = 0
+            result.last_failure_reason = None
+        if result is not None:
             critical_page_updates[critical_page.id] = result
     return critical_page_updates
 
