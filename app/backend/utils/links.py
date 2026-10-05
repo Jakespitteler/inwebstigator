@@ -137,6 +137,66 @@ def is_internal_web_page(base_url: str, check_url: str) -> bool:
     return base_url_path == check_url_path or base_url_path in check_url_path.parents
 
 
+def add_missing_scheme(url: str) -> str:
+    """Adds "https://" to the front of a URL typed without it, e.g. "example.com" becomes "https://example.com".
+
+    Args:
+        url: The URL as the user typed it.
+
+    Returns:
+        The URL starting with "https://", or unchanged if it already starts with a scheme such as "http://".
+    """
+    return url if urlparse(url).netloc else f"https://{url}"
+
+
+def _join_onto_website(website_url: str, relative_link: str) -> str:
+    """Joins a link onto the website's URL, adding the website's path if the link does not already include it.
+
+    For the website "https://example.com/au", both "/news" and "/au/news" become "https://example.com/au/news".
+
+    Args:
+        website_url: The full URL of the website.
+        relative_link: The link relative to the website, starting with "/".
+
+    Returns:
+        The full URL of the link.
+    """
+    website_path: PurePosixPath = PurePosixPath(urlparse(website_url).path or "/")
+    link_path: PurePosixPath = PurePosixPath(urlparse(relative_link).path)
+
+    # The link already includes the website's path, so it only needs the website's host
+    if link_path == website_path or website_path in link_path.parents:
+        return urljoin(website_url, relative_link)
+
+    return urljoin(website_url, str(website_path).rstrip("/") + relative_link)
+
+
+def resolve_critical_page_url(website_url: str, page_url: str) -> str:
+    """Turns a critical page typed by the user into a full URL on the website.
+
+    The page can be a full URL ("https://example.com/news"), a URL without "https://" ("example.com/news")
+    or a link relative to the website ("/news").
+
+    Args:
+        website_url: The full URL of the website the critical page belongs to.
+        page_url: The critical page as the user typed it.
+
+    Returns:
+        The full URL of the critical page.
+
+    Raises:
+        ValueError: If the critical page is on a different website.
+    """
+    # Links starting with a single "/" are relative to the website ("//" would start a link to another website)
+    is_relative_link: bool = page_url.startswith("/") and not page_url.startswith("//")
+    full_page_url: str = _join_onto_website(website_url, page_url) if is_relative_link else add_missing_scheme(page_url)
+
+    if _site_host(urlparse(full_page_url).netloc) != _site_host(urlparse(website_url).netloc):
+        raise ValueError(f"{page_url} is not a page on {website_url}.")
+
+    return full_page_url
+
+
 def normalise_url(url: str) -> str:
     """Normalises a URL by removing fragments and trailing slashes for deduplication.
 

@@ -1,11 +1,13 @@
 import uuid
 from datetime import datetime
 from enum import StrEnum
+from typing import Annotated, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
+from app.backend.utils.links import add_missing_scheme, resolve_critical_page_url
 from app.core.config import config
-from app.db.utils.field_types import EmailString, URLString
+from app.db.utils.field_types import URL_CONSTRAINTS, EmailString, URLString
 from app.models.critical_page_models import CriticalPageRead, CriticalPageUpdate
 from app.models.internal_link_models import InternalLinkRead
 from app.models.recipient_models import RecipientRead
@@ -15,6 +17,8 @@ DEFAULT_CONCURRENT: int = config.web_crawler_default_concurrent
 DEFAULT_DAYS_BETWEEN_SCANS: float = config.scheduler_default_days_between_scans
 MINIMUM_DAYS_BETWEEN_SCANS: float = config.scheduler_minimum_days_between_scans
 
+URL_LIST_ADAPTER: TypeAdapter[list[str]] = TypeAdapter(list[URLString])
+
 
 class DeactivationReason(StrEnum):
     """Why the app deactivated a website itself, so the dashboard can tell the user."""
@@ -23,12 +27,27 @@ class DeactivationReason(StrEnum):
 
 
 class WebsiteCreate(BaseModel):
-    url: URLString
-    critical_pages: list[URLString] = Field(default_factory=list[URLString], examples=[[""]])
+    # "https://" is added before the URL rules are checked, so "example.com" can be entered
+    url: Annotated[str, AfterValidator(add_missing_scheme), URL_CONSTRAINTS]
+    # Critical pages can also be links relative to the website (e.g. "/news") until they are resolved below
+    critical_pages: list[str] = Field(default_factory=list[str], examples=[[""]])
     recipient_emails: list[EmailString] = Field(default_factory=list[EmailString], examples=[[""]])
     recommended_delay: float = DEFAULT_DELAY
     recommended_concurrent: int = DEFAULT_CONCURRENT
     days_between_scans: float = Field(default=DEFAULT_DAYS_BETWEEN_SCANS, ge=MINIMUM_DAYS_BETWEEN_SCANS)
+
+    @model_validator(mode="after")
+    def resolve_critical_pages(self) -> Self:
+        """Turns each critical page into a full URL on the website, e.g. "/news" becomes "https://example.com/news".
+
+        Raises:
+            ValueError: If a critical page is on a different website or is not a valid URL.
+        """
+        resolved_page_urls: list[str] = [
+            resolve_critical_page_url(self.url, page_url) for page_url in self.critical_pages
+        ]
+        self.critical_pages = URL_LIST_ADAPTER.validate_python(resolved_page_urls)
+        return self
 
 
 class WebsiteRead(BaseModel):

@@ -2,13 +2,15 @@ import uuid
 from collections.abc import Sequence
 from contextlib import suppress
 from datetime import datetime
+from typing import Annotated
 
-from fastapi import APIRouter, Form, Request, status
+from fastapi import APIRouter, Body, Form, HTTPException, Request, status
 from fastapi.responses import FileResponse
 from fastapi.templating import Jinja2Templates
 from httpx2 import AsyncClient
 
 from app.backend.engine import get_critical_page_updates
+from app.backend.utils.links import resolve_critical_page_url
 from app.core.config import config
 from app.core.errors import NotFoundError, ScanCancelledError
 from app.core.paths import resource_path
@@ -200,19 +202,50 @@ async def website_initial_scan(session: SessionDep, model_create: WebsiteCreate)
     send_monitoring_started_notifications(website)
 
 
+def _discard_critical_page(critical_page_id: uuid.UUID) -> None:
+    """Deletes a critical page whose first scan failed, so a page that cannot be scanned is not added.
+
+    Args:
+        critical_page_id (uuid.UUID): The ID of the critical page to delete.
+    """
+    with db_context() as session, suppress(NotFoundError):
+        CriticalPageService(session).delete(critical_page_id)
+
+
 @SCANNER_ROUTER.post("/initial_critical_page_scan", response_model=None)
-async def critical_page_initial_scan(session: SessionDep, model_create: CriticalPageCreate) -> None:
+async def critical_page_initial_scan(
+    session: SessionDep,
+    website_id: Annotated[uuid.UUID, Body()],
+    url: Annotated[str, Body()],
+) -> None:
     """Registers a new critical_page in the database and triggers an immediate initial crawl.
+
+    If the first scan fails the critical page is not added, and the scan's error is raised.
 
     Args:
         session (SessionDep): Database session dependency.
-        model_create (CriticalPageCreate): Payload containing details to create the critical page record.
+        website_id (uuid.UUID): The website the critical page belongs to.
+        url (str): The critical page as the user typed it. Can be a full URL, a URL without "https://"
+            or a link relative to the website (e.g. "/news/today").
+
+    Raises:
+        HTTPException: 422 if the critical page is not a valid URL on the website.
     """
+    website: WebsiteRead = WebsiteService(session).get(website_id)
+    try:
+        model_create = CriticalPageCreate(website_id=website_id, url=resolve_critical_page_url(website.url, url))
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)) from error
+
     critical_page: CriticalPageRead = CriticalPageService(session).create(model_create)
     session.commit()
 
-    async with AsyncClient() as client:
-        updates: CriticalPageUpdate | None = await get_critical_page_updates(client, critical_page, init=True)
+    try:
+        async with AsyncClient() as client:
+            updates: CriticalPageUpdate | None = await get_critical_page_updates(client, critical_page, init=True)
+    except Exception:
+        _discard_critical_page(critical_page.id)
+        raise
 
     if updates:
         with db_context() as session:
