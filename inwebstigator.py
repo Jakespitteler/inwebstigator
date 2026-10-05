@@ -36,8 +36,8 @@ sys.path.insert(0, str(ROOT))
 
 import app.main
 
-DEFAULT_HOST: str = "127.0.0.1"
-PREFERRED_PORT: int = 48731
+DEFAULT_HOST: str = config.server_host
+PREFERRED_PORT: int = config.server_preferred_port
 WEBVIEW_STORAGE_DIR: Path = config.webview_storage_dir
 START_PATH: str = "/"
 

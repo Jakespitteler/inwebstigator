@@ -26,10 +26,14 @@ class Config(BaseSettings):
 
     webview_storage_dir: Path = user_data_dir / "webview"
 
+    server_host: str = "127.0.0.1"
+    server_preferred_port: int = 48731
+
     email: str = ""
     email_password: SecretStr = SecretStr("")
     smtp_host: str = ""
     smtp_port: int = 465
+    smtp_timeout_seconds: int = 30
 
     web_crawler_default_max_pages: int = 50_000
     web_crawler_default_delay: float = 0.5
@@ -50,6 +54,9 @@ class Config(BaseSettings):
     email_retry_min_wait_seconds: int = 2
     email_retry_max_wait_seconds: int = 15
     email_retry_multiplier: int = 1
+
+    website_cooldown_hours_after_throttle: int = 24
+    website_cooldown_hours_after_unreachable: int = 2
 
     scheduler_minimum_days_between_scans: float = 0.5
     scheduler_default_days_between_scans: float = 1

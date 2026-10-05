@@ -285,11 +285,11 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         )
 
         if not is_at_min_speed:
-            self.throttle_and_cooldown(id=website.id, hours=24)
+            self.throttle_and_cooldown(id=website.id, hours=config.website_cooldown_hours_after_throttle)
             return "Website throttled and placed on cooldown."
 
         # At minimum speed, manage consecutive failures
-        self.set_cooldown(id=website.id, hours=24)
+        self.set_cooldown(id=website.id, hours=config.website_cooldown_hours_after_throttle)
 
         if website.failed_attempts_at_min_speed >= config.web_crawler_max_failed_attempts_at_min_speed:
             self.update(id=website.id, model_update=WebsiteUpdate(active=False))
@@ -332,7 +332,7 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         Returns:
             str: Status action message confirming cooldown placement.
         """
-        self.set_cooldown(id=website_id, hours=2)
+        self.set_cooldown(id=website_id, hours=config.website_cooldown_hours_after_unreachable)
         return "Website placed on cooldown."
 
     def reset_failed_attempts(self, id: uuid.UUID) -> None:

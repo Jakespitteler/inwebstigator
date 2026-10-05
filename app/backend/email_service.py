@@ -11,6 +11,7 @@ FROM_ADDR: str = config.email
 
 SMTP_HOST: str = config.smtp_host
 SMTP_PORT: int = config.smtp_port
+SMTP_TIMEOUT_SECONDS: int = config.smtp_timeout_seconds
 SMTP_USER: str = config.email
 SMTP_PASS: str = config.email_password.get_secret_value()
 
@@ -90,7 +91,7 @@ def send_email(msg: EmailMessage) -> None:
         TimeoutError: If the connection times out and all retry attempts are exhausted.
         ConnectionError: If a network connection failure occurs and all retry attempts are exhausted.
     """
-    with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=30) as smtp:
+    with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT_SECONDS) as smtp:
         if SMTP_USER:
             smtp.login(SMTP_USER, SMTP_PASS)
         smtp.send_message(msg)
