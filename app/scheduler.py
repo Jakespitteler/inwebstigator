@@ -14,6 +14,7 @@ from app.scanner import scan_all_websites, send_notification
 
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
+SCAN_JOB_ID: str = "scan_then_send_health_checks"
 db_context = contextmanager(get_db_session)
 
 
@@ -55,6 +56,29 @@ async def _scan_then_send_health_checks() -> None:
             logger.exception(f"Failed to send health check to {recipient.email}")
 
 
+def next_scheduled_check() -> datetime | None:
+    """Gets when the scheduler next checks which websites are due a scan.
+
+    Returns:
+        datetime | None: The time of the next check, or None if automatic scans are not running.
+    """
+    job = scheduler.get_job(SCAN_JOB_ID)  # type: ignore
+    return job.next_run_time if job else None  # type: ignore
+
+
+def restart_scan_countdown() -> None:
+    """Restarts the countdown to the next scheduled check, e.g. after every website has just been scanned on demand.
+
+    Does nothing if automatic scans are not running.
+    """
+    if scheduler.get_job(SCAN_JOB_ID) is None:  # pyright: ignore[reportUnknownMemberType]
+        return
+    # A new interval trigger first fires one interval from now
+    scheduler.reschedule_job(  # pyright: ignore[reportUnknownMemberType]
+        SCAN_JOB_ID, trigger="interval", days=config.scheduler_minimum_days_between_scans
+    )
+
+
 @asynccontextmanager
 async def schedule_scans(app: FastAPI) -> AsyncGenerator[None]:
     """FastAPI lifespan context manager that schedules the recurring website scans and health
@@ -73,7 +97,7 @@ async def schedule_scans(app: FastAPI) -> AsyncGenerator[None]:
         days=config.scheduler_minimum_days_between_scans,
         next_run_time=datetime.now() + timedelta(seconds=1),
         misfire_grace_time=None,
-        id="scan_then_send_health_checks",
+        id=SCAN_JOB_ID,
         replace_existing=True,
     )
 

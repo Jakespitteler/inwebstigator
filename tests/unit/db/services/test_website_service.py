@@ -12,7 +12,7 @@ from app.db.services.internal_link_service import InternalLinkService
 from app.db.services.website_service import WebsiteService
 from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead, CriticalPageUpdate
 from app.models.internal_link_models import InternalLinkCreate, InternalLinkRead
-from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
+from app.models.website_models import DeactivationReason, WebsiteCreate, WebsiteRead, WebsiteUpdate
 
 
 def test_get_all_websites(session: Session, test_website: WebsiteRead) -> None:
@@ -459,3 +459,54 @@ def test_handle_connection_error(session: Session, test_website: WebsiteRead) ->
     fetched_website = service.get(id=test_website.id)
     assert fetched_website.on_cooldown_until is not None
     assert fetched_website.on_cooldown_until > datetime.now() + timedelta(hours=1, minutes=59)
+
+
+def test_handle_too_large_deactivates_website_and_records_why(session: Session, test_website: WebsiteRead) -> None:
+    """
+    Tests handle_too_large deactivates the website, records it was too large, and explains the page limit.
+
+    Args:
+        session: The database session fixture.
+        test_website: The test website record.
+    """
+    service = WebsiteService(session)
+
+    result_message = service.handle_too_large(id=test_website.id, max_pages=50_000)
+
+    assert "more than 50,000 pages" in result_message
+
+    fetched_website = service.get(id=test_website.id)
+    assert fetched_website.active is False
+    assert fetched_website.deactivated_reason == DeactivationReason.TOO_LARGE
+
+
+@pytest.mark.parametrize(
+    ("model_update", "expected_reason"),
+    [
+        (WebsiteUpdate(active=True), None),
+        (WebsiteUpdate(active=False, recommended_delay=2), DeactivationReason.TOO_LARGE),
+        (WebsiteUpdate(recommended_delay=2), DeactivationReason.TOO_LARGE),
+    ],
+    ids=["re-activated", "saved-while-inactive", "other-setting-changed"],
+)
+def test_deactivated_reason_is_only_cleared_by_reactivating(
+    session: Session,
+    test_website: WebsiteRead,
+    model_update: WebsiteUpdate,
+    expected_reason: DeactivationReason | None,
+) -> None:
+    """
+    Tests why a website was deactivated is kept until the website is re-activated.
+
+    Args:
+        session: The database session fixture.
+        test_website: The test website record.
+        model_update: The update made after the website was deactivated.
+        expected_reason: The deactivation reason expected after the update.
+    """
+    service = WebsiteService(session)
+    service.handle_too_large(id=test_website.id, max_pages=50_000)
+
+    updated_website = service.update(id=test_website.id, model_update=model_update)
+
+    assert updated_website.deactivated_reason == expected_reason

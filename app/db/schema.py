@@ -82,6 +82,10 @@ class DBCriticalPage(Base):
     recent_text_removed: Mapped[list[str]] = mapped_column(JSON, nullable=True)
     recent_text_changed: Mapped[list[str]] = mapped_column(JSON, nullable=True)
 
+    consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    last_failure_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
 
 class DBWebsite(Base):
     __tablename__ = "websites"
@@ -100,6 +104,7 @@ class DBWebsite(Base):
     last_scan_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    deactivated_reason: Mapped[str | None] = mapped_column(String, nullable=True)  # A DeactivationReason
     failed_attempts_at_min_speed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     on_cooldown_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -114,3 +119,4 @@ class DBWebsite(Base):
     recipients: Mapped[list[DBRecipient]] = relationship(secondary=website_recipient_association)
     recent_added_internal_links: Mapped[list[str]] = mapped_column(JSON, nullable=True)
     recent_removed_internal_links: Mapped[list[str]] = mapped_column(JSON, nullable=True)
+    internal_links_last_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

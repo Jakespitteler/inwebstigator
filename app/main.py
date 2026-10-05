@@ -3,10 +3,17 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import config
-from app.core.errors import IntegrityError, NotFoundError, WebConnectionError
+from app.core.errors import (
+    IntegrityError,
+    NotFoundError,
+    ScanAlreadyQueuedError,
+    ScanCancelledError,
+    WebConnectionError,
+)
 from app.core.logging import setup_logging
 from app.core.paths import resource_path
 from app.db.core import engine
+from app.db.migrations import add_missing_columns
 from app.db.schema import Base
 from app.frontend.api import routers
 from app.scheduler import schedule_scans
@@ -14,7 +21,7 @@ from app.scheduler import schedule_scans
 setup_logging()
 
 Base.metadata.create_all(bind=engine)
-
+add_missing_columns(engine, Base.metadata)  # Brings databases made by older versions of the app up to date
 if config.automatic_scans:
     app = FastAPI(title=config.app_name, lifespan=schedule_scans)
 else:
@@ -77,6 +84,25 @@ async def integrity_error_handler(request: Request, exc: IntegrityError):
     """
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
+        content={"detail": str(exc)},
+    )
+
+
+@app.exception_handler(ScanAlreadyQueuedError)
+@app.exception_handler(ScanCancelledError)
+async def scan_not_run_handler(request: Request, exc: ScanAlreadyQueuedError | ScanCancelledError):
+    """
+    Handles ScanAlreadyQueuedError and ScanCancelledError exceptions by returning a 409 status.
+
+    Args:
+        request: The incoming request.
+        exc: The ScanAlreadyQueuedError or ScanCancelledError exception.
+
+    Returns:
+        A JSONResponse with a 409 status.
+    """
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
         content={"detail": str(exc)},
     )
 
