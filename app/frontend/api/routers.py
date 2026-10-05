@@ -123,8 +123,11 @@ def get_dashboard(session: SessionDep, request: Request):
             "daily_date": daily_date,
             "websites": websites,
             "default_delay": config.web_crawler_default_delay,
+            "max_delay": config.web_crawler_max_delay,
             "default_concurrent": config.web_crawler_default_concurrent,
+            "min_concurrent": config.web_crawler_min_concurrent,
             "default_days_between_scans": config.scheduler_default_days_between_scans,
+            "minimum_days_between_scans": config.scheduler_minimum_days_between_scans,
         },
     )
 

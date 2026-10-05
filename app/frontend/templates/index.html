@@ -551,7 +551,7 @@
                                     type="number"
                                     id="new-website-days"
                                     value="{{ default_days_between_scans }}"
-                                    min="0.5"
+                                    min="{{ minimum_days_between_scans }}"
                                     step="any"
                                     required
                                 >
@@ -564,6 +564,7 @@
                                     id="new-website-delay"
                                     value="{{ default_delay }}"
                                     min="0"
+                                    max="{{ max_delay }}"
                                     step="0.1"
                                     required
                                 >
@@ -575,7 +576,7 @@
                                     type="number"
                                     id="new-website-concurrent"
                                     value="{{ default_concurrent }}"
-                                    min="1"
+                                    min="{{ min_concurrent }}"
                                     step="1"
                                     required
                                 >
@@ -884,6 +885,7 @@
                                         class="scan-delay"
                                         value="{{ website.recommended_delay }}"
                                         min="0"
+                                        max="{{ max_delay }}"
                                         step="0.1"
                                         required
                                     >
@@ -902,7 +904,7 @@
                                         type="number"
                                         class="scan-concurrent"
                                         value="{{ website.recommended_concurrent }}"
-                                        min="1"
+                                        min="{{ min_concurrent }}"
                                         step="1"
                                         required
                                     >
@@ -919,7 +921,7 @@
                                         type="number"
                                         class="days-between-scans"
                                         value="{{ website.days_between_scans }}"
-                                        min="0.5"
+                                        min="{{ minimum_days_between_scans }}"
                                         step="any"
                                         required
                                     >
