@@ -33,6 +33,7 @@ from app.frontend.api.utils import (
     build_word_diff,
     format_timestamp,
     newest_first,
+    scan_time,
     website_name,
 )
 from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead, CriticalPageUpdate
@@ -52,6 +53,7 @@ ROOT_ROUTER = APIRouter()
 templates = Jinja2Templates(directory=resource_path("app", "frontend", "templates"))
 templates.env.filters["website_name"] = website_name  # pyright: ignore[reportUnknownMemberType]
 templates.env.filters["format_timestamp"] = format_timestamp  # pyright: ignore[reportUnknownMemberType]
+templates.env.filters["scan_time"] = scan_time  # pyright: ignore[reportUnknownMemberType]
 
 
 # ======================

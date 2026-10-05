@@ -18,6 +18,7 @@ from app.core.errors import ScanCancelledError, WebsiteTooLargeError
 from app.db.core import get_db_session
 from app.db.schema import Base, DBCriticalPage, DBRecipient, DBWebsite
 from app.frontend.api import routers
+from app.frontend.api.utils import website_name
 from app.main import app
 from app.models import critical_page_models, recipient_models, website_models
 from app.scanner import queued_crawls
@@ -190,6 +191,35 @@ def _next_check_text(api_client: TestClient) -> str | None:
     return " ".join(line.get_text().split()) if line else None
 
 
+def _last_scan_by_website(api_client: TestClient) -> dict[str, str]:
+    """Returns each website card's "Last scanned" line, keyed by the website's display name."""
+    response = api_client.get("/")
+    assert response.status_code == 200, response.text
+    cards = BeautifulSoup(response.text, "html.parser").select(".website-card")
+    return {
+        card["data-website-name"]: " ".join(card.select_one(".last-scan").get_text().split())  # type: ignore[union-attr]
+        for card in cards
+    }
+
+
+def test_dashboard_shows_each_websites_own_scan_time(api_client: TestClient, session: Session) -> None:
+    """Tests every website card shows when that website was last scanned, not the latest scan overall."""
+    session.add_all(
+        [
+            DBWebsite(url="https://older.example.com", last_scan_at=datetime(2026, 9, 28, 9, 5)),
+            DBWebsite(url="https://newer.example.com", last_scan_at=datetime(2026, 10, 1, 14, 30)),
+            DBWebsite(url="https://never-scanned.example.com"),
+        ]
+    )
+    session.flush()
+
+    assert _last_scan_by_website(api_client) == {
+        "older.example.com": "Last scanned: 28 Sep 2026, 09:05",
+        "newer.example.com": "Last scanned: 01 Oct 2026, 14:30",
+        "never-scanned.example.com": "Last scanned: Not scanned yet",
+    }
+
+
 def test_dashboard_shows_next_scheduled_check(api_client: TestClient, mocker: MockerFixture) -> None:
     """Tests the dashboard shows when the scheduler next checks which websites are due a scan."""
     mocker.patch("app.frontend.api.routers.next_scheduled_check", return_value=datetime(2026, 10, 5, 21, 30))
@@ -253,7 +283,7 @@ def test_run_all_scans_every_website_and_restarts_the_countdown(api_client: Test
 def test_manual_scan_records_scan_time(
     api_client: TestClient, session: Session, test_website: website_models.WebsiteRead, mocker: MockerFixture
 ) -> None:
-    """Tests "Run Scan Now" records when the website was scanned, so the scheduler sees it."""
+    """Tests "Run Scan Now" records when the website was scanned, so the dashboard and scheduler see it."""
     mocker.patch("app.frontend.api.routers.scan_website", return_value=None)
     mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
     before = datetime.now()
@@ -265,6 +295,9 @@ def test_manual_scan_records_scan_time(
     assert website
     last_scan_at = website.last_scan_at
     assert last_scan_at is not None and last_scan_at >= before
+    assert _last_scan_by_website(api_client)[website_name(test_website.url)] == (
+        f"Last scanned: {last_scan_at:%d %b %Y, %H:%M}"
+    )
 
 
 def test_manual_scan_of_a_website_already_queued_is_refused(

@@ -28,6 +28,13 @@ def format_timestamp(moment: datetime) -> str:
     return moment.strftime("%d %b %Y, %H:%M")
 
 
+def scan_time(value: datetime | None) -> str:
+    """Display when a website was last scanned, or that it hasn't been yet."""
+    if value is None:
+        return "Not scanned yet"
+    return format_timestamp(value)
+
+
 @dataclass
 class TextChangeRecord:
     old_section: str | None
