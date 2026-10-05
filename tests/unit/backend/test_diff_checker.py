@@ -1,10 +1,29 @@
+import random
+from collections import Counter
+from collections.abc import Iterable
+
 from app.backend.diff_checker import compare_page_content, find_link_difference
-from app.backend.utils.html_parser import ContentBlock, HTMLBlockType, PageContent
+from app.backend.utils.html_parser import ChangedBlock, ContentBlock, HTMLBlockType, PageContent, parse_html
 
 
 def create_block(text: str, heading: str = "H1", block_type: HTMLBlockType = HTMLBlockType.PARAGRAPH) -> ContentBlock:
     """Helper to quickly create ContentBlock instances for testing."""
     return ContentBlock(parent_heading=heading, block_type=block_type, text=text)
+
+
+def compare_html(old_html: str, new_html: str) -> tuple[list[ContentBlock], list[ContentBlock], list[ChangedBlock]]:
+    """Helper to parse two versions of a page and compare them, as a real scan does."""
+    return compare_page_content(parse_html(old_html), parse_html(new_html))
+
+
+def texts(blocks: Iterable[ContentBlock]) -> list[str]:
+    """Helper to list just the text of each block."""
+    return [block.text for block in blocks]
+
+
+def text_pairs(changed: Iterable[ChangedBlock]) -> list[tuple[str, str]]:
+    """Helper to list the (before, after) text of each changed block."""
+    return [(change.old_block.text, change.new_block.text) for change in changed]
 
 
 def test_compare_identical_content():
@@ -124,24 +143,201 @@ def test_compare_uneven_replacements_more_new():
     assert added[0].text == "This is a brand new line appended after."
 
 
-def test_compare_metadata_change():
+def test_compare_parent_heading_change_alone_is_not_a_change() -> None:
     """
-    If the text is identical but the parent heading changes, it triggers a SequenceMatcher 'replace'.
-    Because text similarity is 1.0, it should be categorised as changed rather than added/removed.
+    Text that only has a different parent heading is the same content, so is not reported.
+    A renamed heading is reported through the heading's own block instead.
     """
     old = PageContent(blocks=[create_block("Exact same text.", heading="Old Heading")])
     new = PageContent(blocks=[create_block("Exact same text.", heading="New Heading")])
 
+    assert compare_page_content(old, new) == ([], [], [])
+
+
+def test_compare_renamed_heading_is_reported_once() -> None:
+    """A renamed heading is one change, not a change for every block beneath it."""
+    added, removed, changed = compare_html(
+        "<main><h2>Fees</h2><p>Application fee is $50.</p><p>Renewal fee is $30.</p></main>",
+        "<main><h2>Fees 2026</h2><p>Application fee is $50.</p><p>Renewal fee is $30.</p></main>",
+    )
+
+    assert (added, removed) == ([], [])
+    assert text_pairs(changed) == [("Fees", "Fees 2026")]
+
+
+def test_compare_renamed_heading_and_new_paragraph_do_not_repeat_unchanged_text() -> None:
+    """
+    Regression: a new paragraph at the top of a section whose heading was renamed shifted every later
+    block by one, so unchanged paragraphs were reported as both removed and added.
+    """
+    added, removed, changed = compare_html(
+        "<main><h2>Fees</h2><p>Application fee is $50.</p><p>Renewal fee is $30.</p><p>Late fee is $10.</p></main>",
+        "<main><h2>Fees 2026</h2><p>Note: fees are reviewed yearly.</p>"
+        "<p>Application fee is $50.</p><p>Renewal fee is $30.</p><p>Late fee is $10.</p></main>",
+    )
+
+    assert texts(added) == ["Note: fees are reviewed yearly."]
+    assert removed == []
+    assert text_pairs(changed) == [("Fees", "Fees 2026")]
+
+
+def test_compare_new_sub_heading_mid_section_only_reports_new_content() -> None:
+    """Regression: blocks moved under a new sub-heading were wrongly paired with each other as changes."""
+    added, removed, changed = compare_html(
+        "<main><h2>Eligibility</h2><p>You must be 18 or over.</p><p>You must live in WA.</p>"
+        "<p>You must hold a licence.</p></main>",
+        "<main><h2>Eligibility</h2><p>You must be 18 or over.</p><h3>Residency</h3>"
+        "<p>This section covers where you live.</p><p>You must live in WA.</p><p>You must hold a licence.</p></main>",
+    )
+
+    assert texts(added) == ["Residency", "This section covers where you live."]
+    assert (removed, changed) == ([], [])
+
+
+def test_compare_tag_change_alone_is_not_a_change() -> None:
+    """Regression: paragraphs turned into list items were reported as both removed and added."""
+    added, removed, changed = compare_html(
+        "<main><h2>Info</h2><p>Bring photo ID.</p><p>Bring proof of address.</p></main>",
+        "<main><h2>Info</h2><p>What to bring:</p>"
+        "<ul><li>Bring photo ID.</li><li>Bring proof of address.</li></ul></main>",
+    )
+
+    assert texts(added) == ["What to bring:"]
+    assert (removed, changed) == ([], [])
+
+
+def test_compare_moved_paragraph_is_not_a_change() -> None:
+    """Regression: a paragraph moved elsewhere on the page was reported as both removed and added."""
+    added, removed, changed = compare_html(
+        "<main><h2>Info</h2><p>Alpha paragraph text.</p><p>Bravo paragraph text.</p>"
+        "<p>Charlie paragraph text.</p></main>",
+        "<main><h2>Info</h2><p>Bravo paragraph text.</p><p>Charlie paragraph text.</p>"
+        "<p>Alpha paragraph text.</p></main>",
+    )
+
+    assert (added, removed, changed) == ([], [], [])
+
+
+def test_compare_edit_is_paired_with_its_own_block_not_its_position() -> None:
+    """Regression: a new paragraph before an edited one meant the edit was compared with the new paragraph."""
+    added, removed, changed = compare_html(
+        "<main><h2>Info</h2><p>Opening hours are 9am to 5pm weekdays.</p><p>Closed on public holidays.</p></main>",
+        "<main><h2>Info</h2><p>New: online bookings now available.</p>"
+        "<p>Opening hours are 9am to 4pm weekdays.</p><p>Closed on public holidays.</p></main>",
+    )
+
+    assert texts(added) == ["New: online bookings now available."]
+    assert removed == []
+    assert text_pairs(changed) == [("Opening hours are 9am to 5pm weekdays.", "Opening hours are 9am to 4pm weekdays.")]
+
+
+def test_compare_reordered_edits_are_paired_by_similarity() -> None:
+    """Two blocks that were both edited and swapped round are each paired with their own new version."""
+    old = PageContent(
+        blocks=[
+            create_block("The office opens at 9am on weekdays."),
+            create_block("Parking is free for all visitors."),
+        ]
+    )
+    new = PageContent(
+        blocks=[
+            create_block("Parking is free for registered visitors."),
+            create_block("The office opens at 8am on weekdays."),
+        ]
+    )
+
     added, removed, changed = compare_page_content(old, new)
 
-    assert len(added) == 0
-    assert len(removed) == 0
-    assert len(changed) == 1
+    assert (added, removed) == ([], [])
+    assert text_pairs(changed) == [
+        ("Parking is free for all visitors.", "Parking is free for registered visitors."),
+        ("The office opens at 9am on weekdays.", "The office opens at 8am on weekdays."),
+    ]
 
-    changed_block = changed[0]
-    assert changed_block.similarity == 1.0
-    assert changed_block.old_block.parent_heading == "Old Heading"
-    assert changed_block.new_block.parent_heading == "New Heading"
+
+def test_compare_repeated_text_only_reports_the_removed_copy() -> None:
+    """Text that appears more than once (e.g. "Read more") is only reported for the copy that was removed."""
+    added, removed, changed = compare_html(
+        "<main><h2>Alpha</h2><p>Read more</p><h2>Bravo</h2><p>Read more</p><h2>Charlie</h2><p>Read more</p></main>",
+        "<main><h2>Alpha</h2><p>Read more</p><h2>Charlie</h2><p>Read more</p></main>",
+    )
+
+    assert [(block.parent_heading, block.text) for block in removed] == [("Alpha", "Bravo"), ("Bravo", "Read more")]
+    assert (added, changed) == ([], [])
+
+
+def test_compare_large_rewrite_still_pairs_each_edit_with_its_own_block() -> None:
+    """
+    A changed region far bigger than MAX_COMPARISONS_PER_BLOCK only compares nearby blocks,
+    which must still find each block's own edit.
+    """
+    old = PageContent(
+        blocks=[create_block(f"Rule {i} says the fee for item {i} is due in 30 days.") for i in range(120)]
+    )
+    new = PageContent(
+        blocks=[create_block(f"Rule {i} says the fee for item {i} is due in 14 days.") for i in range(120)]
+    )
+
+    added, removed, changed = compare_page_content(old, new)
+
+    assert (added, removed) == ([], [])
+    assert text_pairs(changed) == list(zip(texts(old.blocks), texts(new.blocks), strict=True))
+
+
+def _random_sentence(rng: random.Random) -> str:
+    """Builds a short sentence from a small vocabulary, so repeated and similar text is common."""
+    vocabulary = ["fee", "form", "apply", "online", "renew", "licence", "office", "hours", "free", "late"]
+    return " ".join(rng.choices(vocabulary, k=rng.randint(1, 6)))
+
+
+def _randomly_edit(rng: random.Random, blocks: list[ContentBlock]) -> list[ContentBlock]:
+    """Applies a few random inserts, deletes, moves, text edits, heading changes and tag changes."""
+    edited = list(blocks)
+    for _ in range(rng.randint(1, 5)):
+        action = rng.choice(["insert", "delete", "move", "edit", "reheading", "retag"])
+        if action == "insert" or not edited:
+            edited.insert(rng.randint(0, len(edited)), create_block(_random_sentence(rng)))
+            continue
+
+        index = rng.randrange(len(edited))
+        block = edited[index]
+        match action:
+            case "delete":
+                edited.pop(index)
+            case "move":
+                edited.insert(rng.randint(0, len(edited) - 1), edited.pop(index))
+            case "edit":
+                edited[index] = block.model_copy(update={"text": f"{block.text} {_random_sentence(rng)}"})
+            case "reheading":
+                edited[index] = block.model_copy(update={"parent_heading": "Renamed heading"})
+            case _:
+                edited[index] = block.model_copy(update={"block_type": HTMLBlockType.LIST_ITEM})
+    return edited
+
+
+def test_compare_never_reports_unchanged_text_after_random_edits() -> None:
+    """
+    Whatever edits are made, once the reported changes are taken away, what is left of the old page and the
+    new page must be exactly the same text. So the same text is never both added and removed, and a change
+    always changes the text.
+    """
+    rng = random.Random(2026)
+
+    for _ in range(500):
+        old_blocks = [create_block(_random_sentence(rng)) for _ in range(rng.randint(0, 12))]
+        new_blocks = _randomly_edit(rng, old_blocks)
+
+        added, removed, changed = compare_page_content(PageContent(blocks=old_blocks), PageContent(blocks=new_blocks))
+
+        old_counts, new_counts = Counter(texts(old_blocks)), Counter(texts(new_blocks))
+        reported_old_counts = Counter(texts(removed)) + Counter(change.old_block.text for change in changed)
+        reported_new_counts = Counter(texts(added)) + Counter(change.new_block.text for change in changed)
+
+        assert not set(texts(added)) & set(texts(removed))
+        assert all(change.old_block.text != change.new_block.text for change in changed)
+        assert reported_old_counts <= old_counts
+        assert reported_new_counts <= new_counts
+        assert old_counts - reported_old_counts == new_counts - reported_new_counts
 
 
 def test_compare_custom_similarity_threshold():

@@ -45,6 +45,18 @@ class IntegrityError(DataBaseError):
         super().__init__("Data validation error. Ensure all referenced IDs exist and unique constraints are met.")
 
 
+class UndeliverableEmailError(Exception):
+    """Exception raised when an email to an address bounces, so the address cannot receive email.
+
+    Attributes:
+        address: The email address that could not be emailed.
+    """
+
+    def __init__(self, address: str) -> None:
+        self.address: str = address
+        super().__init__(f"An email to {address} could not be delivered.")
+
+
 class WebCrawlerError(Exception):
     """Base class for all custom web crawler exceptions in the application."""
 
@@ -80,3 +92,41 @@ class WebConnectionError(WebCrawlerError):
 
     def __init__(self, url: str) -> None:
         super().__init__(f"Network traffic issue (Timeout/Connection drop) reaching {url=}.")
+
+
+class WebsiteTooLargeError(WebCrawlerError):
+    """Exception raised when a website has more pages than the crawler will scan.
+
+    Attributes:
+        url: The URL of the website that is too large to scan.
+        max_pages: The most pages the crawler would scan.
+    """
+
+    def __init__(self, url: str, max_pages: int) -> None:
+        self.url: str = url
+        self.max_pages: int = max_pages
+        super().__init__(f"{url} has more than {max_pages:,} pages, which is more than the crawler will scan.")
+
+
+class ScanAlreadyQueuedError(WebCrawlerError):
+    """Exception raised when a scan is requested for a website that is already queued or being scanned.
+
+    Attributes:
+        url: The URL of the website that is already queued or being scanned.
+    """
+
+    def __init__(self, url: str) -> None:
+        self.url: str = url
+        super().__init__(f"{url} is already queued or being scanned.")
+
+
+class ScanCancelledError(WebCrawlerError):
+    """Exception raised when a website's scan is cancelled before it finished.
+
+    Attributes:
+        url: The URL of the website whose scan was cancelled.
+    """
+
+    def __init__(self, url: str) -> None:
+        self.url: str = url
+        super().__init__(f"The scan of {url} was cancelled.")

@@ -2,6 +2,7 @@ import html
 from datetime import UTC, datetime
 from enum import StrEnum
 
+from app.core.config import config
 from app.models.website_models import WebsiteRead
 
 
@@ -11,6 +12,7 @@ class ScanStatus(StrEnum):
     CONNECTION_ERROR = "connection_error"
     SKIPPED_DEACTIVATED = "skipped_deactivated"
     SKIPPED_COOLDOWN = "skipped_cooldown"
+    TOO_LARGE = "too_large"
 
 
 def _safe(text: str) -> str:
@@ -40,6 +42,7 @@ def generate_scan_report_html(
         ScanStatus.CONNECTION_ERROR: ("Connection Failure Report", "#cf222e"),
         ScanStatus.SKIPPED_DEACTIVATED: ("Scan Skipped (Deactivated)", "#9a6700"),
         ScanStatus.SKIPPED_COOLDOWN: ("Scan Skipped (Cooldown Active)", "#9a6700"),
+        ScanStatus.TOO_LARGE: ("Scan Refused (Website Too Large)", "#9a6700"),
     }
     title_prefix, header_color = status_config.get(status, ("Website Report", "#1f2328"))
 
@@ -96,10 +99,27 @@ def generate_scan_report_html(
         out.append("</ul>")
 
     if website.critical_pages:
+        # A page that keeps failing is listed as unreachable, rather than with changes from an earlier scan
+        unreachable_pages = [
+            cp for cp in website.critical_pages if cp.consecutive_failures >= config.critical_page_alert_after_failures
+        ]
+        if unreachable_pages:
+            has_changes = True
+            out.append(
+                f'<h3 class="section-title" style="font-size: 18px; color: #cf222e; margin-top: 25px;">Watched Pages Unreachable ({len(unreachable_pages)})</h3>'
+            )
+            out.append('<ul class="change-list" style="padding-left: 20px; margin: 0 0 15px 0;">')
+            for cp in unreachable_pages:
+                out.append(
+                    f'<li style="margin-bottom: 4px;">{_link(cp.url)}: {_safe(cp.last_failure_reason or "Unknown error")} ({cp.consecutive_failures} scans in a row)</li>'
+                )
+            out.append("</ul>")
+
         changed_pages = [
             cp
             for cp in website.critical_pages
-            if any(
+            if cp not in unreachable_pages
+            and any(
                 [
                     cp.recent_links_added,
                     cp.recent_links_removed,
@@ -202,6 +222,26 @@ def generate_scan_report_html(
     return "".join(out)
 
 
+def recipient_added_html(website_url: str) -> str:
+    """Generates the HTML body of the email sent to confirm an address can receive email when it is added.
+
+    Args:
+        website_url (str): The URL of the website the address is being added as a recipient for.
+    """
+    return (
+        "<div style=\"font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; "
+        "background-color: #ffffff; color: #1f2328; line-height: 1.5; padding: 20px; max-width: 800px; "
+        'margin: 0 auto; border-radius: 8px; border: 1px solid #d0d7de;">'
+        '<h2 style="margin-top: 0; font-size: 20px; border-bottom: 1px solid #d0d7de; padding-bottom: 8px;">'
+        "Email address added</h2>"
+        f'<p style="margin: 0;">This email address is being added as a recipient for {_safe(website_url)}. '
+        "You will be emailed when a change is found.</p>"
+        '<hr style="border: 0; height: 1px; background: #d0d7de; margin: 25px 0;">'
+        '<p style="color: #57606a; font-size: 12px; margin: 0;">This is an automated message.</p>'
+        "</div>"
+    )
+
+
 def _format_days(days: float) -> str:
     """Formats a day count for display, e.g. 1 -> "day", 7 -> "7 days", 0.5 -> "0.5 days"."""
     return "day" if days == 1 else f"{days:g} days"
@@ -209,6 +249,8 @@ def _format_days(days: float) -> str:
 
 def monitoring_started_html(website: WebsiteRead, days_between_health_checks: float) -> str:
     """Generates the HTML body of the email confirming a website is now being monitored.
+
+    An inactive website (e.g. one too large to scan) is said to only have its critical pages watched.
 
     Args:
         website (WebsiteRead): The website that has started being monitored.
@@ -224,6 +266,12 @@ def monitoring_started_html(website: WebsiteRead, days_between_health_checks: fl
         if critical_pages
         else ""
     )
+    inactive_section = (
+        ""
+        if website.active
+        else '<p style="margin: 16px 0 0;">This website is inactive, so only the pages above are checked. '
+        "New and removed pages on the rest of the website are not looked for.</p>"
+    )
     return (
         "<div style=\"font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; "
         "background-color: #ffffff; color: #1f2328; line-height: 1.5; padding: 20px; max-width: 800px; "
@@ -234,6 +282,7 @@ def monitoring_started_html(website: WebsiteRead, days_between_health_checks: fl
         f"It is checked every {_format_days(website.days_between_scans)}, and you will be emailed "
         "when a change is found.</p>"
         f"{critical_pages_section}"
+        f"{inactive_section}"
         '<p style="margin: 16px 0 0;">If nothing changes, you will get a short confirmation email every '
         f"{_format_days(days_between_health_checks)} so you know monitoring is still running.</p>"
         '<hr style="border: 0; height: 1px; background: #d0d7de; margin: 25px 0;">'

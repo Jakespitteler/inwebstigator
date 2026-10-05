@@ -5,7 +5,7 @@ import httpx2
 import pytest
 
 from app.backend.site_crawler import crawl_site, fetch_internal_links_from_url
-from app.core.errors import TrafficError, WebConnectionError
+from app.core.errors import TrafficError, WebConnectionError, WebsiteTooLargeError
 from tests.conftest import RequestHandler
 
 # ========================
@@ -82,28 +82,48 @@ async def test_crawl_site_success_and_skips_404(
     website_handler: RequestHandler,
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
 ):
-    """Tests that the crawler successfully navigates valid pages and gracefully skips 404s."""
+    """Tests that the crawler successfully navigates valid pages and leaves out pages it cannot reach (404s)."""
     async with mock_client_factory(website_handler) as client:
         visited: set[str] = await crawl_site(client, test_url, max_pages=10)
 
-    assert len(visited) == 6
-    assert test_url in visited
-    assert f"{test_url}page1.html" in visited
-    assert f"{test_url}page2.html" in visited
-    assert f"{test_url}404-page.html" in visited
+    assert visited == {test_url, f"{test_url}page1.html", f"{test_url}page2.html"}
+    assert f"{test_url}404-page.html" not in visited
 
 
 @pytest.mark.anyio
-async def test_crawl_site_respects_max_pages(
+async def test_crawl_site_refuses_a_website_with_more_pages_than_max_pages(
     test_url: str,
     website_handler: RequestHandler,
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
 ):
-    """Tests that the crawler stops exactly at the max_pages limit."""
-    async with mock_client_factory(website_handler) as client:
-        visited: set[str] = await crawl_site(client, test_url, max_pages=2)
+    """Tests a website with more pages than the limit is refused, rather than partly crawled."""
+    requested_urls: list[str] = []
 
-    assert len(visited) == 2
+    def counting_handler(request: httpx2.Request) -> httpx2.Response:
+        response: httpx2.Response = website_handler(request)
+        if response.is_success:  # Pages that cannot be reached do not count towards the limit
+            requested_urls.append(str(request.url))
+        return response
+
+    async with mock_client_factory(counting_handler) as client:
+        with pytest.raises(WebsiteTooLargeError) as exc_info:
+            await crawl_site(client, test_url, max_pages=2)
+
+    assert exc_info.value.max_pages == 2
+    assert len(requested_urls) == 2  # The limit is never exceeded
+
+
+@pytest.mark.anyio
+async def test_crawl_site_allows_a_website_with_exactly_max_pages(
+    test_url: str,
+    website_handler: RequestHandler,
+    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
+):
+    """Tests a website with exactly as many pages as the limit is crawled in full."""
+    async with mock_client_factory(website_handler) as client:
+        visited: set[str] = await crawl_site(client, test_url, max_pages=3)
+
+    assert len(visited) == 3
 
 
 @pytest.mark.anyio
@@ -168,12 +188,11 @@ async def test_crawl_site_non_fatal_errors(
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
     handler: RequestHandler,
 ):
-    """Tests that non-fatal errors handle gracefully, returning empty links."""
+    """Tests that non-fatal errors are handled gracefully, leaving the unreachable page out of the links."""
     async with mock_client_factory(handler) as client:
         visited: set[str] = await crawl_site(client, test_url)
 
-    assert len(visited) == 1
-    assert test_url in visited
+    assert visited == set()
 
 
 @pytest.mark.anyio
@@ -200,3 +219,32 @@ async def test_crawl_site_follows_homepage_redirect_to_www(
 
     assert "https://www.example.com/about" in visited
     assert any(url.endswith("/contact") for url in visited)
+
+
+@pytest.mark.anyio
+async def test_crawl_site_cancels_its_other_requests_when_it_gives_up(test_url: str):
+    """Tests the rest of a round is cancelled when one page fails for good, so an abandoned crawl does not
+    keep requesting pages in the background while the next website is scanned."""
+    gave_up = asyncio.Event()
+    requests_finished_after_giving_up: list[str] = []
+
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        url = str(request.url)
+        if url == test_url:
+            return httpx2.Response(
+                200, text='<a href="/slow1">Slow</a><a href="/slow2">Slow</a><a href="/down">Down</a>'
+            )
+        if url.endswith("/down"):
+            raise httpx2.ConnectError("Mocked Connection Error", request=request)
+        await asyncio.sleep(0.1)
+        if gave_up.is_set():
+            requests_finished_after_giving_up.append(url)
+        return httpx2.Response(200, text="<p>Slow page</p>")
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        with pytest.raises(WebConnectionError):
+            await crawl_site(client, test_url)
+        gave_up.set()
+        await asyncio.sleep(0.2)
+
+    assert requests_finished_after_giving_up == []

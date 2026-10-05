@@ -4,6 +4,8 @@ import httpx2
 import pytest
 
 from app.backend.utils.http_client import fetch_content_from_url
+from app.core.config import config
+from app.core.errors import TrafficError, WebConnectionError
 from app.db.utils.field_types import URLString
 from tests.conftest import RequestHandler
 
@@ -40,10 +42,30 @@ async def test_fetch_content_from_url_request_error(
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
     connection_error_handler: RequestHandler,
 ) -> None:
-    """Test that network connection errors raise RequestError correctly."""
+    """Test that network connection errors raise WebConnectionError correctly."""
     async with mock_client_factory(connection_error_handler) as client:
-        with pytest.raises(httpx2.RequestError):
+        with pytest.raises(WebConnectionError):
             await fetch_content_from_url(client, url=test_url)
+
+
+@pytest.mark.anyio
+async def test_fetch_content_from_url_retries_rate_limit(
+    test_url: str,
+    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
+    rate_limit_handler: RequestHandler,
+) -> None:
+    """Test that a rate limit is retried before TrafficError is raised."""
+    requests: list[httpx2.Request] = []
+
+    def counting_handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return rate_limit_handler(request)
+
+    async with mock_client_factory(counting_handler) as client:
+        with pytest.raises(TrafficError):
+            await fetch_content_from_url(client, url=test_url)
+
+    assert len(requests) == config.fetch_site_retry_max_attempts
 
 
 @pytest.mark.anyio

@@ -246,15 +246,23 @@ button, input {
     margin: 0;
 }
 
-/* When each website was last scanned, on its card and on its updates */
+/* When each website was last scanned, on its card */
 .last-scan {
     margin: 4px 0 0;
     font-size: 12.5px;
     color: var(--text-tertiary);
 }
 
-.change-record .last-scan {
-    margin: -4px 0 12px;
+.week-range {
+    margin: 0;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: var(--content-bg);
+    border: 1px solid var(--content-border);
+    border-radius: 20px;
+    box-shadow: var(--content-shadow);
 }
 
 
@@ -776,8 +784,26 @@ a.change-item-text {
     margin-top: 14px;
 }
 
+/* Explains that an inactive website only has its critical pages scanned, and why it is inactive */
+.website-notice {
+    margin: 14px 0 0;
+    padding: 10px 14px;
+    font-size: 13.5px;
+    color: var(--text-secondary);
+    background: var(--accent-light);
+    border: 1px solid var(--border-md);
+    border-radius: var(--radius-md);
+}
 
-/* COLLAPSIBLE CARDS (website cards and update records) */
+/* The app deactivated the website itself, e.g. it is too large to scan */
+.website-notice-warning {
+    color: var(--danger-text);
+    background: var(--danger-bg);
+    border-color: var(--danger-border);
+}
+
+
+/* COLLAPSIBLE CARDS (website cards, update cards and the page cards inside them) */
 
 [data-collapsible]:not(.expanded) {
     cursor: pointer;
@@ -815,7 +841,7 @@ a.change-item-text {
     transition: transform 0.2s ease;
 }
 
-[data-collapsible].expanded .card-toggle svg {
+.card-toggle[aria-expanded="true"] svg {
     transform: rotate(180deg);
 }
 
@@ -851,6 +877,15 @@ a.change-item-text {
     margin: 0;
 }
 
+/* When a website's or page's changes were found, shown before the counts in its summary */
+.change-summary .change-time {
+    align-self: center;
+    margin-right: 4px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text-tertiary);
+}
+
 .change-summary span {
     padding: 3px 10px;
     border-radius: 20px;
@@ -863,6 +898,41 @@ a.change-item-text {
 
 .change-record .card-body {
     padding-top: 18px;
+}
+
+/* A website's update card shows its name and address above a card for each critical page that changed */
+.website-change-record > .change-record-header .website-name {
+    margin-bottom: 4px;
+}
+
+.website-change-record > .change-record-header .website-url {
+    display: inline-block;
+    max-width: 100%;
+    margin-bottom: 10px;
+}
+
+/* Page cards sit inside their website's card, so they are a flat panel rather than another glass card */
+.change-record.page-change-record {
+    padding: 18px;
+    margin-bottom: 12px;
+    border-color: var(--content-border);
+    border-radius: var(--radius-lg);
+    background: var(--content-bg);
+    box-shadow: var(--content-shadow);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+.change-record.page-change-record:last-child {
+    margin-bottom: 0;
+}
+
+.change-record.page-change-record::before {
+    display: none;
+}
+
+.change-record.page-change-record:hover {
+    box-shadow: var(--card-shadow);
 }
 
 .main-page-badge {
@@ -991,6 +1061,12 @@ input::placeholder {
     accent-color: var(--accent);
 }
 
+.scan-setting-help {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--text-tertiary);
+}
+
 .form-group {
     margin-bottom: 20px;
 }
@@ -1011,12 +1087,14 @@ input::placeholder {
 .add-recipient-form button,
 .scan-settings-form button,
 .run-scan-button,
+.run-all-scans-button,
 .add-website-toggle,
 .submit-button,
 .guide-next,
 .guide-back,
 #add-critical-page-input,
 #add-recipient-email-input,
+.cancel-scan-button,
 .delete-website-button,
 .delete-critical-page-button,
 .delete-recipient-button {
@@ -1037,12 +1115,14 @@ input::placeholder {
 .add-recipient-form button:active,
 .scan-settings-form button:active,
 .run-scan-button:active,
+.run-all-scans-button:active,
 .add-website-toggle:active,
 .submit-button:active,
 .guide-next:active,
 .guide-back:active,
 #add-critical-page-input:active,
 #add-recipient-email-input:active,
+.cancel-scan-button:active,
 .delete-website-button:active,
 .delete-critical-page-button:active,
 .delete-recipient-button:active {
@@ -1103,6 +1183,7 @@ button:disabled {
 #add-critical-page-input,
 #add-recipient-email-input,
 .guide-back,
+.run-all-scans-button,
 .add-website-toggle[aria-expanded="true"] {
     color: var(--text-primary);
     background: var(--control-bg);
@@ -1113,6 +1194,7 @@ button:disabled {
 #add-critical-page-input:hover,
 #add-recipient-email-input:hover,
 .guide-back:hover:not(:disabled),
+.run-all-scans-button:hover,
 .add-website-toggle[aria-expanded="true"]:hover {
     background: var(--control-bg-hover);
     transform: translateY(-1px);
@@ -1127,6 +1209,7 @@ button:disabled {
 }
 
 /* Destructive */
+.cancel-scan-button,
 .delete-website-button,
 .delete-critical-page-button,
 .delete-recipient-button {
@@ -1138,6 +1221,7 @@ button:disabled {
     border: 1px solid var(--danger-border);
 }
 
+.cancel-scan-button:hover,
 .delete-website-button:hover,
 .delete-critical-page-button:hover,
 .delete-recipient-button:hover {
@@ -1195,6 +1279,12 @@ button:disabled {
 
 .websites-header .section-title {
     margin: 0;
+}
+
+.websites-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
 }
 
 .guide-section {
@@ -1313,17 +1403,24 @@ button:disabled {
 .critical-page-message,
 .recipient-message,
 .scan-settings-message,
-.run-scan-message {
+.run-scan-message,
+.run-all-scans-message {
     margin: 12px 0 0;
     font-size: 13.5px;
     color: var(--text-secondary);
+}
+
+/* Sits between the websites header and the cards, so needs space below rather than above */
+.run-all-scans-message {
+    margin: 0 0 16px;
 }
 
 #website-form-message:empty,
 .critical-page-message:empty,
 .recipient-message:empty,
 .scan-settings-message:empty,
-.run-scan-message:empty {
+.run-scan-message:empty,
+.run-all-scans-message:empty {
     display: none;
 }
 
@@ -1371,6 +1468,10 @@ button:disabled {
     .website-card,
     #add-website-form {
         padding: 18px;
+    }
+
+    .change-record.page-change-record {
+        padding: 14px;
     }
 
     .guide-review {

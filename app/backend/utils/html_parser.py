@@ -188,6 +188,9 @@ def extract_last_updated(container: Tag) -> str | None:
 def extract_sequential_blocks(container: Tag, ignore_parents: frozenset[str]) -> tuple[list[str], list[ContentBlock]]:
     """Traverses an HTML element tree to sequentially extract headings and associate content blocks.
 
+    Headings are recorded as content blocks too, in page order, so a renamed heading can be reported once
+    as its own change rather than through every block beneath it.
+
     Args:
         container: The root Tag element to search for structured content.
         ignore_parents: A set of HTML tag names whose descendant elements will be skipped.
@@ -195,7 +198,8 @@ def extract_sequential_blocks(container: Tag, ignore_parents: frozenset[str]) ->
     Returns:
         A tuple containing two elements:
             - A list of extracted heading strings.
-            - A list of ContentBlock objects paired with their most recent preceding heading title.
+            - A list of ContentBlock objects (headings included) paired with their most recent preceding
+              heading title.
     """
     heading_tags: frozenset[str] = frozenset(["h1", "h2", "h3", "h4", "h5", "h6"])
     search_tags: frozenset[str] = heading_tags | BLOCK_PARSERS.keys()
@@ -212,6 +216,9 @@ def extract_sequential_blocks(container: Tag, ignore_parents: frozenset[str]) ->
             text = parse_standard_text(tag)
             if text:
                 headings.append(text)
+                if not tag.find_parent(list(BLOCK_PARSERS)):
+                    heading_type = HTMLBlockType(tag.name)
+                    blocks.append(ContentBlock(parent_heading=current_heading, block_type=heading_type, text=text))
                 current_heading = text
 
         elif tag.name in BLOCK_PARSERS:

@@ -18,14 +18,28 @@ class Config(BaseSettings):
     app_name: str = "inwebstigator"
     automatic_scans: bool = True
 
+    user_data_dir: Path = Path.home() / "AppData" / "Local" / app_name
+    user_data_dir.mkdir(parents=True, exist_ok=True)
+
     db_name: str = f"{app_name}.db"
+    db_path: Path = user_data_dir / db_name
+
+    webview_storage_dir: Path = user_data_dir / "webview"
+
+    server_host: str = "127.0.0.1"
+    server_preferred_port: int = 48731
 
     email: str = ""
     email_password: SecretStr = SecretStr("")
     smtp_host: str = ""
     smtp_port: int = 465
+    smtp_timeout_seconds: int = 30
+    imap_host: str = ""
+    imap_port: int = 993
+    email_bounce_wait_seconds: int = 30
+    email_bounce_poll_seconds: int = 3
 
-    web_crawler_default_max_pages: int = 50000
+    web_crawler_default_max_pages: int = 50_000
     web_crawler_default_delay: float = 0.5
     web_crawler_max_delay: float = 3
     web_crawler_default_concurrent: int = 5
@@ -38,12 +52,18 @@ class Config(BaseSettings):
     fetch_site_retry_max_wait_seconds: int = 15
     fetch_site_retry_multiplier: int = 1
 
-    text_similarity_threshold: float = 0.6  # TODO may have to drop to 0
+    critical_page_alert_after_failures: int = 2
+
+    diff_checker_text_similarity_threshold: float = 0.6  # TODO may have to drop to 0
+    diff_checker_max_comparisons_per_block: int = 20
 
     email_retry_max_attempts: int = 3
     email_retry_min_wait_seconds: int = 2
     email_retry_max_wait_seconds: int = 15
     email_retry_multiplier: int = 1
+
+    website_cooldown_hours_after_throttle: int = 24
+    website_cooldown_hours_after_unreachable: int = 2
 
     scheduler_minimum_days_between_scans: float = 0.5
     scheduler_default_days_between_scans: float = 1
@@ -51,10 +71,8 @@ class Config(BaseSettings):
 
     @property
     def db_url(self) -> str:
-        user_data_dir = Path.home() / "AppData" / "Local" / self.app_name
-        user_data_dir.mkdir(parents=True, exist_ok=True)
-        db_path = user_data_dir / self.db_name
-        return f"sqlite:///{db_path.as_posix()}"
+        self.user_data_dir.mkdir(parents=True, exist_ok=True)
+        return f"sqlite:///{self.db_path.as_posix()}"
 
     @property
     def test_db_url(self) -> str:
