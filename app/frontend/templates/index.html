@@ -101,12 +101,6 @@
 
             <h2 class="section-title">Daily Changes</h2>
 
-            {% if daily_date %}
-                <p class="week-range">
-                    Latest scan: {{ daily_date }}
-                </p>
-            {% endif %}
-
         </div>
 
         <!-- DAILY CHANGES -->
@@ -130,6 +124,9 @@
                         <div class="change-record-header card-header">
                             <div class="change-record-identity">
                                 <h3 class="website-name">{{ record.website_url | website_name }}</h3>
+                                <p class="last-scan">
+                                    Last scanned: {{ record.last_scan_at | scan_time }}
+                                </p>
                                 <p class="page-url">
                                     <a href="{{ record.url }}" target="_blank" rel="noopener noreferrer">
                                         {{ record.url }}
@@ -640,6 +637,9 @@
                                 >
                                     {{ website.url }}
                                 </a>
+                                <p class="last-scan">
+                                    Last scanned: {{ website.last_scan_at | scan_time }}
+                                </p>
                             </div>
 
                             <div class="website-card-actions">

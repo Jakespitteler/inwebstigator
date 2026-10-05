@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from datetime import datetime
 from difflib import SequenceMatcher
 from urllib.parse import urlsplit
 
@@ -17,6 +18,14 @@ def website_name(url: str) -> str:
         return "Website"
 
     return hostname.removeprefix("www.")
+
+
+def scan_time(value: datetime | None) -> str:
+    """Display when a website was last scanned, or that it hasn't been yet."""
+    if value is None:
+        return "Not scanned yet"
+    # %H rather than %-I, which is not supported on Windows where the desktop app runs
+    return value.strftime("%d %b %Y, %H:%M")
 
 
 @dataclass
@@ -41,6 +50,7 @@ class ContentBlockRecord:
 class DailyRecord:
     url: URLString
     website_url: URLString
+    last_scan_at: datetime | None = None
     changed: list[TextChangeRecord] = field(default_factory=list[TextChangeRecord])
     added: list[ContentBlockRecord] = field(default_factory=list[ContentBlockRecord])
     removed: list[ContentBlockRecord] = field(default_factory=list[ContentBlockRecord])

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.db.schema import Base, DBWebsite
 from app.frontend.api import routers
+from app.frontend.api.utils import website_name
 from app.models import critical_page_models, recipient_models, website_models
 
 
@@ -174,16 +175,19 @@ class TestCriticalPageRouter(TestCRUDRouters):
 # ==========================
 
 
-def _latest_scan_text(api_client: TestClient) -> str | None:
-    """Returns the dashboard's "Latest scan" line, or None if it is not shown."""
+def _last_scan_by_website(api_client: TestClient) -> dict[str, str]:
+    """Returns each website card's "Last scanned" line, keyed by the website's display name."""
     response = api_client.get("/")
     assert response.status_code == 200, response.text
-    line = BeautifulSoup(response.text, "html.parser").select_one(".week-range")
-    return " ".join(line.get_text().split()) if line else None
+    cards = BeautifulSoup(response.text, "html.parser").select(".website-card")
+    return {
+        card["data-website-name"]: " ".join(card.select_one(".last-scan").get_text().split())  # type: ignore[union-attr]
+        for card in cards
+    }
 
 
-def test_dashboard_shows_most_recent_scan_across_websites(api_client: TestClient, session: Session) -> None:
-    """Tests the dashboard shows when the most recently scanned website was last scanned."""
+def test_dashboard_shows_each_websites_own_scan_time(api_client: TestClient, session: Session) -> None:
+    """Tests every website card shows when that website was last scanned, not the latest scan overall."""
     session.add_all(
         [
             DBWebsite(url="https://older.example.com", last_scan_at=datetime(2026, 9, 28, 9, 5)),
@@ -193,15 +197,11 @@ def test_dashboard_shows_most_recent_scan_across_websites(api_client: TestClient
     )
     session.flush()
 
-    assert _latest_scan_text(api_client) == "Latest scan: 01 Oct 2026, 14:30"
-
-
-def test_dashboard_hides_latest_scan_when_nothing_scanned(api_client: TestClient, session: Session) -> None:
-    """Tests the "Latest scan" line is left out until a website has been scanned."""
-    session.add(DBWebsite(url="https://never-scanned.example.com"))
-    session.flush()
-
-    assert _latest_scan_text(api_client) is None
+    assert _last_scan_by_website(api_client) == {
+        "older.example.com": "Last scanned: 28 Sep 2026, 09:05",
+        "newer.example.com": "Last scanned: 01 Oct 2026, 14:30",
+        "never-scanned.example.com": "Last scanned: Not scanned yet",
+    }
 
 
 def test_manual_scan_records_scan_time(
@@ -219,4 +219,6 @@ def test_manual_scan_records_scan_time(
     assert website
     last_scan_at = website.last_scan_at
     assert last_scan_at is not None and last_scan_at >= before
-    assert _latest_scan_text(api_client) == f"Latest scan: {last_scan_at:%d %b %Y, %H:%M}"
+    assert _last_scan_by_website(api_client)[website_name(test_website.url)] == (
+        f"Last scanned: {last_scan_at:%d %b %Y, %H:%M}"
+    )
