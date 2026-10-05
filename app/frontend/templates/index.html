@@ -1146,6 +1146,41 @@
 
     </main>
 
+    <!-- Confirmation for deleting things. Cancel is the default, so Enter or Escape never deletes. -->
+    <dialog
+        id="confirm-dialog"
+        class="confirm-dialog"
+        aria-labelledby="confirm-dialog-title"
+        aria-describedby="confirm-dialog-message"
+    >
+        <form method="dialog">
+            <h2 id="confirm-dialog-title"></h2>
+            <p id="confirm-dialog-message"></p>
+
+            <div id="confirm-dialog-type-row" class="confirm-dialog-type-row" hidden>
+                <label for="confirm-dialog-input">
+                    Type <strong id="confirm-dialog-expected"></strong> to confirm
+                </label>
+                <input
+                    type="text"
+                    id="confirm-dialog-input"
+                    autocomplete="off"
+                    spellcheck="false"
+                >
+            </div>
+
+            <div class="confirm-dialog-actions">
+                <!-- First submit button, so pressing Enter cancels -->
+                <button type="submit" value="cancel" id="confirm-dialog-cancel" class="confirm-dialog-cancel">
+                    Cancel
+                </button>
+                <button type="submit" value="confirm" id="confirm-dialog-confirm" class="confirm-dialog-confirm">
+                    Delete
+                </button>
+            </div>
+        </form>
+    </dialog>
+
 
 
     <script>
@@ -1451,6 +1486,50 @@
                     setCardExpanded(card, false);
                 }
             });
+        });
+
+
+
+        // Ask before deleting anything, with Cancel as the default.
+        // Resolves true only when the Delete button itself is clicked.
+        const confirmDialog = document.getElementById("confirm-dialog");
+        const confirmDialogInput = document.getElementById("confirm-dialog-input");
+        const confirmDialogButton = document.getElementById("confirm-dialog-confirm");
+        const confirmDialogExpected = document.getElementById("confirm-dialog-expected");
+
+        function confirmDeletion({ title, message, confirmLabel = "Delete", typeToConfirm = null }) {
+            document.getElementById("confirm-dialog-title").textContent = title;
+            document.getElementById("confirm-dialog-message").textContent = message;
+            document.getElementById("confirm-dialog-type-row").hidden = !typeToConfirm;
+            confirmDialogExpected.textContent = typeToConfirm || "";
+            confirmDialogInput.value = "";
+            confirmDialogButton.textContent = confirmLabel;
+            confirmDialogButton.disabled = Boolean(typeToConfirm);
+
+            // Closing any other way (Escape, clicking outside) counts as Cancel
+            confirmDialog.returnValue = "cancel";
+
+            return new Promise((resolve) => {
+                confirmDialog.addEventListener(
+                    "close",
+                    () => resolve(confirmDialog.returnValue === "confirm"),
+                    { once: true }
+                );
+                confirmDialog.showModal();
+                (typeToConfirm ? confirmDialogInput : document.getElementById("confirm-dialog-cancel")).focus();
+            });
+        }
+
+        confirmDialogInput.addEventListener("input", () => {
+            confirmDialogButton.disabled =
+                confirmDialogInput.value.trim() !== confirmDialogExpected.textContent;
+        });
+
+        // A click on the backdrop lands on the dialog element itself
+        confirmDialog.addEventListener("click", (event) => {
+            if (event.target === confirmDialog) {
+                confirmDialog.close("cancel");
+            }
         });
 
 
@@ -1801,9 +1880,11 @@
                             button.dataset.pageId;
 
                         const confirmed =
-                            window.confirm(
-                                "Delete this critical page?"
-                            );
+                            await confirmDeletion({
+                                title: "Delete this critical page?",
+                                message: `${button.closest("li").querySelector("a").textContent.trim()} `
+                                    + "will no longer be monitored in detail.",
+                            });
 
                         if (!confirmed) {
                             return;
@@ -1931,9 +2012,12 @@
                             button.dataset.recipientEmail;
 
                         const confirmed =
-                            window.confirm(
-                                `Remove ${email} from this website?`
-                            );
+                            await confirmDeletion({
+                                title: `Remove ${email}?`,
+                                message: "They will stop receiving reports for "
+                                    + `${button.closest(".website-card").dataset.websiteName}.`,
+                                confirmLabel: "Remove",
+                            });
 
                         if (!confirmed) {
                             return;
@@ -1995,8 +2079,8 @@
                         const websiteId =
                             button.dataset.websiteId;
 
-                        const websiteUrl =
-                            button.dataset.websiteUrl;
+                        const websiteName =
+                            button.closest(".website-card").dataset.websiteName;
 
                         const scanning =
                             !button.closest(".website-card").querySelector(
@@ -2004,11 +2088,13 @@
                             ).hidden;
 
                         const confirmed =
-                            window.confirm(
-                                scanning
-                                    ? `Delete ${websiteUrl}? Its scan will be cancelled.`
-                                    : `Delete ${websiteUrl}?`
-                            );
+                            await confirmDeletion({
+                                title: `Delete ${websiteName}?`,
+                                message: (scanning ? "Its scan will be cancelled. " : "")
+                                    + "It will stop being monitored, and its critical pages, saved page "
+                                    + "content and notification emails will be removed. This can't be undone.",
+                                typeToConfirm: websiteName,
+                            });
 
                         if (!confirmed) {
                             return;
