@@ -45,6 +45,18 @@ class IntegrityError(DataBaseError):
         super().__init__("Data validation error. Ensure all referenced IDs exist and unique constraints are met.")
 
 
+class UndeliverableEmailError(Exception):
+    """Exception raised when an email to an address bounces, so the address cannot receive email.
+
+    Attributes:
+        address: The email address that could not be emailed.
+    """
+
+    def __init__(self, address: str) -> None:
+        self.address: str = address
+        super().__init__(f"An email to {address} could not be delivered.")
+
+
 class WebCrawlerError(Exception):
     """Base class for all custom web crawler exceptions in the application."""
 

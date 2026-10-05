@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from collections.abc import Sequence
 from contextlib import suppress
@@ -7,12 +8,16 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Form, HTTPException, Request, status
 from fastapi.responses import FileResponse
 from fastapi.templating import Jinja2Templates
-from httpx2 import AsyncClient
+from httpx2 import AsyncClient, HTTPError
+from sqlalchemy.orm import Session
 
+from app.backend.email_service import confirm_address_can_receive_email, send_confirmation
 from app.backend.engine import get_critical_page_updates
+from app.backend.format_message import recipient_added_html
+from app.backend.utils.http_client import fetch_content_from_url
 from app.backend.utils.links import resolve_critical_page_url
 from app.core.config import config
-from app.core.errors import NotFoundError, ScanCancelledError
+from app.core.errors import NotFoundError, ScanCancelledError, UndeliverableEmailError, WebCrawlerError
 from app.core.paths import resource_path
 from app.db.core import db_context
 from app.db.services.critical_page_service import CriticalPageService
@@ -171,11 +176,81 @@ def _discard_website(website_id: uuid.UUID) -> None:
         WebsiteService(session).delete(website_id)
 
 
+async def _check_pages_exist(urls: Sequence[str]) -> None:
+    """Loads each page before it is added, so websites and critical pages that do not exist are not added.
+
+    Args:
+        urls (Sequence[str]): The full URLs of the pages to check.
+
+    Raises:
+        HTTPException: 422 if a page could not be loaded.
+    """
+    async with AsyncClient() as client:
+        for url in urls:
+            try:
+                await fetch_content_from_url(client, url)
+            except (WebCrawlerError, HTTPError) as error:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail=f"{url} could not be loaded. Check it exists and the URL is correct.",
+                ) from error
+
+
+def _is_known_recipient(session: Session, email: str) -> bool:
+    """Checks whether an email address is already a recipient, so it has already been confirmed.
+
+    Args:
+        session (Session): Database session.
+        email (str): The email address to look for.
+    """
+    try:
+        RecipientService(session).get_by_email(email)
+    except NotFoundError:
+        return False
+    return True
+
+
+async def _check_emails_can_be_received(session: Session, emails: Sequence[str], website_url: str) -> None:
+    """Emails each address to confirm it, so an address that bounces is not added.
+
+    An address that is already a recipient has been confirmed before, so it is emailed without waiting for a bounce.
+
+    Args:
+        session (Session): Database session.
+        emails (Sequence[str]): The email addresses being added.
+        website_url (str): The URL of the website the addresses are being added for.
+
+    Raises:
+        HTTPException: 422 if an email to an address could not be delivered.
+    """
+    subject: str = "Email address added to website monitoring"
+    html_body: str = recipient_added_html(website_url)
+    try:
+        await asyncio.gather(
+            *(
+                asyncio.to_thread(
+                    send_confirmation if _is_known_recipient(session, email) else confirm_address_can_receive_email,
+                    email,
+                    subject,
+                    html_body,
+                )
+                for email in dict.fromkeys(emails)
+            )
+        )
+    except UndeliverableEmailError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"We can't send an email to {error.address}. Check the address is correct.",
+        ) from error
+
+
 @SCANNER_ROUTER.post("/initial_scan", response_model=None)
 async def website_initial_scan(session: SessionDep, model_create: WebsiteCreate) -> None:
     """Registers a new website in the database, triggers an immediate initial crawl and
     emails the website's recipients to confirm it is now being monitored.
 
+    A website or critical page that cannot be loaded is not added, and the request fails with a 422 status.
+    A recipient that a confirmation email cannot be delivered to also fails the request with a 422 status.
     If the first scan is cancelled the website is not added, and the request fails with a 409 status.
     A website too large to scan is kept but deactivated, and only its critical pages are watched.
 
@@ -184,8 +259,12 @@ async def website_initial_scan(session: SessionDep, model_create: WebsiteCreate)
         model_create (WebsiteCreate): Payload containing details to create the website record.
 
     Raises:
+        HTTPException: 422 if the website or one of its critical pages could not be loaded,
+            or if an email to one of its recipients could not be delivered.
         ScanCancelledError: If the website's first scan was cancelled.
     """
+    await _check_pages_exist([model_create.url, *model_create.critical_pages])
+    await _check_emails_can_be_received(session, model_create.recipient_emails, model_create.url)
     website: WebsiteRead = WebsiteService(session).create(model_create)
     session.commit()
 
@@ -229,7 +308,7 @@ async def critical_page_initial_scan(
             or a link relative to the website (e.g. "/news/today").
 
     Raises:
-        HTTPException: 422 if the critical page is not a valid URL on the website.
+        HTTPException: 422 if the critical page is not a valid URL on the website or could not be loaded.
     """
     website: WebsiteRead = WebsiteService(session).get(website_id)
     try:
@@ -237,6 +316,7 @@ async def critical_page_initial_scan(
     except ValueError as error:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)) from error
 
+    await _check_pages_exist([model_create.url])
     critical_page: CriticalPageRead = CriticalPageService(session).create(model_create)
     session.commit()
 
@@ -331,8 +411,30 @@ WEBSITE_ROUTER: APIRouter = create_crud_router(
     service_class=WebsiteService,
     create_class=WebsiteCreate,
     update_class=WebsiteUpdate,
-    exclude={CRUDOperation.DELETE},  # Replaced below, as deleting a website also cancels its scan
+    exclude={CRUDOperation.UPDATE, CRUDOperation.DELETE},  # Replaced below, as each has extra behaviour
 )
+
+
+@WEBSITE_ROUTER.patch("/{id}", response_model=WebsiteRead)
+async def update_website(session: SessionDep, id: uuid.UUID, model_update: WebsiteUpdate) -> WebsiteRead:
+    """Updates a website, first confirming that any recipient being added can receive email.
+
+    Args:
+        session (SessionDep): Database session dependency.
+        id (uuid.UUID): The ID of the website to update.
+        model_update (WebsiteUpdate): The changes to make.
+
+    Returns:
+        WebsiteRead: The updated website.
+
+    Raises:
+        HTTPException: 422 if an email to an added recipient could not be delivered.
+        NotFoundError: If no website has the ID.
+    """
+    website_service = WebsiteService(session)
+    if model_update.add_recipient_emails:
+        await _check_emails_can_be_received(session, model_update.add_recipient_emails, website_service.get(id).url)
+    return website_service.update(id, model_update)
 
 
 @WEBSITE_ROUTER.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)

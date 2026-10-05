@@ -222,6 +222,26 @@ def generate_scan_report_html(
     return "".join(out)
 
 
+def recipient_added_html(website_url: str) -> str:
+    """Generates the HTML body of the email sent to confirm an address can receive email when it is added.
+
+    Args:
+        website_url (str): The URL of the website the address is being added as a recipient for.
+    """
+    return (
+        "<div style=\"font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; "
+        "background-color: #ffffff; color: #1f2328; line-height: 1.5; padding: 20px; max-width: 800px; "
+        'margin: 0 auto; border-radius: 8px; border: 1px solid #d0d7de;">'
+        '<h2 style="margin-top: 0; font-size: 20px; border-bottom: 1px solid #d0d7de; padding-bottom: 8px;">'
+        "Email address added</h2>"
+        f'<p style="margin: 0;">This email address is being added as a recipient for {_safe(website_url)}. '
+        "You will be emailed when a change is found.</p>"
+        '<hr style="border: 0; height: 1px; background: #d0d7de; margin: 25px 0;">'
+        '<p style="color: #57606a; font-size: 12px; margin: 0;">This is an automated message.</p>'
+        "</div>"
+    )
+
+
 def _format_days(days: float) -> str:
     """Formats a day count for display, e.g. 1 -> "day", 7 -> "7 days", 0.5 -> "0.5 days"."""
     return "day" if days == 1 else f"{days:g} days"

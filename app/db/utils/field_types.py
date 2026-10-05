@@ -1,10 +1,11 @@
 from typing import Annotated
 
-from pydantic import Field
+from pydantic import AfterValidator, Field
 
-# The rules every URL must follow, shared so other URL types can be checked against the same rules
+from app.backend.utils.links import add_missing_scheme
+
 URL_CONSTRAINTS = Field(max_length=2048, pattern=r"^https?://")
-
+NewURLString = Annotated[str, AfterValidator(add_missing_scheme), URL_CONSTRAINTS]
 URLString = Annotated[str, URL_CONSTRAINTS]
 
 EmailString = Annotated[

@@ -116,6 +116,15 @@ def api_client(session: Session) -> Iterator[TestClient]:
 
 
 @pytest.fixture(autouse=True)
+def skip_email_confirmations(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Treats every added email address as able to receive email, so tests do not send confirmation emails."""
+    monkeypatch.setattr(
+        "app.frontend.api.routers.confirm_address_can_receive_email", lambda address, subject, html_body: None
+    )
+    monkeypatch.setattr("app.frontend.api.routers.send_confirmation", lambda address, subject, html_body: None)
+
+
+@pytest.fixture(autouse=True)
 def disable_retry_wait():
     fetch_content_from_url.retry.wait = wait_none()  # pyright: ignore[reportFunctionMemberAccess]
     send_email.retry.wait = wait_none()  # pyright: ignore[reportFunctionMemberAccess]

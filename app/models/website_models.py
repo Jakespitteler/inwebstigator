@@ -1,13 +1,13 @@
 import uuid
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Self
+from typing import Self
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
-from app.backend.utils.links import add_missing_scheme, resolve_critical_page_url
+from app.backend.utils.links import resolve_critical_page_url
 from app.core.config import config
-from app.db.utils.field_types import URL_CONSTRAINTS, EmailString, URLString
+from app.db.utils.field_types import EmailString, NewURLString, URLString
 from app.models.critical_page_models import CriticalPageRead, CriticalPageUpdate
 from app.models.internal_link_models import InternalLinkRead
 from app.models.recipient_models import RecipientRead
@@ -27,9 +27,7 @@ class DeactivationReason(StrEnum):
 
 
 class WebsiteCreate(BaseModel):
-    # "https://" is added before the URL rules are checked, so "example.com" can be entered
-    url: Annotated[str, AfterValidator(add_missing_scheme), URL_CONSTRAINTS]
-    # Critical pages can also be links relative to the website (e.g. "/news") until they are resolved below
+    url: NewURLString
     critical_pages: list[str] = Field(default_factory=list[str], examples=[[""]])
     recipient_emails: list[EmailString] = Field(default_factory=list[EmailString], examples=[[""]])
     recommended_delay: float = DEFAULT_DELAY

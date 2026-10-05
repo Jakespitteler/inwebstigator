@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.config import config
 from app.core.errors import ScanCancelledError, WebsiteTooLargeError
 from app.db.core import get_db_session
-from app.db.schema import Base, DBWebsite
+from app.db.schema import Base, DBRecipient, DBWebsite
 from app.frontend.api import routers
 from app.main import app
 from app.models import critical_page_models, recipient_models, website_models
@@ -299,6 +299,7 @@ def test_cancelling_the_first_scan_does_not_add_the_website(
 ) -> None:
     """Tests cancelling a new website's first scan cancels adding it, so no website is left without a baseline."""
     mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
+    mocker.patch("app.frontend.api.routers._check_pages_exist")  # The website is not loaded online
     mocker.patch("app.frontend.api.routers.scan_website", side_effect=ScanCancelledError("https://example.com"))
     mock_send_monitoring_started = mocker.patch("app.frontend.api.routers.send_monitoring_started_notifications")
 
@@ -423,6 +424,7 @@ def first_scan_in_progress(mocker: MockerFixture, session: Session) -> Iterator[
         await asyncio.Event().wait()
 
     mocker.patch("app.scanner.scan_lock", asyncio.Lock())  # A lock for this test's event loop
+    mocker.patch("app.frontend.api.routers._check_pages_exist")  # The website is not loaded online
     mocker.patch("app.scanner.get_website_updates", side_effect=crawl_until_cancelled)
     mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
     mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
@@ -457,3 +459,27 @@ async def test_stopping_a_new_websites_first_scan_leaves_no_website(
     assert added.status_code == 409, added.text
     assert session.scalars(select(DBWebsite)).all() == []
     assert queued_crawls == {}
+
+
+def test_adding_a_known_email_is_emailed_without_waiting_for_a_bounce(
+    api_client: TestClient,
+    session: Session,
+    test_website: website_models.WebsiteRead,
+    mocker: MockerFixture,
+) -> None:
+    """Tests an address that is already a recipient is only emailed, while a new address is also checked for a bounce."""
+    session.add(DBRecipient(email="known@example.com"))
+    session.flush()
+    mock_confirm = mocker.patch("app.frontend.api.routers.confirm_address_can_receive_email")
+    mock_send = mocker.patch("app.frontend.api.routers.send_confirmation")
+
+    response = api_client.patch(
+        f"/websites/{test_website.id}", json={"add_recipient_emails": ["known@example.com", "new@example.com"]}
+    )
+
+    assert response.status_code == 200, response.text
+    mock_send.assert_called_once()
+    assert mock_send.call_args.args[0] == "known@example.com"
+    mock_confirm.assert_called_once()
+    assert mock_confirm.call_args.args[0] == "new@example.com"
+

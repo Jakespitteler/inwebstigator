@@ -34,6 +34,10 @@ class Config(BaseSettings):
     smtp_host: str = ""
     smtp_port: int = 465
     smtp_timeout_seconds: int = 30
+    imap_host: str = ""  # Defaults to the SMTP host with "smtp." swapped for "imap."
+    imap_port: int = 993
+    email_bounce_wait_seconds: int = 30  # How long to wait for a bounce after a confirmation email is sent
+    email_bounce_poll_seconds: int = 3
 
     web_crawler_default_max_pages: int = 50_000
     web_crawler_default_delay: float = 0.5
