@@ -187,6 +187,35 @@ def test_batch_add_raises_integrity_error(session: Session, test_record: DBTestT
     assert "unique constraint" in str(e.value)
 
 
+def test_bulk_insert(session: Session) -> None:
+    """
+    Tests many rows are inserted at once, with their defaults (such as the ID) filled in.
+
+    Args:
+        session: The database session fixture.
+    """
+    repository.bulk_insert(session, table=DBTestTable, rows=[{"name": f"Bulk {number}"} for number in range(1_000)])
+
+    records = repository.get_list(session, table=DBTestTable, limit=None)
+    assert {record.name for record in records} == {f"Bulk {number}" for number in range(1_000)}
+    assert all(record.id is not None for record in records)
+
+
+def test_bulk_insert_raises_integrity_error(session: Session, test_record: DBTestTable) -> None:
+    """
+    Tests that bulk_insert raises IntegrityError if unique constraints are violated.
+
+    Args:
+        session: The database session fixture.
+        test_record: The test record.
+    """
+    rows = [{"name": "Valid Bulk Row"}, {"name": test_record.name}]  # Duplicate name
+
+    with pytest.raises(IntegrityError) as e:
+        repository.bulk_insert(session, table=DBTestTable, rows=rows)
+    assert "unique constraint" in str(e.value)
+
+
 def test_update(session: Session, test_record: DBTestTable) -> None:
     """
     Tests updating a record.

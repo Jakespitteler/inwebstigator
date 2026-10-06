@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 
 from app.core.config import config
-from app.models.website_models import WebsiteRead
+from app.models.website_models import WebsiteCreate, WebsiteRead
 
 
 class ScanStatus(StrEnum):
@@ -249,30 +249,21 @@ def _format_days(days: float) -> str:
     return "day" if days == 1 else f"{days:g} days"
 
 
-def monitoring_started_html(website: WebsiteRead, days_between_health_checks: float) -> str:
-    """Generates the HTML body of the email confirming a website is now being monitored.
-
-    An inactive website (e.g. one too large to scan) is said to only have its critical pages watched.
+def monitoring_started_html(website: WebsiteCreate, days_between_health_checks: float) -> str:
+    """Generates the HTML body of the one email sent to each recipient of a website being added, which says
+    what is monitored and also confirms their address can receive email.
 
     Args:
-        website (WebsiteRead): The website that has started being monitored.
+        website (WebsiteCreate): The website being added. Its main page is always watched, so it is listed first.
         days_between_health_checks (float): How often the recipient is told nothing has changed.
     """
     critical_pages = "".join(
-        f'<li style="margin-bottom: 4px;">{html.escape(critical_page.url)}</li>'
-        for critical_page in website.critical_pages
+        f'<li style="margin-bottom: 4px;">{html.escape(page_url)}</li>'
+        for page_url in dict.fromkeys([website.url, *website.critical_pages])
     )
     critical_pages_section = (
         f'<p style="margin: 16px 0 6px;">Pages being watched for content changes:</p>'
         f'<ul style="padding-left: 20px; margin: 0;">{critical_pages}</ul>'
-        if critical_pages
-        else ""
-    )
-    inactive_section = (
-        ""
-        if website.active
-        else '<p style="margin: 16px 0 0;">This website is inactive, so only the pages above are checked. '
-        "New and removed pages on the rest of the website are not looked for.</p>"
     )
     return (
         "<div style=\"font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; "
@@ -284,7 +275,6 @@ def monitoring_started_html(website: WebsiteRead, days_between_health_checks: fl
         f"It is checked every {_format_days(website.days_between_scans)}, and you will be emailed "
         "when a change is found.</p>"
         f"{critical_pages_section}"
-        f"{inactive_section}"
         '<p style="margin: 16px 0 0;">If nothing changes, you will get a short confirmation email every '
         f"{_format_days(days_between_health_checks)} so you know monitoring is still running.</p>"
         '<hr style="border: 0; height: 1px; background: #d0d7de; margin: 25px 0;">'

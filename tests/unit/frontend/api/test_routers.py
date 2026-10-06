@@ -371,13 +371,11 @@ def test_cancelling_the_first_scan_does_not_add_the_website(
     mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
     mocker.patch("app.frontend.api.routers._check_pages_exist")  # The website is not loaded online
     mocker.patch("app.frontend.api.routers.scan_website", side_effect=ScanCancelledError("https://example.com"))
-    mock_send_monitoring_started = mocker.patch("app.frontend.api.routers.send_monitoring_started_notifications")
 
     response = api_client.post("/scanner/initial_scan", json={"url": "https://example.com"})
 
     assert response.status_code == 409, response.text
     assert session.scalars(select(DBWebsite)).all() == []
-    mock_send_monitoring_started.assert_not_called()
 
 
 def test_adding_a_website_already_being_scanned_does_not_add_a_duplicate(
@@ -388,24 +386,21 @@ def test_adding_a_website_already_being_scanned_does_not_add_a_duplicate(
     mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
     mocker.patch("app.frontend.api.routers._check_pages_exist")  # The website is not loaded online
     mocker.patch("app.frontend.api.routers.scan_website", side_effect=ScanAlreadyQueuedError("https://example.com"))
-    mock_send_monitoring_started = mocker.patch("app.frontend.api.routers.send_monitoring_started_notifications")
 
     response = api_client.post("/scanner/initial_scan", json={"url": "https://example.com"})
 
     assert response.status_code == 409, response.text
     assert session.scalars(select(DBWebsite)).all() == []
-    mock_send_monitoring_started.assert_not_called()
 
 
 def test_adding_a_website_counts_as_emailing_its_recipients(
     api_client: TestClient, session: Session, mocker: MockerFixture
 ) -> None:
-    """Tests a new website's recipients are recorded as emailed (they were sent a confirmation), so their health
-    checks count from then even if the "monitoring started" email fails."""
+    """Tests a new website's recipients are recorded as emailed (they were sent the email saying what is
+    monitored), so their health checks count from then."""
     mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
     mocker.patch("app.frontend.api.routers._check_pages_exist")  # The website is not loaded online
     mocker.patch("app.frontend.api.routers.scan_website", return_value=None)
-    mocker.patch("app.scanner.send_email", side_effect=ConnectionError("smtp down"))  # "Monitoring started" fails
 
     response = api_client.post(
         "/scanner/initial_scan", json={"url": "https://example.com", "recipient_emails": ["someone@example.com"]}
@@ -416,11 +411,40 @@ def test_adding_a_website_counts_as_emailing_its_recipients(
     assert recipient.last_email_at is not None
 
 
+def test_adding_a_website_sends_each_recipient_one_email(
+    api_client: TestClient, session: Session, mocker: MockerFixture
+) -> None:
+    """Tests each recipient of a new website gets one email saying what is monitored, which also confirms their
+    address, and no second email once the first scan has finished."""
+    session.add(DBRecipient(email="known@example.com"))
+    session.flush()
+    mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
+    mocker.patch("app.frontend.api.routers._check_pages_exist")  # The website is not loaded online
+    mocker.patch("app.frontend.api.routers.scan_website", return_value=None)
+    mock_confirm = mocker.patch("app.frontend.api.routers.confirm_address_can_receive_email")
+    mock_send = mocker.patch("app.frontend.api.routers.send_confirmation")
+    mock_send_email = mocker.patch("app.scanner.send_email")
+
+    response = api_client.post(
+        "/scanner/initial_scan",
+        json={"url": "https://example.com", "recipient_emails": ["known@example.com", "new@example.com"]},
+    )
+
+    assert response.status_code == 200, response.text
+    emails = [*mock_send.call_args_list, *mock_confirm.call_args_list]
+    assert sorted(email.args[0] for email in emails) == ["known@example.com", "new@example.com"]
+    for email in emails:
+        _, subject, html_body = email.args
+        assert subject == "Website monitoring started"
+        assert "Now monitoring https://example.com" in html_body
+    mock_send_email.assert_not_called()
+
+
 def test_adding_a_website_too_large_to_scan_deactivates_it(
     api_client: TestClient, session: Session, mocker: MockerFixture
 ) -> None:
-    """Tests a new website too large to scan is kept but deactivated, its critical pages are still watched (so its
-    recipients are told monitoring has started), and the dashboard says why it was deactivated."""
+    """Tests a new website too large to scan is kept but deactivated, its critical pages are still watched, and the
+    dashboard says why it was deactivated."""
     main_url = "https://example.com"
 
     def mock_client() -> AsyncClient:
@@ -430,7 +454,6 @@ def test_adding_a_website_too_large_to_scan_deactivates_it(
     mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
     mocker.patch("app.frontend.api.routers.AsyncClient", side_effect=mock_client)
     mocker.patch("app.backend.engine.crawl_site", side_effect=WebsiteTooLargeError(main_url, max_pages=50_000))
-    mock_send_monitoring_started = mocker.patch("app.frontend.api.routers.send_monitoring_started_notifications")
 
     response = api_client.post(
         "/scanner/initial_scan", json={"url": main_url, "recipient_emails": ["someone@example.com"]}
@@ -441,7 +464,6 @@ def test_adding_a_website_too_large_to_scan_deactivates_it(
     assert website.active is False
     assert website.deactivated_reason == website_models.DeactivationReason.TOO_LARGE
     assert website.critical_pages[0].text_body == "<p>Home page.</p>"  # The main page's baseline was saved
-    mock_send_monitoring_started.assert_called_once()
 
     notice = _website_notice(api_client, main_url)
     assert notice is not None

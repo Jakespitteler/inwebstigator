@@ -3,7 +3,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, insert, select
 from sqlalchemy.exc import IntegrityError as SQLIntegrityError
 from sqlalchemy.orm import InstrumentedAttribute, Session, selectinload
 from sqlalchemy.orm.interfaces import ORMOption
@@ -127,6 +127,33 @@ def batch_add[DBTable: Base](session: Session, records: Sequence[DBTable]) -> No
 
     tablename = records[0].__tablename__ if records else "unknown"
     logger.info(f"Successfully bulk added {len(records)} records to database. {tablename=}")
+
+
+def bulk_insert[DBTable: Base](session: Session, table: type[DBTable], rows: Sequence[dict[str, Any]]) -> None:
+    """
+    Inserts many rows into a table at once, without loading each one back as a record.
+
+    Much faster than `batch_add` for tens of thousands of rows (e.g. a large website's internal links),
+    which would otherwise each be read back from the database after saving.
+
+    Args:
+        session: The database session.
+        table: The table to insert into.
+        rows: The column values of each row to insert.
+
+    Raises:
+        IntegrityError: If any row violates unique constraints.
+    """
+    if not rows:
+        return
+    try:
+        session.execute(insert(table), list(rows))
+    except SQLIntegrityError as e:
+        logger.error(f"Failed to bulk insert rows into database, rolling back. {table.__name__=}")
+        session.rollback()
+        raise IntegrityError() from e
+
+    logger.info(f"Successfully bulk inserted {len(rows)} rows into database. {table.__name__=}")
 
 
 def update[DBTable: Base](session: Session, record: DBTable, updates: dict[str, Any]) -> DBTable:

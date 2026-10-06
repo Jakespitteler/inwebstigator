@@ -8,7 +8,7 @@ from httpx2 import AsyncClient
 
 from app.backend.email_service import build_message, send_email
 from app.backend.engine import get_critical_page_only_updates, get_website_updates
-from app.backend.format_message import ScanStatus, generate_scan_report_html, monitoring_started_html
+from app.backend.format_message import ScanStatus, generate_scan_report_html
 from app.core.config import config
 from app.core.errors import (
     NotFoundError,
@@ -19,6 +19,7 @@ from app.core.errors import (
     WebsiteTooLargeError,
 )
 from app.db.core import db_context
+from app.db.services.internal_link_service import InternalLinkService
 from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
 from app.db.utils.field_types import EmailString
@@ -51,26 +52,6 @@ def send_notification(recipient_email: EmailString, report: str, subject: str):
         recipient_service = RecipientService(session)
         recipient = recipient_service.get_by_email(recipient_email)
         recipient_service.update(id=recipient.id, model_update=RecipientUpdate(last_email_at=datetime.now()))
-
-
-def send_monitoring_started_notifications(website: WebsiteRead) -> None:
-    """Emails each of a website's recipients to confirm the website is now being monitored.
-
-    A failed send is logged and skipped, so it cannot fail the request that added the website
-    or stop the remaining recipients being emailed.
-
-    Args:
-        website (WebsiteRead): The website that has started being monitored.
-    """
-    for recipient in website.recipients:
-        try:
-            send_notification(
-                recipient_email=recipient.email,
-                report=monitoring_started_html(website, recipient.days_between_health_checks),
-                subject="Website monitoring started",
-            )
-        except Exception:
-            logger.exception(f"Failed to send monitoring started email to {recipient.email}")
 
 
 async def _crawl_in_turn(crawl: Callable[[], Awaitable[WebsiteUpdate | None]]) -> WebsiteUpdate | None:
@@ -153,7 +134,10 @@ async def _check_for_updates(
     """
     if not website.active:
         return await get_critical_page_only_updates(client, website, init)
-    return await get_website_updates(client, website, max_pages, delay, concurrent, init)
+
+    with db_context() as session:
+        stored_internal_links: list[str] = InternalLinkService(session).get_urls_for_website(website.id)
+    return await get_website_updates(client, website, stored_internal_links, max_pages, delay, concurrent, init)
 
 
 async def _handle_too_large_website(client: AsyncClient, website: WebsiteRead, max_pages: int, init: bool) -> str:
@@ -285,7 +269,8 @@ def _is_due_a_scan(website: WebsiteRead, run_started_at: datetime) -> bool:
 
     Time is counted from the exact time of the last scan, less a small tolerance, so a run that starts a few
     seconds earlier than the last one did does not put the scan off until the next run. (Counting from the
-    start of the day would round intervals such as 1.5 days down to whole days.)
+    start of the day would round intervals such as 1.5 days down to whole days.) The tolerance is never more
+    than half the time between runs, so short intervals are scanned at the run nearest to when they are due.
 
     Args:
         website (WebsiteRead): The website to check.
@@ -297,7 +282,10 @@ def _is_due_a_scan(website: WebsiteRead, run_started_at: datetime) -> bool:
     if website.last_scan_at is None:
         return True
     interval: timedelta = timedelta(days=website.days_between_scans)
-    tolerance: timedelta = timedelta(minutes=config.scheduler_scan_due_tolerance_minutes)
+    tolerance: timedelta = min(
+        timedelta(minutes=config.scheduler_scan_due_tolerance_minutes),
+        timedelta(days=config.scheduler_minimum_days_between_scans) / 2,
+    )
     return run_started_at - website.last_scan_at >= interval - tolerance
 
 

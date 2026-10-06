@@ -6,12 +6,13 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
 from app.db.services.internal_link_service import InternalLinkService
+from app.db.services.website_service import WebsiteService
 from app.models.internal_link_models import (
     InternalLinkCreate,
     InternalLinkRead,
     InternalLinkUpdate,
 )
-from app.models.website_models import WebsiteRead
+from app.models.website_models import WebsiteCreate, WebsiteRead
 
 
 def test_get_all_internal_links(session: Session, test_internal_link: InternalLinkRead) -> None:
@@ -103,16 +104,52 @@ def test_create_batch_internal_links(session: Session, test_website: WebsiteRead
         "https://www.test_website.com/batch_link_1",
         "https://www.test_website.com/batch_link_2",
     ]
-    created_links: Sequence[InternalLinkRead] = InternalLinkService(session).create_batch(urls, test_website.id)
+    InternalLinkService(session).create_batch(urls, test_website.id)
 
-    assert len(created_links) == 2
-    for created_link, url in zip(created_links, urls, strict=True):
-        assert created_link.id is not None
-        assert created_link.url == url
-        assert created_link.website_id == test_website.id
+    for url in urls:
+        fetched_link: InternalLinkRead = InternalLinkService(session).get_by_url(url)
+        assert fetched_link.id is not None
+        assert fetched_link.website_id == test_website.id
 
-        fetched_link = InternalLinkService(session).get(id=created_link.id)
-        assert fetched_link.url == url
+
+def test_get_urls_for_website_returns_only_that_websites_links(
+    session: Session, test_website: WebsiteRead, test_internal_link: InternalLinkRead
+) -> None:
+    """
+    Tests the URLs of a website's internal links are returned, and not those of other websites.
+
+    Args:
+        session: The database session fixture.
+        test_website: The test website record.
+        test_internal_link: The test website's internal link.
+    """
+    service = InternalLinkService(session)
+    other_website = WebsiteService(session).create(WebsiteCreate(url="https://other.example.com"))
+    service.create_batch(["https://other.example.com/page"], website_id=other_website.id)
+
+    assert service.get_urls_for_website(test_website.id) == [test_internal_link.url]
+    assert service.get_urls_for_website(other_website.id) == ["https://other.example.com/page"]
+
+
+def test_delete_batch_deletes_more_links_than_one_statement_can_hold(
+    session: Session, test_website: WebsiteRead
+) -> None:
+    """
+    Tests deleting more links than SQLite allows values in one statement (e.g. a large website losing most of its
+    pages), which are deleted a chunk at a time, leaving the website's other links alone.
+
+    Args:
+        session: The database session fixture.
+        test_website: The test website record.
+    """
+    service = InternalLinkService(session)
+    removed_urls = [f"https://www.test_website.com/removed/{number}" for number in range(40_000)]
+    kept_url = "https://www.test_website.com/kept"
+    service.create_batch([*removed_urls, kept_url], website_id=test_website.id)
+
+    service.delete_batch(urls=removed_urls, website_id=test_website.id)
+
+    assert service.get_urls_for_website(test_website.id) == [kept_url]
 
 
 def test_update_internal_link(session: Session, test_internal_link: InternalLinkRead) -> None:

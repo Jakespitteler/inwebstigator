@@ -9,13 +9,16 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    Select,
     String,
     Table,
     UniqueConstraint,
+    func,
+    select,
     text,
 )
 from sqlalchemy import UUID as PG_UUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, object_session, relationship
 
 from app.core.config import config
 
@@ -120,3 +123,18 @@ class DBWebsite(Base):
     recent_added_internal_links: Mapped[list[str]] = mapped_column(JSON, nullable=True)
     recent_removed_internal_links: Mapped[list[str]] = mapped_column(JSON, nullable=True)
     internal_links_last_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    @property
+    def internal_link_count(self) -> int:
+        """The number of internal links saved for the website.
+
+        Counted by the database instead of loading the links, as a large website has tens of thousands
+        and loading them all every time the website is read slows the whole app down.
+        """
+        session: Session | None = object_session(self)
+        if session is None:  # Not in the database, so it has no saved links
+            return 0
+        count_links: Select[int] = (
+            select(func.count()).select_from(DBInternalLink).where(DBInternalLink.website_id == self.id)
+        )
+        return session.scalar(count_links) or 0

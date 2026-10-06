@@ -157,7 +157,7 @@ async def test_get_critical_page_only_updates_checks_critical_pages_without_craw
 ):
     """Tests only the critical pages are checked, so a website too large to crawl can still be watched."""
     crawl = mocker.patch("app.backend.engine.crawl_site")
-    website = test_website.model_copy(update={"critical_pages": [test_critical_page], "internal_links": []})
+    website = test_website.model_copy(update={"critical_pages": [test_critical_page]})
 
     async with mock_client_factory(website_handler) as client:
         updates: WebsiteUpdate | None = await get_critical_page_only_updates(client, website)
@@ -198,7 +198,6 @@ async def test_get_website_updates_with_changes(
     """Tests the orchestrator loop catches internal map changes and delegates critical page updates."""
     initial_website = test_website.model_copy(
         update={
-            "internal_links": [test_internal_link],
             "critical_pages": [
                 test_critical_page.model_copy(
                     update={
@@ -212,7 +211,12 @@ async def test_get_website_updates_with_changes(
 
     async with mock_client_factory(website_handler) as client:
         updates: WebsiteUpdate | None = await get_website_updates(
-            client=client, stored_website=initial_website, max_pages=10, delay=0, concurrent=2
+            client=client,
+            stored_website=initial_website,
+            stored_internal_links=[test_internal_link.url],
+            max_pages=10,
+            delay=0,
+            concurrent=2,
         )
     assert updates
     assert updates.has_changes
@@ -225,8 +229,7 @@ async def test_get_website_updates_with_changes(
 
     # Since `test_internal_link` wasn't crawled by website_handler, it gets correctly flagged as removed
     assert updates.recent_removed_internal_links is not None
-    assert len(updates.recent_removed_internal_links) == len(initial_website.internal_links)
-    assert initial_website.internal_links[0].url in updates.recent_removed_internal_links
+    assert updates.recent_removed_internal_links == [test_internal_link.url]
 
     # Delegated Critical Page updates assertion
     assert updates.critical_page_updates is not None
@@ -249,9 +252,9 @@ async def test_get_website_updates_returns_none_when_nothing_changed(
 ):
     """Tests a scan that finds no changes and has no baselines to save returns None, so nothing is written."""
     mocker.patch("app.backend.engine.crawl_site", return_value={test_internal_link.url})
-    website = test_website.model_copy(update={"critical_pages": [], "internal_links": [test_internal_link]})
+    website = test_website.model_copy(update={"critical_pages": []})
 
-    assert await get_website_updates(mocker.Mock(), website, None, None, None) is None
+    assert await get_website_updates(mocker.Mock(), website, [test_internal_link.url], None, None, None) is None
 
 
 @pytest.mark.anyio
@@ -266,11 +269,12 @@ async def test_get_website_updates_saves_internal_link_baseline(
     scan, saves its crawled links as a baseline rather than reporting them all as added."""
     crawled = {test_website.url, f"{test_website.url}about"}
     mocker.patch("app.backend.engine.crawl_site", return_value=crawled)
-    website = test_website.model_copy(
-        update={"critical_pages": [], "internal_links": [test_internal_link] if init else []}
-    )
+    website = test_website.model_copy(update={"critical_pages": []})
+    stored_internal_links = [test_internal_link.url] if init else []
 
-    updates: WebsiteUpdate | None = await get_website_updates(mocker.Mock(), website, None, None, None, init=init)
+    updates: WebsiteUpdate | None = await get_website_updates(
+        mocker.Mock(), website, stored_internal_links, None, None, None, init=init
+    )
 
     assert updates is not None
     assert set(updates.initial_internal_links or []) == crawled
@@ -290,11 +294,13 @@ async def test_get_website_updates_returns_new_page_baseline_without_changes(
     """Tests a newly added critical page is returned so its baseline is saved, without counting as a change."""
     mocker.patch("app.backend.engine.crawl_site", return_value={test_internal_link.url})
     new_page = test_critical_page.model_copy(update={"text_body": None, "links": None, "documents": None})
-    website = test_website.model_copy(update={"critical_pages": [new_page], "internal_links": [test_internal_link]})
+    website = test_website.model_copy(update={"critical_pages": [new_page]})
     html = "<html><body><p>New page.</p></body></html>"
 
     async with mock_client_factory(lambda request: httpx2.Response(200, text=html)) as client:
-        updates: WebsiteUpdate | None = await get_website_updates(client, website, None, None, None)
+        updates: WebsiteUpdate | None = await get_website_updates(
+            client, website, [test_internal_link.url], None, None, None
+        )
 
     assert updates is not None
     assert updates.critical_page_updates is not None
@@ -312,7 +318,14 @@ async def test_get_website_updates_traffic_error(
     """Tests that fatal connection/traffic errors cleanly bubble up from the orchestrator."""
     async with mock_client_factory(rate_limit_handler) as client:
         with pytest.raises(TrafficError) as exc_info:
-            await get_website_updates(client=client, stored_website=test_website, max_pages=10, delay=0, concurrent=2)
+            await get_website_updates(
+                client=client,
+                stored_website=test_website,
+                stored_internal_links=[],
+                max_pages=10,
+                delay=0,
+                concurrent=2,
+            )
 
     assert exc_info.value.status_code == 429
 
@@ -330,7 +343,7 @@ async def test_get_website_updates_records_a_broken_critical_page(
     broken_page = test_critical_page.model_copy(
         update={"id": uuid.uuid4(), "url": f"{test_website.url}deleted-page", "text_body": "<p>Was here.</p>"}
     )
-    website = test_website.model_copy(update={"critical_pages": [broken_page, working_page], "internal_links": []})
+    website = test_website.model_copy(update={"critical_pages": [broken_page, working_page]})
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         if str(request.url) == broken_page.url:
@@ -338,7 +351,7 @@ async def test_get_website_updates_records_a_broken_critical_page(
         return httpx2.Response(200, text="<html><body><p>New text.</p></body></html>")
 
     async with mock_client_factory(handler) as client:
-        updates: WebsiteUpdate | None = await get_website_updates(client, website, None, None, None)
+        updates: WebsiteUpdate | None = await get_website_updates(client, website, [], None, None, None)
 
     assert updates is not None
     assert updates.critical_page_updates is not None
@@ -374,7 +387,7 @@ async def test_get_website_updates_stops_on_cancellation(
     website = test_website.model_copy(update={"critical_pages": [test_critical_page]})
 
     with pytest.raises(asyncio.CancelledError):
-        await get_website_updates(mocker.Mock(), website, None, None, None)
+        await get_website_updates(mocker.Mock(), website, [], None, None, None)
     crawl.assert_not_called()
 
 

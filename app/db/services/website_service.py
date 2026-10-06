@@ -52,7 +52,7 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
             id: The UUID identifier of the target website record.
 
         Returns:
-            The matching WebsiteRead data model instance populated with internal links and critical pages.
+            The matching WebsiteRead data model instance populated with critical pages and a count of internal links.
 
         Raises:
             NotFoundError: If no website record matches the provided UUID.
@@ -61,7 +61,7 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
             self._db,
             table=DBWebsite,
             id=id,
-            relations=[DBWebsite.internal_links, DBWebsite.critical_pages],
+            relations=[DBWebsite.critical_pages],
         )
         return WebsiteRead.model_validate(website_record)
 
@@ -81,7 +81,7 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
             self._db,
             table=DBWebsite,
             attributes={"url": url},
-            relations=[DBWebsite.internal_links, DBWebsite.critical_pages],
+            relations=[DBWebsite.critical_pages],
             limit=1,
         )
 
@@ -203,6 +203,8 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
             NotFoundError: If no website record matches the provided UUID.
         """
         repository.get(self._db, table=DBWebsite, id=id)  # Check if the record exists
+        # Deleted in bulk first, as deleting the website itself would load every link to delete them one by one
+        InternalLinkService(self._db).delete_all_for_website(id)
         repository.delete(self._db, table=DBWebsite, id=id)
 
     def set_cooldown(self, id: uuid.UUID, hours: int) -> WebsiteRead:

@@ -175,6 +175,23 @@ def test_update_website(session: Session, test_website: WebsiteRead) -> None:
     assert fetched_website.url == model_update.url
 
 
+def test_get_website_counts_its_internal_links(session: Session, test_website: WebsiteRead) -> None:
+    """
+    Tests a website read from the database carries a count of its internal links, rather than every link.
+
+    Args:
+        session: The database session fixture.
+        test_website: The test website record.
+    """
+    urls = [f"{test_website.url}page/{number}" for number in range(3)]
+    InternalLinkService(session).create_batch(urls=urls, website_id=test_website.id)
+
+    fetched_website: WebsiteRead = WebsiteService(session).get(id=test_website.id)
+
+    assert fetched_website.internal_link_count == 3
+    assert "internal_links" not in WebsiteRead.model_fields
+
+
 def test_update_website_internal_links(session: Session, test_website: WebsiteRead) -> None:
     """
     Tests updating a website with added and removed internal links.
@@ -203,10 +220,9 @@ def test_update_website_internal_links(session: Session, test_website: WebsiteRe
     with pytest.raises(NotFoundError):
         internal_link_service.get_by_url(url=existing_link_url)
 
-    # Confirm relationship payload on website read model
-    internal_link_urls = [link.url for link in updated_website.internal_links or []]
-    assert new_link_url in internal_link_urls
-    assert existing_link_url not in internal_link_urls
+    # Confirm the website read model counts its links, rather than loading them all
+    assert updated_website.internal_link_count == len(internal_link_service.get_urls_for_website(test_website.id))
+    assert new_link_url in internal_link_service.get_urls_for_website(test_website.id)
 
 
 def test_delete_website(session: Session, test_website: WebsiteRead) -> None:

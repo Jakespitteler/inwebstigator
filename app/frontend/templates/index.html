@@ -897,8 +897,7 @@
 
                             <p>
                                 <strong>Internal pages:</strong>
-                                {{ website.internal_links | length
-                                   if website.internal_links else 0 }}
+                                {{ website.internal_link_count }}
                             </p>
 
                         </div>

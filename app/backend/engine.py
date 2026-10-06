@@ -197,6 +197,7 @@ async def get_critical_page_only_updates(
 async def get_website_updates(
     client: AsyncClient,
     stored_website: WebsiteRead,
+    stored_internal_links: Sequence[str],
     max_pages: int | None,
     delay: float | None,
     concurrent: int | None,
@@ -211,6 +212,7 @@ async def get_website_updates(
     Args:
         client (AsyncClient): The HTTP client used for web crawling and page fetching.
         stored_website (WebsiteRead): The current state of the website retrieved from the database.
+        stored_internal_links (Sequence[str]): The URLs of the website's internal links saved by its last scan.
         max_pages (int | None): Maximum number of pages to crawl. Overrides the default if provided.
         delay (float | None): Delay between requests. Uses the website's recommended delay if None.
         concurrent (int | None): Maximum concurrent requests. Uses the website's recommended concurrency if None.
@@ -233,12 +235,12 @@ async def get_website_updates(
             batch_403_threshold=BATCH_402_THRESHOLD_SECONDS,
         )
     )
-    if init or not stored_website.internal_links:
+    if init or not stored_internal_links:
         updates.initial_internal_links = current_internal_links
         logger.info(f"{len(updates.initial_internal_links)=}")
     else:
         updates.recent_added_internal_links, updates.recent_removed_internal_links = find_link_difference(
-            previous_state=[link.url for link in stored_website.internal_links],
+            previous_state=list(stored_internal_links),
             current_state=current_internal_links,
         )
         logger.info(f"{updates.recent_added_internal_links=}")

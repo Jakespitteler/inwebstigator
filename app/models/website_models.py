@@ -9,7 +9,6 @@ from app.backend.utils.links import resolve_critical_page_url
 from app.core.config import config
 from app.db.utils.field_types import EmailString, NewURLString, URLString
 from app.models.critical_page_models import CriticalPageRead, CriticalPageUpdate
-from app.models.internal_link_models import InternalLinkRead
 from app.models.recipient_models import RecipientRead
 
 DEFAULT_DELAY: float = config.web_crawler_default_delay
@@ -65,7 +64,7 @@ class WebsiteRead(BaseModel):
     on_cooldown_until: datetime | None = None
 
     critical_pages: list[CriticalPageRead]
-    internal_links: list[InternalLinkRead]
+    internal_link_count: int
 
     recent_added_internal_links: list[URLString] | None = None
     recent_removed_internal_links: list[URLString] | None = None
