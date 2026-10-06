@@ -2,13 +2,14 @@ import asyncio
 import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Sequence
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
 
 from httpx2 import AsyncClient
 
 from app.backend.email_service import build_message, send_email
 from app.backend.engine import get_critical_page_only_updates, get_website_updates
 from app.backend.format_message import ScanStatus, generate_scan_report_html, monitoring_started_html
+from app.core.config import config
 from app.core.errors import (
     NotFoundError,
     ScanAlreadyQueuedError,
@@ -279,6 +280,27 @@ def _get_latest_state(website: WebsiteRead) -> WebsiteRead | None:
             return None
 
 
+def _is_due_a_scan(website: WebsiteRead, run_started_at: datetime) -> bool:
+    """Checks whether enough time has passed since a website's last scan for it to be scanned again.
+
+    Time is counted from the exact time of the last scan, less a small tolerance, so a run that starts a few
+    seconds earlier than the last one did does not put the scan off until the next run. (Counting from the
+    start of the day would round intervals such as 1.5 days down to whole days.)
+
+    Args:
+        website (WebsiteRead): The website to check.
+        run_started_at (datetime): When the current run started.
+
+    Returns:
+        bool: True if the website has never been scanned or its interval has (nearly) passed, otherwise False.
+    """
+    if website.last_scan_at is None:
+        return True
+    interval: timedelta = timedelta(days=website.days_between_scans)
+    tolerance: timedelta = timedelta(minutes=config.scheduler_scan_due_tolerance_minutes)
+    return run_started_at - website.last_scan_at >= interval - tolerance
+
+
 async def scan_all_websites(ignore_schedule: bool = False) -> str | None:
     """Asynchronously scans all non-cooldown websites that are due a scan. Inactive websites
     only have their critical pages checked.
@@ -286,8 +308,9 @@ async def scan_all_websites(ignore_schedule: bool = False) -> str | None:
     Updates the recipient's `last_scan_at` metadata and dispatches an HTML email notification
     if any scan reports were generated.
 
-    A website whose scan fails unexpectedly is logged and skipped, and a failed email is logged
-    and skipped, so one problem cannot stop the other websites being scanned or reported. A website
+    A website whose scan fails unexpectedly is logged and its recipients are sent a failure report, a
+    website that cannot be read or updated in the database is logged and skipped, and a failed email is
+    logged and skipped, so one problem cannot stop the other websites being scanned or reported. A website
     deleted during the run is skipped, or its scan cancelled if it was being scanned.
 
     Args:
@@ -301,28 +324,25 @@ async def scan_all_websites(ignore_schedule: bool = False) -> str | None:
 
     with db_context() as session:
         website_service = WebsiteService(session)
-        websites: Sequence[WebsiteRead] = website_service.get_all()
+        websites: Sequence[WebsiteRead] = website_service.get_all(limit=None)  # Every website, not just the first 100
 
     run_started_at = datetime.now()
     reports_by_recipient: dict[EmailString, list[str]] = defaultdict(list)
     all_reports: list[str] = []
     async with AsyncClient() as client:
         for listed_website in websites:
-            website: WebsiteRead | None = _get_latest_state(listed_website)
+            try:
+                website: WebsiteRead | None = _get_latest_state(listed_website)
+            except Exception:
+                logger.exception(f"{listed_website.url} has been skipped as it could not be read from the database.")
+                continue
             if website is None:
                 logger.info(f"{listed_website.url} has been skipped as it was deleted during the run.")
                 continue
             if website.on_cooldown_until and website.on_cooldown_until > datetime.now():
                 logger.warning(f"{website.url} has been skipped as it is on cooldown.")
                 continue
-            if (
-                not ignore_schedule
-                and website.last_scan_at
-                and (
-                    run_started_at - datetime.combine(website.last_scan_at.date(), time.min)  # Start of the day
-                )
-                < timedelta(days=website.days_between_scans)
-            ):
+            if not ignore_schedule and not _is_due_a_scan(website, run_started_at):
                 logger.info(f"{website.url} has been skipped as there has not been enough time since last scan.")
                 continue
 
@@ -336,7 +356,13 @@ async def scan_all_websites(ignore_schedule: bool = False) -> str | None:
                 continue
             except Exception:
                 logger.exception(f"Scan failed for {website.url}, continuing with the remaining websites.")
-                report = None
+                # Tell the recipients, rather than leaving them to think nothing has changed
+                report = generate_scan_report_html(
+                    website,
+                    status=ScanStatus.SCAN_ERROR,
+                    message="The scan failed unexpectedly, so changes since the last scan have not been checked. "
+                    "It will be tried again at the next scheduled scan.",
+                )
 
             if report:
                 all_reports.append(report)
@@ -345,8 +371,14 @@ async def scan_all_websites(ignore_schedule: bool = False) -> str | None:
             else:
                 logger.info(f"No updates found for: {website.url}")
 
-            with db_context() as session:
-                WebsiteService(session).update(id=website.id, model_update=WebsiteUpdate(last_scan_at=run_started_at))
+            # A failure here is logged rather than raised, so the reports already found are still emailed
+            try:
+                with db_context() as session:
+                    WebsiteService(session).update(
+                        id=website.id, model_update=WebsiteUpdate(last_scan_at=run_started_at)
+                    )
+            except Exception:
+                logger.exception(f"Could not record when {website.url} was scanned, so it may be scanned again early.")
 
     for recipient_email, recipient_reports in reports_by_recipient.items():
         try:

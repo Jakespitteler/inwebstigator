@@ -57,7 +57,7 @@ Setup is finished.
 **Keep Inwebstigator open and stay logged in.** In this test version, the
 daily checks only happen while the program is open, you're logged in, and the
 computer is on. You can minimise the window. If it was closed, it catches up
-when you next open it, which can make startup take a few minutes.
+in the background shortly after you next open it.
 
 **After restarting the computer,** open **Inwebstigator.exe** again and log in.
 

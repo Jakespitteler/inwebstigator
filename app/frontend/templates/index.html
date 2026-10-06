@@ -614,6 +614,28 @@
                     </p>
                 {% endif %}
 
+                <!-- Each website being added gets its own line while its first scan runs,
+                     so the form below stays free for adding another website meanwhile -->
+                <div id="add-website-progress-list"></div>
+
+                <template id="add-website-progress-template">
+                    <div class="scan-progress" role="status" data-state="scanning">
+                        <span class="spinner" aria-hidden="true"></span>
+
+                        <p class="scan-progress-text">
+                            <strong class="add-website-progress-status">Scanning…</strong>
+                            <span class="add-website-progress-detail">
+                                Websites are scanned one at a time, and a large website can take several minutes.
+                            </span>
+                        </p>
+
+                        <button type="button" class="cancel-scan-button add-website-cancel">Cancel Scan</button>
+                        <button type="button" class="add-website-retry" hidden>Edit and Try Again</button>
+                        <button type="button" class="add-website-dismiss" hidden>Dismiss</button>
+                        <button type="button" class="add-website-refresh" hidden>Refresh</button>
+                    </div>
+                </template>
+
                 <form
                     id="add-website-form"
                     class="guide-card"
@@ -765,20 +787,6 @@
                     </div>
 
                 </form>
-
-                <!-- While the first scan runs, the form above is collapsed into this one line -->
-                <div id="add-website-progress" class="scan-progress" role="status" hidden>
-                    <span class="spinner" aria-hidden="true"></span>
-
-                    <p class="scan-progress-text">
-                        <strong id="add-website-progress-status">Scanning…</strong>
-                        <span>This can take several minutes for a large website.</span>
-                    </p>
-
-                    <button type="button" id="guide-cancel-scan" class="cancel-scan-button" hidden>
-                        Cancel Scan
-                    </button>
-                </div>
 
             </section>
 
@@ -1609,17 +1617,14 @@
 
 
 
-        // The website whose first scan is running, while it is being added
-        const guideCancelScan =
-            document.getElementById(
-                "guide-cancel-scan"
-            );
+        // Each website being added gets its own line while its first scan runs, so the form stays free for
+        // adding another website meanwhile. The server scans them one at a time, in the order they were added.
+        const addWebsiteForm = document.getElementById("add-website-form");
+        const addWebsiteProgressList = document.getElementById("add-website-progress-list");
+        const addWebsiteProgressTemplate = document.getElementById("add-website-progress-template");
 
-        let websiteBeingAdded = null;
-        let addingCancelled = false;
-
-        const addWebsiteProgress = document.getElementById("add-website-progress");
-        const addWebsiteProgressStatus = document.getElementById("add-website-progress-status");
+        // The URLs of the websites whose first scan is running, so the same website isn't added twice at once
+        const websitesBeingAdded = new Set();
 
         // The name a website is shown by, e.g. "https://www.uwa.edu.au/" -> "uwa.edu.au"
         function displayName(url) {
@@ -1630,100 +1635,136 @@
             }
         }
 
-        // Collapse the add website form into a single "Scanning ..." line while its first scan runs,
-        // and bring the form back (at the review step) if the scan fails or is cancelled
-        function showAddWebsiteProgress(scanning, websiteUrl = "") {
-            document.getElementById("add-website-form").hidden = scanning;
-            addWebsiteProgress.hidden = !scanning;
+        // The URL as the server saves it, e.g. "example.com" -> "https://example.com", so it can be cancelled by it
+        function withScheme(url) {
+            return /^[a-z][a-z\d+.-]*:\/\//i.test(url) ? url : `https://${url}`;
+        }
 
-            const intro = document.querySelector(".guide-intro");
-            if (intro) {
-                intro.hidden = scanning;
+        // Everything entered in the add website form, as typed, so it can be put back to try again
+        function readAddWebsiteForm() {
+            return {
+                url: document.getElementById("website-url").value.trim(),
+                criticalPages: filledValues(".critical-page-input"),
+                recipientEmails: filledValues(".recipient-email-input"),
+                daysBetweenScans: document.getElementById("new-website-days").value,
+                delay: document.getElementById("new-website-delay").value,
+                concurrent: document.getElementById("new-website-concurrent").value,
+            };
+        }
+
+        function addWebsiteFormIsEmpty() {
+            const { url, criticalPages, recipientEmails } = readAddWebsiteForm();
+            return !url && !criticalPages.length && !recipientEmails.length;
+        }
+
+        // Puts the add website form back to how it started, ready for the next website
+        function resetAddWebsiteForm() {
+            addWebsiteForm.reset();
+            // Keep the first field of each list, removing any added with "+ Add another"
+            document.querySelectorAll(
+                "#critical-page-inputs input:not(:first-child), #recipient-email-inputs input:not(:first-child)"
+            ).forEach((input) => input.remove());
+            document.getElementById("website-form-message").textContent = "";
+            showGuideStep(1);
+        }
+
+        // Fills a list of fields with values, adding fields with its "+ Add another" button as needed
+        function fillInputs(selector, addButton, values) {
+            while (document.querySelectorAll(selector).length < values.length) {
+                addButton.click();
             }
+            document.querySelectorAll(selector).forEach((input, index) => {
+                input.value = values[index] ?? "";
+            });
+        }
 
-            // The toggle reads "Close" while the form is open, which makes no sense while it can't be used
-            const toggle = document.getElementById("add-website-toggle");
-            if (toggle) {
-                toggle.disabled = scanning;
-                toggle.textContent = scanning ? "Adding website…" : "Close";
+        // Puts a website that could not be added back in the form, at the review step, so it can be tried again
+        function fillAddWebsiteForm(values) {
+            resetAddWebsiteForm();
+            document.getElementById("website-url").value = values.url;
+            fillInputs(".critical-page-input", addCriticalPageButton, values.criticalPages);
+            fillInputs(".recipient-email-input", addRecipientEmailButton, values.recipientEmails);
+            document.getElementById("new-website-days").value = values.daysBetweenScans;
+            document.getElementById("new-website-delay").value = values.delay;
+            document.getElementById("new-website-concurrent").value = values.concurrent;
+
+            if (addWebsiteForm.hidden && addWebsiteToggle) {
+                addWebsiteToggle.click();  // Opens the form
             }
+            showGuideStep(guideSteps.length);
+        }
 
-            if (scanning) {
-                addWebsiteProgressStatus.textContent = `Scanning ${displayName(websiteUrl)}…`;
+        // Reloads the dashboard to show the websites just added, but only once nothing would be lost by it:
+        // no website still being added, no failure still to read, and nothing typed into the form
+        function reloadWhenIdle() {
+            const websiteAdded = addWebsiteProgressList.querySelector("[data-state='added']");
+            const failureShown = addWebsiteProgressList.querySelector("[data-state='failed']");
+            if (websiteAdded && !failureShown && websitesBeingAdded.size === 0 && addWebsiteFormIsEmpty()) {
+                window.location.reload();
             }
         }
 
-        // Cancel the first scan of the website being added, which cancels adding the website
-        if (guideCancelScan) {
+        // Cancels a website's first scan, which cancels adding the website
+        async function cancelAdding(adding) {
+            const status = adding.line.querySelector(".add-website-progress-status");
+            const cancelButton = adding.line.querySelector(".add-website-cancel");
+            const formData = new FormData();
+            formData.append("url", adding.url);
 
-            guideCancelScan.addEventListener(
-                "click",
-                async () => {
+            // Set before asking, as the add request can finish before the cancel request does
+            adding.cancelled = true;
+            cancelButton.disabled = true;
+            status.textContent = "Cancelling scan…";
 
-                    const message =
-                        document.getElementById(
-                            "website-form-message"
-                        );
-
-                    const formData =
-                        new FormData();
-
-                    formData.append(
-                        "url",
-                        websiteBeingAdded
-                    );
-
-                    // Set before asking, as the add request can finish before the cancel request does
-                    addingCancelled = true;
-                    guideCancelScan.disabled = true;
-                    addWebsiteProgressStatus.textContent =
-                        "Cancelling scan…";
-
-                    try {
-
-                        const response =
-                            await fetch(
-                                "/scanner/cancel",
-                                {
-                                    method: "POST",
-                                    body: formData
-                                }
-                            );
-
-                        if (!response.ok) {
-                            throw new Error(
-                                "Unable to cancel scan."
-                            );
-                        }
-
-                        const cancelled =
-                            await response.json();
-
-                        if (!cancelled) {
-                            throw new Error(
-                                "The scan could not be cancelled, as it had already finished."
-                            );
-                        }
-
-                    } catch (error) {
-
-                        addingCancelled = false;
-                        guideCancelScan.disabled = false;
-                        addWebsiteProgressStatus.textContent =
-                            error.message;
-                    }
+            try {
+                const response = await fetch("/scanner/cancel", { method: "POST", body: formData });
+                if (!response.ok) {
+                    throw new Error("Unable to cancel scan.");
                 }
-            );
+                if (!(await response.json())) {
+                    throw new Error("The scan could not be cancelled, as it had already finished.");
+                }
+            } catch (error) {
+                adding.cancelled = false;
+                cancelButton.disabled = false;
+                status.textContent = error.message;
+            }
+        }
+
+        // Adds a "Scanning ..." line for a website being added, with buttons for each way it can end
+        function showAddingLine(adding, values) {
+            const line = addWebsiteProgressTemplate.content.firstElementChild.cloneNode(true);
+            line.querySelector(".add-website-progress-status").textContent = `Scanning ${displayName(adding.url)}…`;
+            line.querySelector(".add-website-cancel").addEventListener("click", () => cancelAdding(adding));
+            line.querySelector(".add-website-retry").addEventListener("click", () => {
+                line.remove();
+                fillAddWebsiteForm(values);
+            });
+            line.querySelector(".add-website-dismiss").addEventListener("click", () => {
+                line.remove();
+                reloadWhenIdle();
+            });
+            line.querySelector(".add-website-refresh").addEventListener("click", () => window.location.reload());
+            addWebsiteProgressList.append(line);
+            return line;
+        }
+
+        // Shows on a website's line how adding it ended: "added", or "failed" with the reason
+        function finishAddingLine(line, state, statusText, detailText) {
+            line.dataset.state = state;
+            line.querySelector(".spinner").hidden = true;
+            line.querySelector(".add-website-progress-status").textContent = statusText;
+            line.querySelector(".add-website-progress-detail").textContent = detailText;
+            line.querySelector(".add-website-cancel").hidden = true;
+            line.querySelector(".add-website-retry").hidden = state !== "failed";
+            line.querySelector(".add-website-dismiss").hidden = state !== "failed";
+            line.querySelector(".add-website-refresh").hidden = state !== "added";
         }
 
 
 
-        // Add a new website
-        const addWebsiteForm =
-            document.getElementById(
-                "add-website-form"
-            );
-
+        // Add a new website. The form is cleared straight away, so another website can be added while this one's
+        // first scan runs, and how adding this one went is shown on its own line.
         if (addWebsiteForm) {
 
             addWebsiteForm.addEventListener(
@@ -1732,50 +1773,25 @@
 
                     event.preventDefault();
 
-                    const websiteUrl =
-                        document.getElementById(
-                            "website-url"
-                        ).value.trim();
+                    const values = readAddWebsiteForm();
+                    const websiteUrl = withScheme(values.url);
+                    const message = document.getElementById("website-form-message");
 
-                    const criticalPages =
-                        Array.from(
-                            document.querySelectorAll(
-                                ".critical-page-input"
-                            )
-                        )
-                            .map((input) =>
-                                input.value.trim()
-                            )
-                            .filter((url) =>
-                                url.length > 0
-                            );
+                    // The server would refuse it too, but only after emailing its recipients again
+                    if (websitesBeingAdded.has(websiteUrl)) {
+                        message.textContent = `${displayName(websiteUrl)} is already being added.`;
+                        return;
+                    }
 
-                    const recipientEmails =
-                        Array.from(
-                            document.querySelectorAll(
-                                ".recipient-email-input"
-                            )
-                        )
-                            .map((input) =>
-                                input.value.trim()
-                            )
-                            .filter((email) =>
-                                email.length > 0
-                            );
+                    const adding = { url: websiteUrl, cancelled: false };
+                    adding.line = showAddingLine(adding, values);
+                    websitesBeingAdded.add(websiteUrl);
+                    resetAddWebsiteForm();
 
-                    const message =
-                        document.getElementById(
-                            "website-form-message"
-                        );
-
-                    message.textContent = "";
-
-                    guideSubmit.disabled = true;
-                    websiteBeingAdded = websiteUrl;
-                    addingCancelled = false;
-                    guideCancelScan.disabled = false;
-                    guideCancelScan.hidden = false;
-                    showAddWebsiteProgress(true, websiteUrl);
+                    const intro = document.querySelector(".guide-intro");
+                    if (intro) {
+                        intro.hidden = true;
+                    }
 
                     try {
 
@@ -1791,19 +1807,12 @@
                                     body: JSON.stringify({
                                         url: websiteUrl,
                                         critical_pages:
-                                            criticalPages,
+                                            values.criticalPages,
                                         recipient_emails:
-                                            recipientEmails,
-                                        recommended_delay: parseFloat(
-                                            document.getElementById("new-website-delay").value
-                                        ),
-                                        recommended_concurrent: parseInt(
-                                            document.getElementById("new-website-concurrent").value,
-                                            10
-                                        ),
-                                        days_between_scans: parseFloat(
-                                            document.getElementById("new-website-days").value
-                                        )
+                                            values.recipientEmails,
+                                        recommended_delay: parseFloat(values.delay),
+                                        recommended_concurrent: parseInt(values.concurrent, 10),
+                                        days_between_scans: parseFloat(values.daysBetweenScans)
                                     })
                                 }
                             );
@@ -1813,27 +1822,23 @@
                             throw new Error(
                                 response.status !== 409
                                     ? await failureReason(response, "Unable to add website.")
-                                    : addingCancelled
-                                        ? "Scan cancelled. The website was not added."
+                                    : adding.cancelled
+                                        ? "Scan cancelled."
                                         : (await response.json()).detail
                             );
                         }
 
-                        window.location.reload();
+                        finishAddingLine(
+                            adding.line, "added", `Added ${displayName(websiteUrl)}.`, "Refresh to see it on the dashboard."
+                        );
 
                     } catch (error) {
 
-                        // Bring the form back with everything still filled in, so it can be tried again
-                        showAddWebsiteProgress(false);
-
-                        message.textContent =
-                            error.message;
-
-                        guideSubmit.disabled = false;
+                        finishAddingLine(adding.line, "failed", error.message, `${displayName(websiteUrl)} was not added.`);
 
                     } finally {
-                        websiteBeingAdded = null;
-                        guideCancelScan.hidden = true;
+                        websitesBeingAdded.delete(websiteUrl);
+                        reloadWhenIdle();
                     }
                 }
             );

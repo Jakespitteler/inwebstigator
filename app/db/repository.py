@@ -49,7 +49,7 @@ def get_list[DBTable: Base](
     session: Session,
     table: type[DBTable],
     skip: int = 0,
-    limit: int = 100,
+    limit: int | None = 100,
     attributes: dict[str, Any] | None = None,
     relations: list[InstrumentedAttribute[Any]] | None = None,
 ) -> Sequence[DBTable]:
@@ -60,7 +60,7 @@ def get_list[DBTable: Base](
         session: The database session.
         table: The table to query.
         skip: The number of records to skip (offset)
-        limit: The maximum number of records to return
+        limit: The maximum number of records to return, or None to return every record
         attributes: Optional filtering criteria.
         relations: Optional relational table attributes to eager load.
 

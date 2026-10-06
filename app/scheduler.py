@@ -44,11 +44,12 @@ async def _scan_then_send_health_checks() -> None:
 
     Recipients are read after the scan, on every run, so a change notification sent by the scan
     counts as recent contact, and newly added recipients and changed intervals are picked up.
+    Only recipients still linked to a website are sent health checks.
     """
     await scan_all_websites()
 
     with db_context() as session:
-        recipients = RecipientService(session).get_all()
+        recipients = RecipientService(session).get_all_with_websites()
     for recipient in recipients:
         try:
             _send_health_check_if_no_change(recipient)

@@ -1092,6 +1092,9 @@ input::placeholder {
 .submit-button,
 .guide-next,
 .guide-back,
+.add-website-retry,
+.add-website-dismiss,
+.add-website-refresh,
 #add-critical-page-input,
 #add-recipient-email-input,
 .cancel-scan-button,
@@ -1120,6 +1123,9 @@ input::placeholder {
 .submit-button:active,
 .guide-next:active,
 .guide-back:active,
+.add-website-retry:active,
+.add-website-dismiss:active,
+.add-website-refresh:active,
 #add-critical-page-input:active,
 #add-recipient-email-input:active,
 .cancel-scan-button:active,
@@ -1184,6 +1190,9 @@ button:disabled {
 #add-recipient-email-input,
 .guide-back,
 .run-all-scans-button,
+.add-website-retry,
+.add-website-dismiss,
+.add-website-refresh,
 .add-website-toggle[aria-expanded="true"] {
     color: var(--text-primary);
     background: var(--control-bg);
@@ -1194,6 +1203,9 @@ button:disabled {
 #add-critical-page-input:hover,
 #add-recipient-email-input:hover,
 .guide-back:hover:not(:disabled),
+.add-website-retry:hover,
+.add-website-dismiss:hover,
+.add-website-refresh:hover,
 .run-all-scans-button:hover,
 .add-website-toggle[aria-expanded="true"]:hover {
     background: var(--control-bg-hover);
@@ -1461,7 +1473,7 @@ button:disabled {
     }
 }
 
-/* The add website form collapsed into one line while its first scan runs */
+/* A website being added, shown as one line while its first scan runs */
 .scan-progress {
     display: flex;
     align-items: center;

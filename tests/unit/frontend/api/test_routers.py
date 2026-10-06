@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import config
-from app.core.errors import ScanCancelledError, WebsiteTooLargeError
+from app.core.errors import ScanAlreadyQueuedError, ScanCancelledError, WebsiteTooLargeError
 from app.db.core import get_db_session
 from app.db.schema import Base, DBCriticalPage, DBRecipient, DBWebsite
 from app.frontend.api import routers
@@ -380,6 +380,42 @@ def test_cancelling_the_first_scan_does_not_add_the_website(
     mock_send_monitoring_started.assert_not_called()
 
 
+def test_adding_a_website_already_being_scanned_does_not_add_a_duplicate(
+    api_client: TestClient, session: Session, mocker: MockerFixture
+) -> None:
+    """Tests adding a website while the same website is already being added or scanned is refused, without
+    leaving a duplicate website behind that has no baseline."""
+    mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
+    mocker.patch("app.frontend.api.routers._check_pages_exist")  # The website is not loaded online
+    mocker.patch("app.frontend.api.routers.scan_website", side_effect=ScanAlreadyQueuedError("https://example.com"))
+    mock_send_monitoring_started = mocker.patch("app.frontend.api.routers.send_monitoring_started_notifications")
+
+    response = api_client.post("/scanner/initial_scan", json={"url": "https://example.com"})
+
+    assert response.status_code == 409, response.text
+    assert session.scalars(select(DBWebsite)).all() == []
+    mock_send_monitoring_started.assert_not_called()
+
+
+def test_adding_a_website_counts_as_emailing_its_recipients(
+    api_client: TestClient, session: Session, mocker: MockerFixture
+) -> None:
+    """Tests a new website's recipients are recorded as emailed (they were sent a confirmation), so their health
+    checks count from then even if the "monitoring started" email fails."""
+    mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
+    mocker.patch("app.frontend.api.routers._check_pages_exist")  # The website is not loaded online
+    mocker.patch("app.frontend.api.routers.scan_website", return_value=None)
+    mocker.patch("app.scanner.send_email", side_effect=ConnectionError("smtp down"))  # "Monitoring started" fails
+
+    response = api_client.post(
+        "/scanner/initial_scan", json={"url": "https://example.com", "recipient_emails": ["someone@example.com"]}
+    )
+
+    assert response.status_code == 200, response.text
+    recipient = session.scalars(select(DBRecipient).where(DBRecipient.email == "someone@example.com")).one()
+    assert recipient.last_email_at is not None
+
+
 def test_adding_a_website_too_large_to_scan_deactivates_it(
     api_client: TestClient, session: Session, mocker: MockerFixture
 ) -> None:
@@ -529,6 +565,52 @@ async def test_stopping_a_new_websites_first_scan_leaves_no_website(
     assert added.status_code == 409, added.text
     assert session.scalars(select(DBWebsite)).all() == []
     assert queued_crawls == {}
+
+
+@pytest.mark.anyio
+async def test_another_website_can_be_added_while_one_is_being_scanned(
+    first_scan_in_progress: asyncio.Event, session: Session
+) -> None:
+    """Tests a second website can be added while the first is still having its first scan: it waits its turn
+    rather than being refused, and each can be cancelled on its own."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        adding_first = asyncio.create_task(client.post("/scanner/initial_scan", json={"url": "https://first.com"}))
+        await first_scan_in_progress.wait()
+        adding_second = asyncio.create_task(client.post("/scanner/initial_scan", json={"url": "https://second.com"}))
+
+        async with asyncio.timeout(5):  # Fails rather than hangs if the second website was not queued
+            while len(queued_crawls) < 2:
+                await asyncio.sleep(0.01)
+
+        first_url, second_url = queued_crawls  # In the order they were added
+        assert {website.url for website in session.scalars(select(DBWebsite))} == {first_url, second_url}
+
+        # Cancelling the waiting website leaves the one being scanned alone
+        assert (await client.post("/scanner/cancel", data={"url": second_url})).json() is True
+        async with asyncio.timeout(5):
+            assert (await adding_second).status_code == 409
+        assert list(queued_crawls) == [first_url]
+
+        assert (await client.post("/scanner/cancel", data={"url": first_url})).json() is True
+        async with asyncio.timeout(5):
+            assert (await adding_first).status_code == 409
+
+    assert session.scalars(select(DBWebsite)).all() == []
+    assert queued_crawls == {}
+
+
+def test_adding_an_email_to_a_website_counts_as_emailing_it(
+    api_client: TestClient,
+    session: Session,
+    test_website: website_models.WebsiteRead,
+) -> None:
+    """Tests an address added to a website is recorded as emailed (it was sent a confirmation), so its health
+    checks count from then rather than never starting."""
+    response = api_client.patch(f"/websites/{test_website.id}", json={"add_recipient_emails": ["new@example.com"]})
+
+    assert response.status_code == 200, response.text
+    recipient = session.scalars(select(DBRecipient).where(DBRecipient.email == "new@example.com")).one()
+    assert recipient.last_email_at is not None
 
 
 def test_adding_a_known_email_is_emailed_without_waiting_for_a_bounce(

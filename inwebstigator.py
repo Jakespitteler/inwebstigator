@@ -99,8 +99,8 @@ LOADING_HTML: str = (
 <main>
   <h1>Starting Inwebstigator</h1>
   <p>
-    If a scheduled scan is overdue it runs now, before the dashboard opens.
-    This can take a few minutes for large websites.
+    The dashboard opens in a moment. If a scheduled scan is overdue,
+    it runs in the background once the dashboard is open.
   </p>
 </main>
 """

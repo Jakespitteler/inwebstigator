@@ -70,6 +70,19 @@ def test_get_list_with_limit(session: Session) -> None:
     assert len(records) == 2
 
 
+def test_get_list_without_a_limit_returns_every_record(session: Session) -> None:
+    """
+    Tests a limit of None returns every record, rather than the default first 100.
+
+    Args:
+        session: The database session fixture.
+    """
+    repository.batch_add(session, [DBTestTable(name=f"Record {number}") for number in range(101)])
+
+    assert len(repository.get_list(session, table=DBTestTable)) == 100
+    assert len(repository.get_list(session, table=DBTestTable, limit=None)) == 101
+
+
 def test_get_list_invalid_limits(session: Session) -> None:
     """
     Tests retrieving list with negative or zero limits/skips.

@@ -31,12 +31,12 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         """
         self._db: Session = session
 
-    def get_all(self, skip: int = 0, limit: int = 100) -> Sequence[WebsiteRead]:
+    def get_all(self, skip: int = 0, limit: int | None = 100) -> Sequence[WebsiteRead]:
         """Retrieves a paginated list of the users website records from the database.
 
         Args:
             skip: The number of initial records to skip for pagination. Defaults to 0.
-            limit: The maximum number of records to return. Defaults to 100.
+            limit: The maximum number of records to return, or None for every record. Defaults to 100.
 
         Returns:
             A sequence of WebsiteRead models representing the retrieved records.

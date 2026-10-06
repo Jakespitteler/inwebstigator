@@ -776,7 +776,8 @@ async def test_scan_all_websites_continues_after_a_website_fails(
     populated_website: WebsiteRead,
     mocker: MockerFixture,
 ):
-    """Tests one website's unexpected failure does not stop the others being scanned and reported."""
+    """Tests one website's unexpected failure does not stop the others being scanned and reported, and its
+    recipients are told the scan failed rather than being left to think nothing changed."""
     first = _due_website(populated_website, "https://first.com", "first@gmail.com")
     broken = _due_website(populated_website, "https://broken.com", "broken@gmail.com")
     last = _due_website(populated_website, "https://last.com", "last@gmail.com")
@@ -791,12 +792,97 @@ async def test_scan_all_websites_continues_after_a_website_fails(
     result = await scanner.scan_all_websites()
 
     assert mock_scan_website.call_count == 3
-    assert [call.args[0] for call in mock_send_notification.call_args_list] == ["first@gmail.com", "last@gmail.com"]
+    sent_to = [call.args[0] for call in mock_send_notification.call_args_list]
+    assert sent_to == ["first@gmail.com", "broken@gmail.com", "last@gmail.com"]
     assert all(call.kwargs["subject"] == "Website Update" for call in mock_send_notification.call_args_list)
-    assert result == "<li>first report</li><li>last report</li>"
+    failure_report: str = mock_send_notification.call_args_list[1].kwargs["report"]
+    assert "Scan Failure Report" in failure_report
+    assert "https://broken.com" in failure_report
+    assert result is not None
+    assert result.startswith("<li>first report</li>")
+    assert result.endswith("<li>last report</li>")
 
     # The broken website's scan time is still recorded, so it is retried at its normal interval
     assert [call.kwargs["id"] for call in mock_update.call_args_list] == [first.id, broken.id, last.id]
+
+
+@pytest.mark.anyio
+async def test_scan_all_websites_continues_after_a_database_error(
+    populated_website: WebsiteRead,
+    mocker: MockerFixture,
+):
+    """Tests a website that cannot be read, or whose scan time cannot be saved, does not end the run, so the
+    other websites are still scanned and the reports already found are still emailed."""
+    unreadable = _due_website(populated_website, "https://unreadable.com", "unreadable@gmail.com")
+    first = _due_website(populated_website, "https://first.com", "first@gmail.com")
+    last = _due_website(populated_website, "https://last.com", "last@gmail.com")
+    mocker.patch.object(WebsiteService, "get_all", return_value=[unreadable, first, last])
+
+    def get_latest(website: WebsiteRead) -> WebsiteRead:
+        if website.id == unreadable.id:
+            raise RuntimeError("database is locked")
+        return website
+
+    mocker.patch("app.scanner._get_latest_state", side_effect=get_latest)
+    mock_scan_website = mocker.patch(
+        "app.scanner.scan_website", side_effect=["<li>first report</li>", "<li>last report</li>"]
+    )
+    mock_send_notification = mocker.patch("app.scanner.send_notification")
+    mocker.patch.object(WebsiteService, "update", side_effect=[RuntimeError("database is locked"), None])
+
+    result = await scanner.scan_all_websites()
+
+    assert [call.args[1] for call in mock_scan_website.call_args_list] == [first, last]
+    assert [call.args[0] for call in mock_send_notification.call_args_list] == ["first@gmail.com", "last@gmail.com"]
+    assert result == "<li>first report</li><li>last report</li>"
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("websites_unchanged_during_run")
+async def test_scan_all_websites_reads_every_website(mocker: MockerFixture):
+    """Tests every website is read for the run, not just the first page of 100."""
+    mock_get_all = mocker.patch.object(WebsiteService, "get_all", return_value=[])
+
+    await scanner.scan_all_websites()
+
+    mock_get_all.assert_called_once_with(limit=None)
+
+
+@pytest.mark.parametrize(
+    ("days_between_scans", "last_scan_at", "run_started_at", "expected_due"),
+    [
+        (1, None, datetime(2026, 1, 1, 8, 0), True),
+        (1, datetime(2026, 1, 1, 20, 0), datetime(2026, 1, 2, 8, 0), False),
+        (1, datetime(2026, 1, 1, 8, 0, 5), datetime(2026, 1, 2, 8, 0, 2), True),
+        (1.5, datetime(2026, 1, 1, 20, 0), datetime(2026, 1, 2, 20, 0), False),
+        (1.5, datetime(2026, 1, 1, 20, 0), datetime(2026, 1, 3, 8, 0), True),
+        (0.5, datetime(2026, 1, 1, 8, 0), datetime(2026, 1, 1, 20, 0), True),
+        (0.5, datetime(2026, 1, 1, 15, 0), datetime(2026, 1, 1, 20, 0), False),
+    ],
+    ids=[
+        "never-scanned",
+        "a-day-not-yet-passed",
+        "run-started-a-few-seconds-earlier-than-last-time",
+        "a-day-and-a-half-not-yet-passed",
+        "a-day-and-a-half-passed",
+        "half-a-day-passed",
+        "half-a-day-not-yet-passed",
+    ],
+)
+def test_is_due_a_scan_counts_from_the_exact_time_of_the_last_scan(
+    populated_website: WebsiteRead,
+    days_between_scans: float,
+    last_scan_at: datetime | None,
+    run_started_at: datetime,
+    expected_due: bool,
+):
+    """Tests a website is due a scan once its interval has passed since its last scan, so intervals such as 1.5
+    days are not rounded down to whole days, while a run starting slightly early still counts."""
+    website = populated_website.model_copy(
+        update={"days_between_scans": days_between_scans, "last_scan_at": last_scan_at}
+    )
+
+    assert scanner._is_due_a_scan(website, run_started_at) is expected_due  # pyright: ignore[reportPrivateUsage]
 
 
 @pytest.mark.anyio

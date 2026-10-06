@@ -10,6 +10,7 @@ class ScanStatus(StrEnum):
     SUCCESS = "success"
     TRAFFIC_ERROR = "traffic_error"
     CONNECTION_ERROR = "connection_error"
+    SCAN_ERROR = "scan_error"
     SKIPPED_DEACTIVATED = "skipped_deactivated"
     SKIPPED_COOLDOWN = "skipped_cooldown"
     TOO_LARGE = "too_large"
@@ -40,6 +41,7 @@ def generate_scan_report_html(
         ScanStatus.SUCCESS: ("Website monitoring report", "#1f2328"),
         ScanStatus.TRAFFIC_ERROR: ("Traffic / Rate Limit Error", "#cf222e"),
         ScanStatus.CONNECTION_ERROR: ("Connection Failure Report", "#cf222e"),
+        ScanStatus.SCAN_ERROR: ("Scan Failure Report", "#cf222e"),
         ScanStatus.SKIPPED_DEACTIVATED: ("Scan Skipped (Deactivated)", "#9a6700"),
         ScanStatus.SKIPPED_COOLDOWN: ("Scan Skipped (Cooldown Active)", "#9a6700"),
         ScanStatus.TOO_LARGE: ("Scan Refused (Website Too Large)", "#9a6700"),

@@ -2,6 +2,7 @@ import logging
 import uuid
 from collections.abc import Sequence
 
+from sqlalchemy import Exists, Select, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
@@ -39,6 +40,24 @@ class RecipientService(CRUDService[RecipientRead, RecipientCreate, RecipientUpda
             skip=skip,
             limit=limit,
         )
+        return [RecipientRead.model_validate(recipient_record) for recipient_record in recipient_records]
+
+    def get_all_with_websites(self) -> Sequence[RecipientRead]:
+        """Retrieves every recipient that is still linked to at least one website.
+
+        A recipient removed from every website, or whose websites have all been deleted, is left out,
+        as nothing is being monitored for them any more.
+
+        Returns:
+            A sequence of RecipientRead models for the recipients with at least one website.
+        """
+        is_linked_to_a_website: Exists = (
+            select(website_recipient_association.c.recipient_id)
+            .where(website_recipient_association.c.recipient_id == DBRecipient.id)
+            .exists()
+        )
+        statement: Select[DBRecipient] = select(DBRecipient).where(is_linked_to_a_website)
+        recipient_records: Sequence[DBRecipient] = self._db.scalars(statement).all()
         return [RecipientRead.model_validate(recipient_record) for recipient_record in recipient_records]
 
     def get(self, id: uuid.UUID) -> RecipientRead:

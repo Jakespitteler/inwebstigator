@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import config
 from app.db.services.recipient_service import RecipientService
-from app.models.recipient_models import RecipientRead
+from app.models.recipient_models import RecipientCreate, RecipientRead
+from app.models.website_models import WebsiteRead
 from app.scheduler import (
     SCAN_JOB_ID,
     _scan_then_send_health_checks,  # pyright: ignore[reportPrivateUsage]
@@ -110,7 +111,7 @@ async def test_scan_then_send_health_checks_reads_recipients_after_scanning(
         return [test_recipient]
 
     mocker.patch("app.scheduler.scan_all_websites", side_effect=lambda: calls.append("scan"))
-    mocker.patch.object(RecipientService, "get_all", side_effect=read_recipients)
+    mocker.patch.object(RecipientService, "get_all_with_websites", side_effect=read_recipients)
     mocker.patch(
         "app.scheduler._send_health_check_if_no_change",
         side_effect=lambda recipient: calls.append("health_check"),  # pyright: ignore[reportUnknownLambdaType]
@@ -133,7 +134,7 @@ async def test_scan_then_send_health_checks_reads_recipients_fresh_each_run(
     )
     just_emailed = test_recipient.model_copy(update={"last_email_at": datetime.now()})
     mocker.patch("app.scheduler.scan_all_websites")
-    mocker.patch.object(RecipientService, "get_all", side_effect=[[overdue], [just_emailed]])
+    mocker.patch.object(RecipientService, "get_all_with_websites", side_effect=[[overdue], [just_emailed]])
     mock_send_notification = mocker.patch("app.scheduler.send_notification")
 
     await _scan_then_send_health_checks()
@@ -152,7 +153,7 @@ async def test_scan_then_send_health_checks_continues_after_a_failed_send(
     """Tests one recipient's failed send does not stop the remaining recipients being checked."""
     other_recipient = test_recipient.model_copy(update={"email": "other@gmail.com"})
     mocker.patch("app.scheduler.scan_all_websites")
-    mocker.patch.object(RecipientService, "get_all", return_value=[test_recipient, other_recipient])
+    mocker.patch.object(RecipientService, "get_all_with_websites", return_value=[test_recipient, other_recipient])
     mock_health_check = mocker.patch(
         "app.scheduler._send_health_check_if_no_change", side_effect=[ConnectionError("smtp down"), None]
     )
@@ -161,6 +162,25 @@ async def test_scan_then_send_health_checks_continues_after_a_failed_send(
 
     assert mock_health_check.call_count == 2
     mock_health_check.assert_called_with(other_recipient)
+
+
+@pytest.mark.anyio
+async def test_scan_then_send_health_checks_only_checks_recipients_still_on_a_website(
+    mock_db_context: MagicMock,
+    session: Session,
+    test_website: WebsiteRead,
+    mocker: MockerFixture,
+):
+    """Tests a recipient removed from every website is no longer sent health checks."""
+    removed_recipient = RecipientService(session).create(RecipientCreate(email="removed@gmail.com"))
+    mocker.patch("app.scheduler.scan_all_websites")
+    mock_health_check = mocker.patch("app.scheduler._send_health_check_if_no_change")
+
+    await _scan_then_send_health_checks()
+
+    checked_emails = [call.args[0].email for call in mock_health_check.call_args_list]
+    assert [recipient.email for recipient in test_website.recipients] == checked_emails
+    assert removed_recipient.email not in checked_emails
 
 
 @pytest.mark.anyio

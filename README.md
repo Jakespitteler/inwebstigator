@@ -170,26 +170,28 @@ Every message carries `Date` and `Message-ID` headers. Neither is added
 automatically, and mail without them scores badly with spam filters — a report
 in the junk folder looks exactly like a broken scraper.
 
-### run the scheduler
+### the scheduler
 
-```bash
-uv run python -m app.scheduler.background_scheduler
-```
+There is no separate scheduler process: it starts and stops with the app
+(`app/scheduler.py`, run from the FastAPI lifespan), so scans only happen while
+Inwebstigator is running. Set `AUTOMATIC_SCANS=false` to turn it off.
 
-The notification run happens **once a day at a wall clock time**
-(`DAILY_RUN_HOUR` / `DAILY_RUN_MINUTE`, in `REPORT_TIMEZONE`), not on a
-repeating interval. An interval loop drifts — the wait starts after the task
-finishes, so the true period is the interval plus however long the run took,
-and at daily intervals that walks the client's report later every day.
-Scheduling against the clock has no drift to accumulate.
+It runs every 12 hours (`SCHEDULER_MINIMUM_DAYS_BETWEEN_SCANS`), first a second
+after the app starts, so a computer that was off at the usual time catches up
+as soon as the app opens. Each run:
 
-Restarts are safe. `last_run_at` is stored per website, so a process that comes
-back up at lunchtime does not fire a second report for a day already covered.
-It fires once on startup precisely so a machine booted after the daily slot
-still covers that day.
+1. Scans each website whose own "days between scans" has passed since its last
+   scan, skipping websites on cooldown. The time is counted from the exact time
+   of the last scan, less `SCHEDULER_SCAN_DUE_TOLERANCE_MINUTES`, so a run that
+   starts a few seconds early still counts. Each recipient is emailed one
+   report of the changes, and of any scans that failed.
+2. Sends a health check to each recipient still on a website who has not been
+   emailed for their `days_between_health_checks` (7 by default). Being sent a
+   confirmation when added to a website counts as being emailed.
 
-Ctrl-C stops it. A task that raises is logged and the loop carries on, so one
-bad run doesn't end monitoring.
+"Run All Scans" on the dashboard scans every website straight away and restarts
+the 12-hour countdown. A run that raises is logged, and the next run happens as
+normal.
 
 ### run tests
 

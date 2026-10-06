@@ -17,7 +17,13 @@ from app.backend.format_message import recipient_added_html
 from app.backend.utils.http_client import fetch_content_from_url
 from app.backend.utils.links import resolve_critical_page_url
 from app.core.config import config
-from app.core.errors import NotFoundError, ScanCancelledError, UndeliverableEmailError, WebCrawlerError
+from app.core.errors import (
+    NotFoundError,
+    ScanAlreadyQueuedError,
+    ScanCancelledError,
+    UndeliverableEmailError,
+    WebCrawlerError,
+)
 from app.core.paths import resource_path
 from app.db.core import db_context
 from app.db.services.critical_page_service import CriticalPageService
@@ -274,6 +280,21 @@ async def _check_emails_can_be_received(session: Session, emails: Sequence[str],
         ) from error
 
 
+def _record_emails_sent(session: Session, emails: Sequence[str]) -> None:
+    """Records that each recipient was just emailed (e.g. to confirm their address), so their health checks
+    count from now. Otherwise a recipient who has only had a confirmation email is never sent a health check.
+
+    Args:
+        session (Session): Database session.
+        emails (Sequence[str]): The email addresses that were just emailed, each already a recipient.
+    """
+    recipient_service = RecipientService(session)
+    emailed_at: datetime = datetime.now()
+    for email in dict.fromkeys(emails):
+        recipient = recipient_service.get_by_email(email)
+        recipient_service.update(id=recipient.id, model_update=RecipientUpdate(last_email_at=emailed_at))
+
+
 @SCANNER_ROUTER.post("/initial_scan", response_model=None)
 async def website_initial_scan(session: SessionDep, model_create: WebsiteCreate) -> None:
     """Registers a new website in the database, triggers an immediate initial crawl and
@@ -281,8 +302,10 @@ async def website_initial_scan(session: SessionDep, model_create: WebsiteCreate)
 
     A website or critical page that cannot be loaded is not added, and the request fails with a 422 status.
     A recipient that a confirmation email cannot be delivered to also fails the request with a 422 status.
-    If the first scan is cancelled the website is not added, and the request fails with a 409 status.
+    If the first scan is cancelled, or the same website is already being added or scanned, the website is not
+    added, and the request fails with a 409 status.
     A website too large to scan is kept but deactivated, and only its critical pages are watched.
+    Other websites can be added while this one is being scanned, and are scanned after it.
 
     Args:
         session (SessionDep): Database session dependency.
@@ -292,23 +315,26 @@ async def website_initial_scan(session: SessionDep, model_create: WebsiteCreate)
         HTTPException: 422 if the website or one of its critical pages could not be loaded,
             or if an email to one of its recipients could not be delivered.
         ScanCancelledError: If the website's first scan was cancelled.
+        ScanAlreadyQueuedError: If the same website is already being added or scanned.
     """
     await _check_pages_exist([model_create.url, *model_create.critical_pages])
     await _check_emails_can_be_received(session, model_create.recipient_emails, model_create.url)
     website: WebsiteRead = WebsiteService(session).create(model_create)
+    _record_emails_sent(session, model_create.recipient_emails)  # They were just emailed to confirm their address
     session.commit()
 
     try:
         async with AsyncClient() as client:
             await scan_website(client, website, init=True)
-    except ScanCancelledError:
+    except (ScanCancelledError, ScanAlreadyQueuedError):
         _discard_website(website.id)
         raise
 
     with db_context() as session:
         website = WebsiteService(session).update(id=website.id, model_update=WebsiteUpdate(last_scan_at=datetime.now()))
 
-    send_monitoring_started_notifications(website)
+    # Sent from a worker thread, so the emails don't hold up the scans of other websites being added
+    await asyncio.to_thread(send_monitoring_started_notifications, website)
 
 
 def _discard_critical_page(critical_page_id: uuid.UUID) -> None:
@@ -467,7 +493,10 @@ async def update_website(session: SessionDep, id: uuid.UUID, model_update: Websi
     website_service = WebsiteService(session)
     if model_update.add_recipient_emails:
         await _check_emails_can_be_received(session, model_update.add_recipient_emails, website_service.get(id).url)
-    return website_service.update(id, model_update)
+    website: WebsiteRead = website_service.update(id, model_update)
+    if model_update.add_recipient_emails:
+        _record_emails_sent(session, model_update.add_recipient_emails)  # They were just emailed to confirm
+    return website
 
 
 @WEBSITE_ROUTER.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)

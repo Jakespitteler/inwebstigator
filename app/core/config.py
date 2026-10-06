@@ -68,6 +68,7 @@ class Config(BaseSettings):
     scheduler_minimum_days_between_scans: float = 0.5
     scheduler_default_days_between_scans: float = 1
     scheduler_default_days_between_health_checks: float = 7
+    scheduler_scan_due_tolerance_minutes: int = 60
 
     @property
     def db_url(self) -> str:
