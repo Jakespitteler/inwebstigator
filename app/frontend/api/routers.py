@@ -15,7 +15,7 @@ from app.backend.email_service import confirm_address_can_receive_email, send_co
 from app.backend.engine import get_critical_page_updates
 from app.backend.format_message import monitoring_started_html, recipient_added_html
 from app.backend.utils.http_client import fetch_content_from_url
-from app.backend.utils.links import resolve_critical_page_url
+from app.backend.utils.links import is_same_page, resolve_critical_page_url
 from app.core.config import config
 from app.core.errors import (
     NotFoundError,
@@ -366,13 +366,19 @@ async def critical_page_initial_scan(
             or a link relative to the website (e.g. "/news/today").
 
     Raises:
-        HTTPException: 422 if the critical page is not a valid URL on the website or could not be loaded.
+        HTTPException: 422 if the critical page is not a valid URL on the website or could not be loaded,
+            or 409 if the page is already being watched (even if written differently, e.g. with a trailing "/").
     """
     website: WebsiteRead = WebsiteService(session).get(website_id)
     try:
         model_create = CriticalPageCreate(website_id=website_id, url=resolve_critical_page_url(website.url, url))
     except ValueError as error:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)) from error
+
+    if any(is_same_page(page.url, model_create.url) for page in website.critical_pages):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=f"{model_create.url} is already being watched."
+        )
 
     await _check_pages_exist([model_create.url])
     critical_page: CriticalPageRead = CriticalPageService(session).create(model_create)

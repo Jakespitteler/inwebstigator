@@ -107,8 +107,9 @@ def test_send_notification_failure(mocker: MockerFixture, test_recipient: Recipi
 
 
 def test_monitoring_started_html_lists_the_main_page_and_critical_pages():
-    """Tests the email lists the website's main page, which is always watched, then its other critical pages."""
-    body = monitoring_started_html(WebsiteCreate(url="https://example.com", critical_pages=["/news"]), 7)
+    """Tests the email lists the website's main page, which is always watched, then its other critical pages,
+    each only once (here "/" is the main page again)."""
+    body = monitoring_started_html(WebsiteCreate(url="https://example.com", critical_pages=["/news", "/"]), 7)
 
     assert body.count("<li") == 2
     assert body.index("https://example.com<") < body.index("https://example.com/news<")

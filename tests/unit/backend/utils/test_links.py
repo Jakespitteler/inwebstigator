@@ -6,6 +6,9 @@ from app.backend.utils.links import (
     find_removed_links,
     is_document,
     is_internal_web_page,
+    is_same_page,
+    page_key,
+    remove_repeated_pages,
     separate_document_links,
 )
 
@@ -204,3 +207,69 @@ def test_extract_links_from_html_skips_missing_href(test_url: str) -> None:
 def test_is_internal_web_page_treats_www_as_same_site(base_url: str, check_url: str, expected: bool) -> None:
     """Test example.com and www.example.com count as one website, but other subdomains and sites do not."""
     assert is_internal_web_page(base_url, check_url) is expected
+
+
+@pytest.mark.parametrize(
+    ("url", "other_url", "expected"),
+    [
+        ("https://example.com", "https://example.com/", True),
+        ("https://example.com/news", "https://example.com/news/", True),
+        ("https://example.com/news#latest", "https://example.com/news", True),
+        ("https://www.example.com/news", "https://example.com/news", True),
+        ("https://Example.COM/news", "https://example.com/news", True),
+        ("https://WWW.Example.com/news/", "https://example.com/news", True),
+        ("https://example.com/News", "https://example.com/news", False),
+        ("https://example.com/news", "https://example.com/sport", False),
+        ("https://example.com/news?page=2", "https://example.com/news", False),
+        ("https://news.example.com/", "https://example.com/", False),
+    ],
+)
+def test_is_same_page_ignores_differences_that_do_not_change_the_page(url: str, other_url: str, expected: bool) -> None:
+    """Test URLs that only differ by a trailing slash, fragment, leading "www." or capitals in the domain are the
+    same page, while a different path (including its capitals), query or subdomain is a different page."""
+    assert is_same_page(url, other_url) is expected
+
+
+def test_remove_repeated_pages_keeps_the_first_of_each_page() -> None:
+    """Test a page written a second time, e.g. with a trailing slash, is removed, keeping the order and the first
+    way it was written."""
+    urls = [
+        "https://example.com",
+        "https://example.com/news/",
+        "https://www.example.com/",
+        "https://Example.com/news",
+    ]
+
+    assert remove_repeated_pages(urls) == ["https://example.com", "https://example.com/news/"]
+
+
+def test_page_key_only_removes_differences_that_do_not_change_the_page() -> None:
+    """Test the page key drops a leading "www.", capitals in the domain, a trailing slash and a fragment, but keeps
+    the path's capitals and the query, which can change the page."""
+    assert page_key("https://WWW.Example.com/News/?id=1#top") == "https://example.com/News?id=1"
+    assert page_key("https://www.example.com") == "https://example.com/"
+
+
+def test_links_written_differently_for_the_same_page_are_not_added_or_removed() -> None:
+    """Test a link now written with or without "www." or with different capitals in the domain is not reported as
+    a page added or removed, while real changes still are."""
+    previous = ["https://example.com/news", "https://example.com/about"]
+    current = ["https://www.example.com/news", "https://Example.com/about", "https://example.com/contact"]
+
+    assert find_added_links(previous, current) == ["https://example.com/contact"]
+    assert find_removed_links(previous, current) == []
+    assert find_removed_links(current, previous) == ["https://example.com/contact"]
+
+
+def test_extract_links_from_html_lists_each_page_once() -> None:
+    """Test a page linked as both example.com and www.example.com is only listed once, and domains are written in
+    lower case."""
+    html = (
+        '<a href="https://www.example.com/news">News</a>'
+        '<a href="https://example.com/news/">News again</a>'
+        '<a href="https://EXAMPLE.com/about">About</a>'
+    )
+
+    links = extract_links_from_html(url="https://example.com/", html_content=html)
+
+    assert links == ["https://example.com/about", "https://example.com/news"]

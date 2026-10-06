@@ -9,6 +9,7 @@ from app.backend.utils.links import (
     extract_links_from_html,
     is_internal_web_page,
     normalise_url,
+    page_key,
 )
 from app.core.errors import TrafficError, WebConnectionError, WebsiteTooLargeError
 
@@ -127,6 +128,9 @@ async def crawl_site(
     A website with more pages than the limit is refused rather than partly crawled, as comparing
     a different partial crawl each scan would report pages being added and removed that never were.
 
+    Pages are tracked by their `page_key` (visited maps each page's key to the URL it was visited at),
+    so a page linked as both example.com/a and www.example.com/a is only visited once.
+
     Args:
         client: The HTTP client instance used to execute network requests.
         url: The entry point URL string from which the crawler discovers links.
@@ -138,7 +142,7 @@ async def crawl_site(
             that triggers a site-wide block exception. Defaults to 20.
 
     Returns:
-        A set of normalized internal URL strings visited during the crawl.
+        A set of normalized internal URL strings visited during the crawl, one for each page.
 
     Raises:
         TrafficError: If a single batch encounters 403 Forbidden responses equal to or exceeding
@@ -148,8 +152,8 @@ async def crawl_site(
     semaphore = asyncio.Semaphore(max_concurrent)
 
     url = normalise_url(url)
-    visited: set[str] = set()
-    queued: set[str] = {url}
+    visited: dict[str, str] = {}
+    queued: set[str] = {page_key(url)}
     queue: list[str] = [url]
 
     while queue and len(visited) < max_pages:
@@ -179,10 +183,11 @@ async def crawl_site(
             if status_code != 200:
                 continue
 
-            visited.add(normalise_url(visited_url))
+            visited.setdefault(page_key(visited_url), normalise_url(visited_url))
             for link in internal_links:
-                if link not in visited and link not in queued:
-                    queued.add(link)
+                link_page: str = page_key(link)
+                if link_page not in visited and link_page not in queued:
+                    queued.add(link_page)
                     queue.append(link)
 
         if batch_403_count >= batch_403_threshold:
@@ -192,8 +197,8 @@ async def crawl_site(
             raise TrafficError(url, 403)
     # The crawl only stops with pages left to visit when it has reached the limit. Queued links that
     # were already reached by following a redirect from another link are not counted as left to visit.
-    if any(link not in visited for link in queue):
+    if any(page_key(link) not in visited for link in queue):
         raise WebsiteTooLargeError(url, max_pages)
 
     logger.info(f"Crawl completed. Exhausted all discoverable links. Total visited: {len(visited)}")
-    return visited
+    return set(visited.values())

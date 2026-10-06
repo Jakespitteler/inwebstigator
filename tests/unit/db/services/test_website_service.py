@@ -125,6 +125,33 @@ def test_create_website_with_links_and_critical_pages(session: Session) -> None:
     }
 
 
+def test_create_website_watches_each_critical_page_once(session: Session) -> None:
+    """
+    Tests a critical page given twice, or that is the main page, is only watched once, even when written with or
+    without a trailing slash or "www.", or with capitals in the domain.
+
+    Args:
+        session: The database session fixture.
+    """
+    website_details = WebsiteCreate(
+        url="https://www.test_website.com",
+        critical_pages=[
+            "/",
+            "https://www.test_website.com/news/",
+            "/news",
+            "https://test_website.com/",
+            "https://TEST_WEBSITE.com/news",
+        ],
+    )
+
+    created_website: WebsiteRead = WebsiteService(session).create(website_details)
+
+    assert [page.url for page in created_website.critical_pages] == [
+        "https://www.test_website.com",
+        "https://www.test_website.com/news/",
+    ]
+
+
 def test_get_by_url_selects_requested_website(session: Session, test_website: WebsiteRead) -> None:
     service = WebsiteService(session)
     second = service.create(WebsiteCreate(url="https://second.example.com/au"))

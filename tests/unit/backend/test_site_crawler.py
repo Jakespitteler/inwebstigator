@@ -222,6 +222,31 @@ async def test_crawl_site_follows_homepage_redirect_to_www(
 
 
 @pytest.mark.anyio
+async def test_crawl_site_visits_a_page_linked_with_and_without_www_once(
+    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
+):
+    """Tests a website that answers on both example.com and www.example.com without redirecting, and links to
+    both (and with capitals in the domain), has each page visited and returned once."""
+    page_paths: dict[str, str] = {
+        "/": '<a href="https://www.example.com/about">About</a><a href="https://EXAMPLE.com/about/">About</a>',
+        "/about": '<a href="https://example.com/">Home</a><a href="https://www.example.com/">Home</a>',
+    }
+    requested_urls: list[str] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        requested_urls.append(str(request.url))
+        if request.url.path in page_paths:
+            return httpx2.Response(200, text=page_paths[request.url.path])
+        return httpx2.Response(404)
+
+    async with mock_client_factory(handler) as client:
+        visited: set[str] = await crawl_site(client, "https://example.com", max_pages=10)
+
+    assert visited == {"https://example.com/", "https://example.com/about"}
+    assert len(requested_urls) == 2
+
+
+@pytest.mark.anyio
 async def test_crawl_site_cancels_its_other_requests_when_it_gives_up(test_url: str):
     """Tests the rest of a round is cancelled when one page fails for good, so an abandoned crawl does not
     keep requesting pages in the background while the next website is scanned."""

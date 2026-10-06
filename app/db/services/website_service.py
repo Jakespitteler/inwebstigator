@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
+from app.backend.utils.links import remove_repeated_pages
 from app.core.config import config
 from app.core.errors import NotFoundError
 from app.db import repository
@@ -106,7 +107,8 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         repository.add(self._db, record=website_record)
 
         critical_page_service = CriticalPageService(self._db)
-        for critical_page_url in dict.fromkeys([model_create.url, *model_create.critical_pages]):
+        # Each page is created once, even if written twice (e.g. "/news" and "/news/")
+        for critical_page_url in remove_repeated_pages([model_create.url, *model_create.critical_pages]):
             critical_page_service.create(CriticalPageCreate(website_id=website_record.id, url=critical_page_url))
         self._db.expire(website_record, ["critical_pages"])
 

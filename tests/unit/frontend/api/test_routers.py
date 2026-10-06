@@ -635,6 +635,37 @@ def test_adding_an_email_to_a_website_counts_as_emailing_it(
     assert recipient.last_email_at is not None
 
 
+@pytest.mark.parametrize(
+    "typed_url",
+    [
+        "/test_critical_page/",
+        "https://www.test_website.com/test_critical_page",
+        "https://TEST_WEBSITE.com/test_critical_page",
+    ],
+)
+def test_adding_a_critical_page_already_watched_is_refused(
+    api_client: TestClient,
+    session: Session,
+    test_critical_page: critical_page_models.CriticalPageRead,
+    mocker: MockerFixture,
+    typed_url: str,
+) -> None:
+    """Tests a critical page that is already watched is refused, including when it is written differently (a
+    trailing slash, no "www." or capitals in the domain), so the same page is not watched (and reported) twice."""
+    mock_check_pages_exist = mocker.patch("app.frontend.api.routers._check_pages_exist")
+
+    response = api_client.post(
+        "/scanner/initial_critical_page_scan",
+        json={"website_id": str(test_critical_page.website_id), "url": typed_url},
+    )
+
+    assert response.status_code == 409, response.text
+    assert "already being watched" in response.json()["detail"]
+    mock_check_pages_exist.assert_not_called()
+    pages = session.scalars(select(DBCriticalPage).where(DBCriticalPage.website_id == test_critical_page.website_id))
+    assert [page.url for page in pages] == [test_critical_page.url]
+
+
 def test_adding_a_known_email_is_emailed_without_waiting_for_a_bounce(
     api_client: TestClient,
     session: Session,

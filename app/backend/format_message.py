@@ -2,6 +2,7 @@ import html
 from datetime import UTC, datetime
 from enum import StrEnum
 
+from app.backend.utils.links import remove_repeated_pages
 from app.core.config import config
 from app.models.website_models import WebsiteCreate, WebsiteRead
 
@@ -259,7 +260,7 @@ def monitoring_started_html(website: WebsiteCreate, days_between_health_checks: 
     """
     critical_pages = "".join(
         f'<li style="margin-bottom: 4px;">{html.escape(page_url)}</li>'
-        for page_url in dict.fromkeys([website.url, *website.critical_pages])
+        for page_url in remove_repeated_pages([website.url, *website.critical_pages])
     )
     critical_pages_section = (
         f'<p style="margin: 16px 0 6px;">Pages being watched for content changes:</p>'
