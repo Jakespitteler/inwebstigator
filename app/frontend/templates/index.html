@@ -759,16 +759,26 @@
                         <div class="guide-nav">
                             <button type="button" id="guide-back" class="guide-back">Back</button>
                             <button type="button" id="guide-next" class="guide-next">Next</button>
-                            <!-- Before the submit button, so it doesn't appear under the cursor after clicking it -->
-                            <button type="button" id="guide-cancel-scan" class="cancel-scan-button" hidden>
-                                Cancel Scan
-                            </button>
                             <button type="submit" id="guide-submit" class="guide-next" hidden>Add Website</button>
                         </div>
 
                     </div>
 
                 </form>
+
+                <!-- While the first scan runs, the form above is collapsed into this one line -->
+                <div id="add-website-progress" class="scan-progress" role="status" hidden>
+                    <span class="spinner" aria-hidden="true"></span>
+
+                    <p class="scan-progress-text">
+                        <strong id="add-website-progress-status">Scanning…</strong>
+                        <span>This can take several minutes for a large website.</span>
+                    </p>
+
+                    <button type="button" id="guide-cancel-scan" class="cancel-scan-button" hidden>
+                        Cancel Scan
+                    </button>
+                </div>
 
             </section>
 
@@ -835,10 +845,11 @@
                             </div>
                         </div>
 
+                        <!-- A scan queued before the page loaded keeps showing as in progress -->
                         <p
-                            class="run-scan-message"
+                            class="run-scan-message{% if website.url in queued_website_urls %} is-busy{% endif %}"
                             aria-live="polite"
-                        ></p>
+                        >{% if website.url in queued_website_urls %}Scan queued or running...{% endif %}</p>
 
                         <!-- Inactive websites are still scanned, but only their critical pages -->
                         {% if not website.active %}
@@ -1607,6 +1618,41 @@
         let websiteBeingAdded = null;
         let addingCancelled = false;
 
+        const addWebsiteProgress = document.getElementById("add-website-progress");
+        const addWebsiteProgressStatus = document.getElementById("add-website-progress-status");
+
+        // The name a website is shown by, e.g. "https://www.uwa.edu.au/" -> "uwa.edu.au"
+        function displayName(url) {
+            try {
+                return new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, "");
+            } catch (error) {
+                return url;
+            }
+        }
+
+        // Collapse the add website form into a single "Scanning ..." line while its first scan runs,
+        // and bring the form back (at the review step) if the scan fails or is cancelled
+        function showAddWebsiteProgress(scanning, websiteUrl = "") {
+            document.getElementById("add-website-form").hidden = scanning;
+            addWebsiteProgress.hidden = !scanning;
+
+            const intro = document.querySelector(".guide-intro");
+            if (intro) {
+                intro.hidden = scanning;
+            }
+
+            // The toggle reads "Close" while the form is open, which makes no sense while it can't be used
+            const toggle = document.getElementById("add-website-toggle");
+            if (toggle) {
+                toggle.disabled = scanning;
+                toggle.textContent = scanning ? "Adding website…" : "Close";
+            }
+
+            if (scanning) {
+                addWebsiteProgressStatus.textContent = `Scanning ${displayName(websiteUrl)}…`;
+            }
+        }
+
         // Cancel the first scan of the website being added, which cancels adding the website
         if (guideCancelScan) {
 
@@ -1630,8 +1676,8 @@
                     // Set before asking, as the add request can finish before the cancel request does
                     addingCancelled = true;
                     guideCancelScan.disabled = true;
-                    message.textContent =
-                        "Cancelling scan...";
+                    addWebsiteProgressStatus.textContent =
+                        "Cancelling scan…";
 
                     try {
 
@@ -1663,7 +1709,7 @@
 
                         addingCancelled = false;
                         guideCancelScan.disabled = false;
-                        message.textContent =
+                        addWebsiteProgressStatus.textContent =
                             error.message;
                     }
                 }
@@ -1722,14 +1768,14 @@
                             "website-form-message"
                         );
 
-                    message.textContent =
-                        "Adding website and running its first scan. This can take several minutes...";
+                    message.textContent = "";
 
                     guideSubmit.disabled = true;
                     websiteBeingAdded = websiteUrl;
                     addingCancelled = false;
                     guideCancelScan.disabled = false;
                     guideCancelScan.hidden = false;
+                    showAddWebsiteProgress(true, websiteUrl);
 
                     try {
 
@@ -1776,6 +1822,9 @@
                         window.location.reload();
 
                     } catch (error) {
+
+                        // Bring the form back with everything still filled in, so it can be tried again
+                        showAddWebsiteProgress(false);
 
                         message.textContent =
                             error.message;
@@ -2255,6 +2304,7 @@
 
                     button.disabled = true;
                     cancelButton.hidden = false;
+                    message.classList.add("is-busy");
                     message.textContent =
                         "Scan queued. It runs once any scan already in progress has finished...";
 
@@ -2302,6 +2352,7 @@
                     } finally {
                         scansInProgress--;
                         cancelButton.hidden = true;
+                        message.classList.remove("is-busy");
                     }
 
                     if (scansInProgress === 0) {
@@ -2320,6 +2371,7 @@
                 const message = document.getElementById("run-all-scans-message");
 
                 runAllScansButton.disabled = true;
+                message.classList.add("is-busy");
                 message.textContent = "Scanning every website. Large websites can take several minutes...";
 
                 try {
@@ -2328,6 +2380,7 @@
                         throw new Error("Unable to complete the scans.");
                     }
                 } catch (error) {
+                    message.classList.remove("is-busy");
                     message.textContent = error.message;
                     runAllScansButton.disabled = false;
                     return;
@@ -2387,6 +2440,7 @@
                         const cancelled =
                             await response.json();
 
+                        message.classList.remove("is-busy");
                         message.textContent =
                             cancelled
                                 ? "Scan cancelled."
