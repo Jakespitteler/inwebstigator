@@ -61,7 +61,7 @@
 
                     <section class="change-record">
 
-                        <h3 class="website-name">{{ record.website_url | website_name }}</h3>
+                        <h3 class="website-name">{{ website_names[record.website_url] }}</h3>
                         <p class="page-url">
                             <a href="{{ record.url }}" target="_blank" rel="noopener noreferrer">
                                 {{ record.url }}
@@ -511,7 +511,7 @@
 
                         <div class="website-card-header">
                             <div class="website-identity">
-                                <h3 class="website-name">{{ website.url | website_name }}</h3>
+                                <h3 class="website-name">{{ website_names[website.url] }}</h3>
                                 <a
                                     class="website-url"
                                     href="{{ website.url }}"

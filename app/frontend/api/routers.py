@@ -35,6 +35,15 @@ templates.env.filters["website_name"] = website_name
 def get_dashboard(session: SessionDep, request: Request):
     websites: Sequence[WebsiteRead] = WebsiteService(session).get_all()
 
+    website_names: dict[str, str] = {}
+    for website in websites:
+        saved_html = next(
+            (page.text_body for page in website.critical_pages if page.url == website.url and page.text_body),
+            None,
+        )
+        if saved_html or website.url not in website_names:
+            website_names[website.url] = website_name(website.url, saved_html)
+
     daily_records: list[DailyRecord] = []
 
     for website in websites:
@@ -120,6 +129,7 @@ def get_dashboard(session: SessionDep, request: Request):
             "daily_records": daily_records,
             "daily_date": daily_date,
             "websites": websites,
+            "website_names": website_names,
             "default_delay": config.web_crawler_default_delay,
             "default_concurrent": config.web_crawler_default_concurrent,
             "default_days_between_scans": config.scheduler_default_days_between_scans,
