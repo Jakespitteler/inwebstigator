@@ -2,11 +2,9 @@ import random
 from collections import Counter
 from collections.abc import Iterable
 
-from app.backend.diff_checker.content_diff import compare_page_content
-from app.backend.diff_checker.link_diff import find_link_difference
-from app.backend.diff_checker.models import ChangedBlock, ContentBlock, HTMLBlockType, PageContent
+from app.backend.diff_checker.content_diff import compare_page_content, find_link_difference
+from app.backend.diff_checker.models import ChangedBlock, ContentBlock, DiffSettings, HTMLBlockType, PageContent
 from app.backend.diff_checker.page_parser import parse_html
-from app.backend.diff_checker.settings import DiffSettings
 
 
 def create_block(text: str, heading: str = "H1", block_type: HTMLBlockType = HTMLBlockType.PARAGRAPH) -> ContentBlock:

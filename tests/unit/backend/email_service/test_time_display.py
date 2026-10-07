@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta, tzinfo
 
 import pytest
 
-from app.backend.email_service.time_display import format_email_time
+from app.backend.email_service.email_wording import format_email_time
 from app.core.config import config
 
 
@@ -40,6 +40,6 @@ class LongNamedZone(tzinfo):
 
 def test_a_time_zone_with_only_a_long_name_is_shown_as_an_offset(monkeypatch: pytest.MonkeyPatch) -> None:
     """Tests Windows' long names such as "W. Australia Standard Time" are shortened to "UTC+08:00"."""
-    monkeypatch.setattr("app.backend.email_service.time_display._email_time_zone", LongNamedZone)
+    monkeypatch.setattr("app.backend.email_service.email_wording._email_time_zone", LongNamedZone)
 
     assert format_email_time(datetime(2026, 10, 7, 1, 30, tzinfo=UTC)) == "07 Oct 2026, 09:30 UTC+08:00"

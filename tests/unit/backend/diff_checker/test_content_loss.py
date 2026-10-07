@@ -1,6 +1,5 @@
-from app.backend.diff_checker.content_loss import has_lost_most_content
-from app.backend.diff_checker.models import ContentBlock, HTMLBlockType, PageContent
-from app.backend.diff_checker.settings import DiffSettings
+from app.backend.diff_checker.content_diff import has_lost_most_content
+from app.backend.diff_checker.models import ContentBlock, DiffSettings, HTMLBlockType, PageContent
 
 SETTINGS = DiffSettings(min_content_ratio=0.3, min_content_chars=200)
 

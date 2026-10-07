@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.backend.diff_checker.ignore_rules import without_ignored_text
+from app.backend.diff_checker.content_diff import without_ignored_text
 from app.backend.diff_checker.models import ContentBlock, HTMLBlockType, PageContent
 from app.models.critical_page_models import CriticalPageUpdate
 

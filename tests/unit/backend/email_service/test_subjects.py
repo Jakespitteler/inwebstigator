@@ -1,7 +1,11 @@
 import pytest
 
-from app.backend.email_service.subjects import health_check_subject, manual_scan_subject, scan_report_subject
-from app.backend.email_service.website_health import WebsiteHealth
+from app.backend.email_service.email_wording import (
+    WebsiteHealth,
+    health_check_subject,
+    manual_scan_subject,
+    scan_report_subject,
+)
 
 
 @pytest.mark.parametrize(

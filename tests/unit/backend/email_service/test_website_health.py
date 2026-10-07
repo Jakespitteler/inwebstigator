@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from app.backend.email_service.website_health import describe_website_health
+from app.backend.email_service.email_wording import describe_website_health
 from app.models.website_models import DeactivationReason
 from tests.unit.backend.email_service.builders import make_page, make_website
 

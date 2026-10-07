@@ -8,10 +8,9 @@ from datetime import datetime, time, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler  # pyright: ignore[reportMissingTypeStubs]
 from fastapi import FastAPI
 
+from app.backend.email_service.delivery import EmailSender, get_email_sender
+from app.backend.email_service.email_wording import WebsiteHealth, describe_website_health, health_check_subject
 from app.backend.email_service.html_bodies import health_check_html
-from app.backend.email_service.sender import EmailSender, get_email_sender
-from app.backend.email_service.subjects import health_check_subject
-from app.backend.email_service.website_health import WebsiteHealth, describe_website_health
 from app.core.config import config
 from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService

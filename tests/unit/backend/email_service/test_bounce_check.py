@@ -8,8 +8,8 @@ from typing import Self
 import pytest
 from pydantic import SecretStr
 
-from app.backend.email_service import bounce_check
-from app.backend.email_service.bounce_check import confirm_address_can_receive_email
+from app.backend.email_service import delivery
+from app.backend.email_service.delivery import confirm_address_can_receive_email
 from app.backend.email_service.message_builder import OutgoingEmail
 from app.backend.email_service.settings import InboxSettings
 from app.core.errors import UndeliverableEmailError
@@ -64,7 +64,7 @@ def _no_wait(seconds: float) -> None:
 @pytest.fixture(autouse=True)
 def skip_waiting(monkeypatch: pytest.MonkeyPatch) -> None:
     """Skips the waits between inbox checks, so the tests run quickly."""
-    monkeypatch.setattr("app.backend.email_service.bounce_check.time.sleep", _no_wait)
+    monkeypatch.setattr("app.backend.email_service.delivery.time.sleep", _no_wait)
 
 
 def use_inbox(monkeypatch: pytest.MonkeyPatch, inbox: FakeInbox | None) -> None:
@@ -73,7 +73,7 @@ def use_inbox(monkeypatch: pytest.MonkeyPatch, inbox: FakeInbox | None) -> None:
     def open_inbox(settings: InboxSettings) -> FakeInbox | None:
         return inbox
 
-    monkeypatch.setattr("app.backend.email_service.bounce_check._open_inbox", open_inbox)
+    monkeypatch.setattr("app.backend.email_service.delivery._open_inbox", open_inbox)
 
 
 def test_confirm_address_passes_when_nothing_bounces(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -145,9 +145,9 @@ def test_open_inbox_checks_the_servers_certificate(monkeypatch: pytest.MonkeyPat
         def login(self, user: str, password: str) -> None:
             return None
 
-    monkeypatch.setattr("app.backend.email_service.bounce_check.imaplib.IMAP4_SSL", FakeIMAP)
+    monkeypatch.setattr("app.backend.email_service.delivery.imaplib.IMAP4_SSL", FakeIMAP)
 
-    assert bounce_check._open_inbox(INBOX_SETTINGS) is not None  # pyright: ignore[reportPrivateUsage]
+    assert delivery._open_inbox(INBOX_SETTINGS) is not None  # pyright: ignore[reportPrivateUsage]
     [context] = opened
     assert context.verify_mode is ssl.CERT_REQUIRED
     assert context.check_hostname is True
@@ -157,9 +157,9 @@ def test_open_inbox_gives_up_without_an_inbox_server(monkeypatch: pytest.MonkeyP
     def fail_if_opened(*args: object, **kwargs: object) -> None:
         raise AssertionError("The inbox should not be opened without a server")
 
-    monkeypatch.setattr("app.backend.email_service.bounce_check.imaplib.IMAP4_SSL", fail_if_opened)
+    monkeypatch.setattr("app.backend.email_service.delivery.imaplib.IMAP4_SSL", fail_if_opened)
 
-    assert bounce_check._open_inbox(replace(INBOX_SETTINGS, host=None)) is None  # pyright: ignore[reportPrivateUsage]
+    assert delivery._open_inbox(replace(INBOX_SETTINGS, host=None)) is None  # pyright: ignore[reportPrivateUsage]
 
 
 def test_open_inbox_returns_nothing_when_the_login_fails(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -170,6 +170,6 @@ def test_open_inbox_returns_nothing_when_the_login_fails(monkeypatch: pytest.Mon
         def login(self, user: str, password: str) -> None:
             raise imaplib.IMAP4.error("Invalid credentials")
 
-    monkeypatch.setattr("app.backend.email_service.bounce_check.imaplib.IMAP4_SSL", RefusingIMAP)
+    monkeypatch.setattr("app.backend.email_service.delivery.imaplib.IMAP4_SSL", RefusingIMAP)
 
-    assert bounce_check._open_inbox(INBOX_SETTINGS) is None  # pyright: ignore[reportPrivateUsage]
+    assert delivery._open_inbox(INBOX_SETTINGS) is None  # pyright: ignore[reportPrivateUsage]

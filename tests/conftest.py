@@ -19,8 +19,8 @@ from sqlalchemy import Connection, DateTime, Engine, MetaData, StaticPool, Strin
 from sqlalchemy.orm import Mapped, Session, declarative_base, mapped_column
 from tenacity import wait_none
 
+from app.backend.email_service.delivery import EmailSender, get_email_sender
 from app.backend.email_service.message_builder import OutgoingEmail
-from app.backend.email_service.sender import EmailSender, get_email_sender
 from app.backend.links import normalise_url
 from app.backend.page_fetcher import fetch_content_from_url
 from app.db import repository, schema

@@ -6,13 +6,14 @@ from datetime import datetime
 
 from httpx2 import AsyncClient, HTTPStatusError, RequestError
 
-from app.backend.diff_checker.content_diff import compare_page_content
-from app.backend.diff_checker.content_loss import has_lost_most_content
-from app.backend.diff_checker.ignore_rules import without_ignored_text
-from app.backend.diff_checker.link_diff import find_link_difference
-from app.backend.diff_checker.models import PageContent
+from app.backend.diff_checker.content_diff import (
+    compare_page_content,
+    find_link_difference,
+    has_lost_most_content,
+    without_ignored_text,
+)
+from app.backend.diff_checker.models import DiffSettings, PageContent
 from app.backend.diff_checker.page_parser import parse_html
-from app.backend.diff_checker.settings import DiffSettings
 from app.backend.links import extract_links_from_html, separate_document_links
 from app.backend.page_fetcher import fetch_content_from_url
 from app.backend.site_crawler import crawl_site

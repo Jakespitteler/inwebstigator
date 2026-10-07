@@ -1,7 +1,10 @@
-from app.backend.diff_checker.changed_regions import find_changed_regions, match_text_found_on_both_pages
-from app.backend.diff_checker.edit_pairing import pair_edits
-from app.backend.diff_checker.models import ContentDiff, MatchedText, PageContent
-from app.backend.diff_checker.settings import DiffSettings
+import re
+from collections.abc import Sequence
+
+from app.backend.diff_checker.block_comparison import find_changed_regions, match_text_found_on_both_pages, pair_edits
+from app.backend.diff_checker.models import ContentBlock, ContentDiff, DiffSettings, LinkDiff, MatchedText, PageContent
+from app.backend.diff_checker.page_parser import normalize_text
+from app.backend.links import find_added_links, find_removed_links
 
 
 def compare_page_content(
@@ -41,3 +44,87 @@ def compare_page_content(
     )
     edits: ContentDiff = ContentDiff.combine([pair_edits(region, diff_settings) for region in matched_text.regions])
     return edits.with_moves(matched_text.moves)
+
+
+def find_link_difference(previous_state: list[str], current_state: list[str]) -> LinkDiff:
+    """Compares stored links against newly extracted links to determine additions and removals.
+
+    Args:
+        previous_state: A list of URL strings representing the stored links.
+        current_state: A list of URL strings representing the newly found links.
+
+    Returns:
+        The added and removed URL strings, which unpack like a tuple of those two lists.
+    """
+    return LinkDiff(
+        added=find_added_links(previous_state, current_state),
+        removed=find_removed_links(previous_state, current_state),
+    )
+
+
+def has_lost_most_content(
+    old_content: PageContent,
+    new_content: PageContent,
+    settings: DiffSettings | None = None,
+) -> bool:
+    """Checks whether a new version of a page has lost most of its text compared with the old version.
+
+    A page that suddenly has only a fraction of its text is almost always a stand-in served in its place, such
+    as a "Just a moment..." browser check, a maintenance page or a login wall, rather than the page's real new
+    content. Treating it as the new content would report everything as removed, then everything as added again
+    once the real page is back.
+
+    Args:
+        old_content: The page's saved content.
+        new_content: The content just fetched.
+        settings: The share of text the new page must keep, and how much text the old page needs before the
+            check applies. Defaults to the app's configured settings.
+
+    Returns:
+        True if the old page had enough text to judge and the new page has less than the minimum share of it.
+    """
+    diff_settings: DiffSettings = settings or DiffSettings.from_config()
+    if old_content.text_length < diff_settings.min_content_chars:
+        return False
+    return new_content.text_length < old_content.text_length * diff_settings.min_content_ratio
+
+
+def _without_matches(text: str, patterns: Sequence[re.Pattern[str]]) -> str:
+    """Removes every part of a block's text that matches one of the patterns.
+
+    Args:
+        text: The block's text.
+        patterns: The compiled ignore rules.
+
+    Returns:
+        The text that is left, with its spacing tidied, or an empty string if nothing is left.
+    """
+    for pattern in patterns:
+        text = pattern.sub("", text)
+    return normalize_text(text)
+
+
+def without_ignored_text(content: PageContent, ignore_rules: Sequence[str]) -> PageContent:
+    """Removes the text matching a critical page's ignore rules, so text that changes on every scan is not reported.
+
+    Each rule is a regular expression, e.g. `Page last updated: .*` or `\\d+ people found this useful`. Only the
+    matching part of a block is removed, and a block with no text left is dropped. Rules are applied to both the
+    saved and the new version of the page, so adding a rule never reports a change by itself.
+
+    Args:
+        content: The parsed page.
+        ignore_rules: The page's ignore rules, already checked to be valid regular expressions.
+
+    Returns:
+        The page without the ignored text. The same object is returned when there are no rules.
+    """
+    if not ignore_rules:
+        return content
+
+    patterns: list[re.Pattern[str]] = [re.compile(rule) for rule in ignore_rules]
+    kept_blocks: list[ContentBlock] = [
+        block.model_copy(update={"text": remaining_text})
+        for block in content.blocks
+        if (remaining_text := _without_matches(block.text, patterns))
+    ]
+    return content.model_copy(update={"blocks": kept_blocks})

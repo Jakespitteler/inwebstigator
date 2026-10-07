@@ -12,11 +12,15 @@ from httpx2 import AsyncClient, HTTPError
 from sqlalchemy.orm import Session
 
 from app.backend.change_detection import get_critical_page_updates
-from app.backend.email_service.bounce_check import confirm_address_can_receive_email
+from app.backend.email_service.delivery import (
+    EmailSender,
+    confirm_address_can_receive_email,
+    get_email_sender,
+    send_confirmation,
+)
+from app.backend.email_service.email_wording import manual_scan_subject
 from app.backend.email_service.html_bodies import monitoring_started_html, recipient_added_html
 from app.backend.email_service.message_builder import OutgoingEmail
-from app.backend.email_service.sender import EmailSender, get_email_sender, send_confirmation
-from app.backend.email_service.subjects import manual_scan_subject
 from app.backend.links import is_same_page, resolve_critical_page_url, website_name
 from app.backend.page_fetcher import fetch_content_from_url
 from app.core.config import config

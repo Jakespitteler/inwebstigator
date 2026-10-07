@@ -8,10 +8,10 @@ from typing import NamedTuple
 from httpx2 import AsyncClient
 
 from app.backend.change_detection import get_critical_page_only_updates, get_website_updates
+from app.backend.email_service.delivery import EmailSender, get_email_sender
+from app.backend.email_service.email_wording import scan_report_subject
 from app.backend.email_service.html_bodies import ScanStatus, generate_scan_report_html, join_scan_reports
 from app.backend.email_service.message_builder import OutgoingEmail
-from app.backend.email_service.sender import EmailSender, get_email_sender
-from app.backend.email_service.subjects import scan_report_subject
 from app.core.config import config
 from app.core.errors import (
     NotFoundError,

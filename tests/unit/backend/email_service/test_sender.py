@@ -7,8 +7,8 @@ from typing import Self
 import pytest
 from pydantic import SecretStr
 
+from app.backend.email_service.delivery import SmtpEmailSender, is_temporary_failure, send_confirmation
 from app.backend.email_service.message_builder import OutgoingEmail
-from app.backend.email_service.sender import SmtpEmailSender, is_temporary_failure, send_confirmation
 from app.backend.email_service.settings import RetrySettings, SmtpSettings
 from app.core.errors import UndeliverableEmailError
 from tests.fakes import FakeEmailSender
@@ -81,8 +81,8 @@ def fake_mail_server(monkeypatch: pytest.MonkeyPatch) -> None:
     """Replaces both kinds of SMTP connection with the fake, and clears what earlier tests recorded."""
     FakeSMTP.connections = []
     FakeSMTP.send_failures = []
-    monkeypatch.setattr("app.backend.email_service.sender.smtplib.SMTP_SSL", FakeSMTP)
-    monkeypatch.setattr("app.backend.email_service.sender.smtplib.SMTP", FakeSMTP)
+    monkeypatch.setattr("app.backend.email_service.delivery.smtplib.SMTP_SSL", FakeSMTP)
+    monkeypatch.setattr("app.backend.email_service.delivery.smtplib.SMTP", FakeSMTP)
 
 
 def assert_verifies_certificates(context: ssl.SSLContext | None) -> None:

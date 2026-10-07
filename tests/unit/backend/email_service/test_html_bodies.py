@@ -1,5 +1,6 @@
 from bs4 import BeautifulSoup
 
+from app.backend.email_service.email_wording import WebsiteHealth
 from app.backend.email_service.html_bodies import (
     ScanStatus,
     generate_scan_report_html,
@@ -8,7 +9,6 @@ from app.backend.email_service.html_bodies import (
     recipient_added_html,
     report_divider,
 )
-from app.backend.email_service.website_health import WebsiteHealth
 from tests.unit.backend.email_service.builders import make_block, make_change, make_page, make_website
 
 
