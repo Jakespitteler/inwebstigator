@@ -5,7 +5,7 @@ from datetime import datetime
 from difflib import SequenceMatcher
 from ipaddress import ip_address
 from typing import Protocol
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from bs4 import BeautifulSoup, SoupStrainer
 from markupsafe import Markup, escape
@@ -14,9 +14,10 @@ from app.db.utils.field_types import URLString
 
 
 def website_name(url: str, html: str | None = None) -> str:
-    """Use saved page titles to restore the short name's spacing and capitalisation."""
+    """Format the site name and URL path, preserving names recognised in saved metadata."""
     try:
-        hostname = (urlsplit(url).hostname or "").rstrip(".")
+        parsed_url = urlsplit(url)
+        hostname = (parsed_url.hostname or "").rstrip(".")
     except ValueError:
         return "Website"
     if not hostname:
@@ -24,7 +25,7 @@ def website_name(url: str, html: str | None = None) -> str:
 
     try:
         ip_address(hostname)
-        return hostname
+        return _website_name_with_path(hostname, parsed_url.path)
     except ValueError:
         pass
 
@@ -39,8 +40,19 @@ def website_name(url: str, html: str | None = None) -> str:
     if html:
         recognised_name = _website_name_from_html(name, html)
         if recognised_name:
-            return recognised_name
-    return name.replace("-", " ").replace("_", " ").title()
+            return _website_name_with_path(recognised_name, parsed_url.path)
+    short_name = name.replace("-", " ").replace("_", " ").title()
+    return _website_name_with_path(short_name, parsed_url.path)
+
+
+def _website_name_with_path(name: str, path: str) -> str:
+    """Append readable path sections without query parameters or fragments."""
+    sections = [
+        unquote(section).replace("-", " ").replace("_", " ").strip().title()
+        for section in path.split("/")
+        if section
+    ]
+    return " - ".join([name, *(section for section in sections if section)])
 
 
 def _website_name_from_html(name: str, html: str) -> str | None:
