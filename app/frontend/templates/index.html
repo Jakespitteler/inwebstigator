@@ -10,6 +10,8 @@
 {% include "_head.html" %}
 </head>
 
+{% set current_page = "dashboard" %}
+
 <body>
 
     <main class="dashboard-container">
@@ -1123,7 +1125,6 @@
 
     </main>
 
-{% set current_page = "dashboard" %}
 {% include "_footer.html" %}
 
     <!-- Confirmation for deleting things. Cancel is the default, so Enter or Escape never deletes. -->
@@ -1164,6 +1165,19 @@
 
 
     <script>
+        // Refresh button: reload the dashboard to show the latest results, e.g. once a scan running in the
+        // background has finished. Scans carry on during the reload, and the selected tab and open cards are kept.
+        const reloadPageButton = document.getElementById("reloadPageBtn");
+
+        if (reloadPageButton) {
+            reloadPageButton.addEventListener("click", () => {
+                reloadPageButton.disabled = true;
+                reloadPageButton.classList.add("is-reloading");
+                window.location.reload();
+            });
+        }
+
+
         // Keep the selected section when forms and scans refresh the dashboard.
         const dashboardTabs = Array.from(document.querySelectorAll('[role="tab"]'));
 

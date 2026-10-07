@@ -50,6 +50,18 @@ def test_every_page_loads_the_shared_theme_script(api_client: TestClient, path: 
     assert api_client.get("/static/theme.js").status_code == 200
 
 
+@pytest.mark.parametrize(("path", "has_refresh"), [("/", True), ("/about", False)])
+def test_refresh_button_is_only_on_the_dashboard(api_client: TestClient, path: str, has_refresh: bool) -> None:
+    """Tests the dashboard has a Refresh button in its header, and the About page, with nothing to refresh, does not."""
+    page = _get_page(api_client, path)
+
+    refresh_button = page.select_one(".dashboard-header #reloadPageBtn")
+    assert (refresh_button is not None) is has_refresh
+    if refresh_button is not None:
+        assert refresh_button.get_text(strip=True) == "Refresh"
+        assert refresh_button.get("type") == "button"
+
+
 # ==========================
 #  About page
 # ==========================

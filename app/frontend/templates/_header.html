@@ -1,8 +1,27 @@
         {# Shared page header. The app name links back to the dashboard from any page. #}
+        {# Set `current_page` before including it; the Refresh button only shows on the dashboard. #}
         <div class="dashboard-header">
             <h1>
                 <a href="{{ url_for('get_dashboard') }}" class="home-link" title="Go to the dashboard">Inwebstigator</a>
             </h1>
+
+            <div class="header-actions">
+
+            {% if current_page == "dashboard" %}
+            <button
+                type="button"
+                class="reload-button"
+                id="reloadPageBtn"
+                title="Reload the dashboard to show the latest scan results"
+            >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="M13.5 8a5.5 5.5 0 11-1.61-3.89" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    <path d="M13.5 2.5v3h-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+
+                <span class="reload-button-label">Refresh</span>
+            </button>
+            {% endif %}
 
             <button
                 type="button"
@@ -25,5 +44,7 @@
 
                 <span id="themeToggleLabel"></span>
             </button>
+
+            </div>
 
         </div>

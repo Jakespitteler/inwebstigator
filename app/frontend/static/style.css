@@ -344,7 +344,16 @@ button, input {
 
 /* THEME TOGGLE */
 
-.theme-toggle {
+/* Refresh and theme buttons on the right of the header */
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.theme-toggle,
+.reload-button {
     display: inline-flex;
     align-items: center;
     gap: 8px;
@@ -361,33 +370,39 @@ button, input {
     transition: background 0.14s, color 0.14s, border-color 0.14s, box-shadow 0.14s, transform 0.14s;
 }
 
-.theme-toggle:hover {
+.theme-toggle:hover,
+.reload-button:hover:not(:disabled) {
     background: var(--control-bg-hover);
     color: var(--text-primary);
     transform: translateY(-1px);
 }
 
-.theme-toggle:active {
+.theme-toggle:active,
+.reload-button:active {
     transform: scale(0.97);
 }
 
-.theme-toggle svg {
+.theme-toggle svg,
+.reload-button svg {
     flex-shrink: 0;
 }
 
-.dashboard-header .theme-toggle {
+.dashboard-header .theme-toggle,
+.dashboard-header .reload-button {
     color: #fff;
     background: rgba(255, 255, 255, 0.14);
     border-color: rgba(255, 255, 255, 0.35);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.30);
 }
 
-.dashboard-header .theme-toggle:hover {
+.dashboard-header .theme-toggle:hover,
+.dashboard-header .reload-button:hover:not(:disabled) {
     color: #fff;
     background: rgba(255, 255, 255, 0.24);
 }
 
-.dashboard-header .theme-toggle:focus-visible {
+.dashboard-header .theme-toggle:focus-visible,
+.dashboard-header .reload-button:focus-visible {
     outline-color: #fff;
 }
 
@@ -1917,5 +1932,28 @@ button:disabled {
         width: 94%;
         flex-direction: column;
         align-items: flex-start;
+    }
+}
+
+
+/* REFRESH BUTTON */
+
+.reload-button.is-reloading {
+    cursor: wait;
+}
+
+.reload-button.is-reloading svg {
+    animation: spin 0.8s linear infinite;
+}
+
+/* On narrow screens the Refresh button shows just its icon */
+@media (max-width: 700px) {
+    .reload-button-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
     }
 }
