@@ -126,12 +126,12 @@
                         class="change-record website-change-record"
                         data-collapsible
                         data-card-key="website-update:{{ website_record.website_url }}"
-                        data-card-name="{{ website_record.website_url | website_name }}"
+                        data-card-name="{{ website_record.website_url | string | website_name }}"
                     >
 
                         <div class="change-record-header card-header">
                             <div class="change-record-identity">
-                                <h3 class="website-name">{{ website_record.website_url | website_name }}</h3>
+                                <h3 class="website-name">{{ website_record.website_url | string | website_name }}</h3>
                                 <a
                                     class="website-url"
                                     href="{{ website_record.website_url }}"
@@ -162,7 +162,7 @@
                                 class="card-toggle"
                                 aria-expanded="false"
                                 aria-controls="website-updates-{{ website_index }}"
-                                aria-label="Show details for {{ website_record.website_url | website_name }}"
+                                aria-label="Show details for {{ website_record.website_url | string | website_name }}"
                             >
                                 <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
                                     <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor"
@@ -509,7 +509,7 @@
                                                                 target="_blank"
                                                                 rel="noopener noreferrer"
                                                             >
-                                                                {{ document.split('/')[-1] }}
+                                                                {{ (document | string).split('/')[-1] }}
                                                             </a>
 
                                                             <span class="change-badge added-label">
@@ -530,7 +530,7 @@
                                                                 target="_blank"
                                                                 rel="noopener noreferrer"
                                                             >
-                                                                {{ document.split('/')[-1] }}
+                                                                {{ (document | string).split('/')[-1] }}
                                                             </a>
 
                                                             <span class="change-badge removed-label">
@@ -798,13 +798,13 @@
                         class="website-card"
                         data-collapsible
                         data-card-key="website:{{ website.id }}"
-                        data-card-name="{{ website.url | website_name }}"
-                        data-website-name="{{ website.url | website_name }}"
+                        data-card-name="{{ website.url | string | website_name }}"
+                        data-website-name="{{ website.url | string | website_name }}"
                     >
 
                         <div class="website-card-header card-header">
                             <div class="website-identity">
-                                <h3 class="website-name">{{ website.url | website_name }}</h3>
+                                <h3 class="website-name">{{ website.url | string | website_name }}</h3>
                                 <a
                                     class="website-url"
                                     href="{{ website.url }}"
@@ -824,7 +824,7 @@
                                     type="button"
                                     class="cancel-scan-button"
                                     data-website-url="{{ website.url }}"
-                                    {% if website.url not in queued_website_urls %}hidden{% endif %}
+                                    {% if (website.url | string) not in queued_website_urls %}hidden{% endif %}
                                 >
                                     Cancel Scan
                                 </button>
@@ -833,7 +833,7 @@
                                     type="button"
                                     class="run-scan-button"
                                     data-website-url="{{ website.url }}"
-                                    {% if website.url in queued_website_urls %}disabled{% endif %}
+                                    {% if (website.url | string) in queued_website_urls %}disabled{% endif %}
                                 >
                                     {% if website.active %}Run Scan Now{% else %}Scan Critical Pages Now{% endif %}
                                 </button>
@@ -843,7 +843,7 @@
                                     class="card-toggle"
                                     aria-expanded="false"
                                     aria-controls="website-details-{{ website.id }}"
-                                    aria-label="Show details for {{ website.url | website_name }}"
+                                    aria-label="Show details for {{ website.url | string | website_name }}"
                                 >
                                     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
                                         <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor"
@@ -855,9 +855,9 @@
 
                         <!-- A scan queued before the page loaded keeps showing as in progress -->
                         <p
-                            class="run-scan-message{% if website.url in queued_website_urls %} is-busy{% endif %}"
+                            class="run-scan-message{% if (website.url | string) in queued_website_urls %} is-busy{% endif %}"
                             aria-live="polite"
-                        >{% if website.url in queued_website_urls %}Scan queued or running...{% endif %}</p>
+                        >{% if (website.url | string) in queued_website_urls %}Scan queued or running...{% endif %}</p>
 
                         <!-- Inactive websites are still scanned, but only their critical pages -->
                         {% if not website.active %}

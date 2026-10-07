@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 import httpx2
 import pytest
+from pydantic import HttpUrl
 from pytest_mock import MockerFixture
 
 from app.backend.change_detection import get_critical_page_only_updates, get_critical_page_updates, get_website_updates
@@ -47,7 +48,7 @@ async def test_get_critical_page_updates_with_changes(
     assert updates.has_changes
     assert updates.url == initial_page.url
     assert updates.recent_links_added is not None
-    assert updates.recent_links_removed == [f"{test_critical_page.url}old-link"]
+    assert updates.recent_links_removed == [HttpUrl(f"{test_critical_page.url}old-link")]
     assert updates.recent_text_changed is not None
 
 
@@ -95,7 +96,7 @@ async def test_get_critical_page_updates_detects_last_link_or_document_removed(
 
     assert updates is not None
     assert updates.has_changes
-    assert getattr(updates, recent_removed_field) == [removed_url]
+    assert getattr(updates, recent_removed_field) == [HttpUrl(removed_url)]
     assert getattr(updates, stored_field) == []
 
 
@@ -135,8 +136,8 @@ async def test_get_critical_page_updates_saves_baseline(
 
     assert updates is not None
     assert updates.text_body == html
-    assert updates.links == ["https://www.test_website.com/apply"]
-    assert updates.documents == ["https://www.test_website.com/files/fees.pdf"]
+    assert updates.links == [HttpUrl("https://www.test_website.com/apply")]
+    assert updates.documents == [HttpUrl("https://www.test_website.com/files/fees.pdf")]
     assert not updates.has_changes
     for recent_field in RECENT_PAGE_FIELDS:
         assert not getattr(updates, recent_field), recent_field
@@ -225,7 +226,7 @@ async def test_get_website_updates_with_changes(
 
     # Crawler internal link diff assertions
     assert updates.recent_added_internal_links is not None
-    assert any("page1.html" in link for link in updates.recent_added_internal_links)
+    assert any("page1.html" in str(link) for link in updates.recent_added_internal_links)
 
     # Since `test_internal_link` wasn't crawled by website_handler, it gets correctly flagged as removed
     assert updates.recent_removed_internal_links is not None
@@ -240,7 +241,7 @@ async def test_get_website_updates_with_changes(
     cp_update = updates.critical_page_updates[cp_id]
     assert cp_update.recent_links_added is not None
     assert len(cp_update.recent_links_added) > 0
-    assert cp_update.recent_links_removed == [f"{test_website.url}old-link"]
+    assert cp_update.recent_links_removed == [HttpUrl(f"{test_website.url}old-link")]
     assert cp_update.recent_text_changed is not None
 
 
@@ -267,7 +268,7 @@ async def test_get_website_updates_saves_internal_link_baseline(
 ):
     """Tests a website with no saved internal links (e.g. its first scan failed), or any website on an init
     scan, saves its crawled links as a baseline rather than reporting them all as added."""
-    crawled = {test_website.url, f"{test_website.url}about"}
+    crawled = {str(test_website.url), f"{test_website.url}about"}
     mocker.patch("app.backend.change_detection.crawl_site", return_value=crawled)
     website = test_website.model_copy(update={"critical_pages": []})
     stored_internal_links = [test_internal_link.url] if init else []
@@ -277,7 +278,7 @@ async def test_get_website_updates_saves_internal_link_baseline(
     )
 
     assert updates is not None
-    assert set(updates.initial_internal_links or []) == crawled
+    assert {str(link) for link in updates.initial_internal_links or []} == crawled
     assert not updates.recent_added_internal_links
     assert not updates.recent_removed_internal_links
     assert not updates.has_changes
@@ -440,18 +441,25 @@ BASELINE_PAGE_ID = uuid.uuid4()
     ("updates", "changed_page_ids", "has_changes"),
     [
         (WebsiteUpdate(), set[uuid.UUID](), False),
-        (WebsiteUpdate(initial_internal_links=["https://www.test_website.com/"]), set[uuid.UUID](), False),
+        (WebsiteUpdate(initial_internal_links=[HttpUrl("https://www.test_website.com/")]), set[uuid.UUID](), False),
         (WebsiteUpdate(recent_added_internal_links=[], recent_removed_internal_links=[]), set[uuid.UUID](), False),
-        (WebsiteUpdate(recent_removed_internal_links=["https://www.test_website.com/old"]), set[uuid.UUID](), True),
+        (
+            WebsiteUpdate(recent_removed_internal_links=[HttpUrl("https://www.test_website.com/old")]),
+            set[uuid.UUID](),
+            True,
+        ),
         (
             WebsiteUpdate(
                 critical_page_updates={
                     CHANGED_PAGE_ID: CriticalPageUpdate(
-                        url="https://www.test_website.com/fees",
-                        recent_links_added=["https://www.test_website.com/new"],
+                        url=HttpUrl("https://www.test_website.com/fees"),
+                        recent_links_added=[HttpUrl("https://www.test_website.com/new")],
                     ),
                     BASELINE_PAGE_ID: CriticalPageUpdate(
-                        url="https://www.test_website.com/new-page", text_body="<p>Hi</p>", links=[], documents=[]
+                        url=HttpUrl("https://www.test_website.com/new-page"),
+                        text_body="<p>Hi</p>",
+                        links=[],
+                        documents=[],
                     ),
                 }
             ),

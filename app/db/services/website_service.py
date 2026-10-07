@@ -3,6 +3,7 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime, timedelta
 
+from pydantic import HttpUrl
 from sqlalchemy.orm import Session
 
 from app.backend.links import remove_repeated_pages
@@ -66,7 +67,7 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         )
         return WebsiteRead.model_validate(website_record)
 
-    def get_by_url(self, url: str) -> WebsiteRead:
+    def get_by_url(self, url: HttpUrl) -> WebsiteRead:
         """Retrieves a single website record and its relationships matching a URL.
 
         Args:
@@ -108,8 +109,10 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
 
         critical_page_service = CriticalPageService(self._db)
         # Each page is created once, even if written twice (e.g. "/news" and "/news/")
-        for critical_page_url in remove_repeated_pages([model_create.url, *model_create.critical_pages]):
-            critical_page_service.create(CriticalPageCreate(website_id=website_record.id, url=critical_page_url))
+        for critical_page_url in remove_repeated_pages([str(model_create.url), *model_create.critical_pages]):
+            critical_page_service.create(
+                CriticalPageCreate(website_id=website_record.id, url=HttpUrl(critical_page_url))
+            )
         self._db.expire(website_record, ["critical_pages"])
 
         recipient_service = RecipientService(self._db)

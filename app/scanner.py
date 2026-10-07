@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from typing import NamedTuple
 
 from httpx2 import AsyncClient
+from pydantic import EmailStr, HttpUrl
 
 from app.backend.change_detection import get_critical_page_only_updates, get_website_updates
 from app.backend.email_service.delivery import EmailSender, get_email_sender
@@ -26,9 +27,8 @@ from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
 from app.db.session import db_context
 from app.models.critical_page_models import CriticalPageRead
-from app.models.field_types import EmailString
 from app.models.recipient_models import RecipientUpdate
-from app.models.website_models import WebsiteRead, WebsiteUpdate
+from app.models.website_models import URL_LIST_ADAPTER, WebsiteRead, WebsiteUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -44,15 +44,15 @@ class WebsiteReport(NamedTuple):
         html: The report card as HTML.
     """
 
-    website_url: str
+    website_url: HttpUrl
     html: str
 
 
-def _record_email_sent(recipient_email: EmailString) -> None:
+def _record_email_sent(recipient_email: EmailStr) -> None:
     """Records that a recipient was just emailed, so their health checks count from now.
 
     Args:
-        recipient_email (EmailString): The recipient's email address.
+        recipient_email (EmailStr): The recipient's email address.
     """
     with db_context() as session:
         recipient_service = RecipientService(session)
@@ -60,14 +60,14 @@ def _record_email_sent(recipient_email: EmailString) -> None:
         recipient_service.update(id=recipient.id, model_update=RecipientUpdate(last_email_at=datetime.now()))
 
 
-def send_notification(recipient_email: EmailString, html_body: str, subject: str, email_sender: EmailSender) -> None:
+def send_notification(recipient_email: EmailStr, html_body: str, subject: str, email_sender: EmailSender) -> None:
     """Emails a recipient, then records when they were emailed.
 
     The email has already gone by the time it is recorded, so a failure to record it is logged rather than
     raised, and is not mistaken for the email failing to send.
 
     Args:
-        recipient_email (EmailString): The recipient's email address.
+        recipient_email (EmailStr): The recipient's email address.
         html_body (str): The email's content as HTML.
         subject (str): The email's subject line.
         email_sender (EmailSender): Sends the email.
@@ -86,7 +86,7 @@ def send_notification(recipient_email: EmailString, html_body: str, subject: str
 
 
 def send_report_to_recipients(
-    recipient_emails: Sequence[EmailString],
+    recipient_emails: Sequence[EmailStr],
     html_body: str,
     subject: str,
     email_sender: EmailSender,
@@ -96,7 +96,7 @@ def send_report_to_recipients(
     Blocks while the emails send, so async code runs it in a thread.
 
     Args:
-        recipient_emails (Sequence[EmailString]): Who to email.
+        recipient_emails (Sequence[EmailStr]): Who to email.
         html_body (str): The report as HTML.
         subject (str): The email's subject line.
         email_sender (EmailSender): Sends the emails.
@@ -111,7 +111,7 @@ def send_report_to_recipients(
 
 
 def _email_scan_reports(
-    reports_by_recipient: Mapping[EmailString, Sequence[WebsiteReport]],
+    reports_by_recipient: Mapping[EmailStr, Sequence[WebsiteReport]],
     email_sender: EmailSender,
 ) -> None:
     """Emails each recipient one email holding the reports for all of their websites, over one connection.
@@ -120,7 +120,7 @@ def _email_scan_reports(
     the emails send, so async code runs it in a thread.
 
     Args:
-        reports_by_recipient (Mapping[EmailString, Sequence[WebsiteReport]]): Each recipient's reports.
+        reports_by_recipient (Mapping[EmailStr, Sequence[WebsiteReport]]): Each recipient's reports.
         email_sender (EmailSender): Sends the emails.
     """
     with email_sender:
@@ -129,7 +129,7 @@ def _email_scan_reports(
                 send_notification(
                     recipient_email,
                     html_body=f"<ul>{join_scan_reports(report.html for report in reports)}</ul>",
-                    subject=scan_report_subject([report.website_url for report in reports]),
+                    subject=scan_report_subject([str(report.website_url) for report in reports]),
                     email_sender=email_sender,
                 )
             except Exception:
@@ -221,7 +221,9 @@ async def _check_for_updates(
         return await get_critical_page_only_updates(client, website, init)
 
     with db_context() as session:
-        stored_internal_links: list[str] = InternalLinkService(session).get_urls_for_website(website.id)
+        stored_internal_links: list[HttpUrl] = URL_LIST_ADAPTER.validate_python(
+            InternalLinkService(session).get_urls_for_website(website.id)
+        )
     return await get_website_updates(client, website, stored_internal_links, max_pages, delay, concurrent, init)
 
 
@@ -288,13 +290,13 @@ async def scan_website(
     """
     try:
         website_updates: WebsiteUpdate | None = await queued_crawl(
-            website.url, lambda: _check_for_updates(client, website, max_pages, delay, concurrent, init)
+            str(website.url), lambda: _check_for_updates(client, website, max_pages, delay, concurrent, init)
         )
     except TrafficError as e:
         logger.error("Temporary ban or severe rate limit detected for %s: %s", website.url, e)
         if delay or concurrent:
             raise TrafficError(
-                url=website.url,
+                url=str(website.url),
                 status_code=e.status_code,
                 message="Scan aborted, try increasing delay or reducing concurrent (may be banned)",
             ) from e
@@ -402,7 +404,7 @@ async def scan_all_websites(ignore_schedule: bool = False, email_sender: EmailSe
         websites: Sequence[WebsiteRead] = website_service.get_all(limit=None)  # Every website, not just the first 100
 
     run_started_at = datetime.now()
-    reports_by_recipient: dict[EmailString, list[WebsiteReport]] = defaultdict(list)
+    reports_by_recipient: defaultdict[EmailStr, list[WebsiteReport]] = defaultdict(list)
     all_reports: list[str] = []
     async with AsyncClient() as client:
         for listed_website in websites:

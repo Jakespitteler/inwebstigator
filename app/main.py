@@ -18,15 +18,15 @@ from app.db.session import engine
 from app.frontend.api import routers
 from app.scheduler import schedule_scans
 
+AUTOMATIC_SCANS: bool = config.automatic_scans
+APP_NAME: str = config.app_name
+
 setup_logging()
 
 Base.metadata.create_all(bind=engine)
 add_missing_columns(engine, Base.metadata)  # Brings databases made by older versions of the app up to date
-if config.automatic_scans:
-    app = FastAPI(title=config.app_name, lifespan=schedule_scans)
-else:
-    app = FastAPI(title=config.app_name)
 
+app = FastAPI(title=APP_NAME, lifespan=schedule_scans) if AUTOMATIC_SCANS else FastAPI(title=APP_NAME)
 app.mount(
     "/static",
     StaticFiles(directory=resource_path("app", "frontend", "static")),

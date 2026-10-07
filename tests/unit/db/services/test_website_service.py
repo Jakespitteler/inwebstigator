@@ -3,6 +3,7 @@ from collections.abc import Sequence
 from datetime import datetime, timedelta
 
 import pytest
+from pydantic import HttpUrl
 from sqlalchemy.orm import Session
 
 from app.core.config import config
@@ -78,7 +79,7 @@ def test_get_website_by_url_raises_not_found(session: Session) -> None:
         session: The database session fixture.
     """
     with pytest.raises(NotFoundError):
-        WebsiteService(session).get_by_url(url="https://www.nonexistent_website.com")
+        WebsiteService(session).get_by_url(url=HttpUrl("https://www.nonexistent_website.com"))
 
 
 def test_create_website(session: Session) -> None:
@@ -88,7 +89,7 @@ def test_create_website(session: Session) -> None:
     Args:
         session: The database session fixture.
     """
-    website_details = WebsiteCreate(url="https://www.test_website.com")
+    website_details = WebsiteCreate(url=HttpUrl("https://www.test_website.com"))
 
     created_website: WebsiteRead = WebsiteService(session).create(website_details)
     assert created_website.id is not None
@@ -108,7 +109,7 @@ def test_create_website_with_links_and_critical_pages(session: Session) -> None:
         session: The database session fixture.
     """
     website_details = WebsiteCreate(
-        url="https://www.test_website.com",
+        url=HttpUrl("https://www.test_website.com"),
         critical_pages=["https://www.test_website.com/critical_page"],
     )
 
@@ -121,7 +122,7 @@ def test_create_website_with_links_and_critical_pages(session: Session) -> None:
     assert fetched_website.critical_pages
     assert {page.url for page in fetched_website.critical_pages} == {
         website_details.url,
-        "https://www.test_website.com/critical_page",
+        HttpUrl("https://www.test_website.com/critical_page"),
     }
 
 
@@ -134,7 +135,7 @@ def test_create_website_watches_each_critical_page_once(session: Session) -> Non
         session: The database session fixture.
     """
     website_details = WebsiteCreate(
-        url="https://www.test_website.com",
+        url=HttpUrl("https://www.test_website.com"),
         critical_pages=[
             "/",
             "https://www.test_website.com/news/",
@@ -147,18 +148,18 @@ def test_create_website_watches_each_critical_page_once(session: Session) -> Non
     created_website: WebsiteRead = WebsiteService(session).create(website_details)
 
     assert [page.url for page in created_website.critical_pages] == [
-        "https://www.test_website.com",
-        "https://www.test_website.com/news/",
+        HttpUrl("https://www.test_website.com/"),
+        HttpUrl("https://www.test_website.com/news/"),
     ]
 
 
 def test_get_by_url_selects_requested_website(session: Session, test_website: WebsiteRead) -> None:
     service = WebsiteService(session)
-    second = service.create(WebsiteCreate(url="https://second.example.com/au"))
+    second = service.create(WebsiteCreate(url=HttpUrl("https://second.example.com/au")))
     assert service.get_by_url(second.url).id == second.id
     assert service.get_by_url(test_website.url).id == test_website.id
     with pytest.raises(NotFoundError):
-        service.get_by_url("https://unknown.example.com")
+        service.get_by_url(HttpUrl("https://unknown.example.com"))
 
 
 def test_create_website_with_recipients(session: Session) -> None:
@@ -173,7 +174,7 @@ def test_create_website_with_recipients(session: Session) -> None:
         "recipient_two@email.com",
     ]
     website_details = WebsiteCreate(
-        url="https://www.test_recipient_website.com",
+        url=HttpUrl("https://www.test_recipient_website.com"),
         recipient_emails=recipient_emails,
     )
 
@@ -192,7 +193,7 @@ def test_update_website(session: Session, test_website: WebsiteRead) -> None:
         session: The database session fixture.
         test_website: The test website record.
     """
-    model_update = WebsiteUpdate(url="https://www.updated_website.com")
+    model_update = WebsiteUpdate(url=HttpUrl("https://www.updated_website.com"))
 
     updated_website: WebsiteRead = WebsiteService(session).update(id=test_website.id, model_update=model_update)
     assert updated_website.id == test_website.id
@@ -210,7 +211,7 @@ def test_get_website_counts_its_internal_links(session: Session, test_website: W
         session: The database session fixture.
         test_website: The test website record.
     """
-    urls = [f"{test_website.url}page/{number}" for number in range(3)]
+    urls = [HttpUrl(f"{test_website.url}page/{number}") for number in range(3)]
     InternalLinkService(session).create_batch(urls=urls, website_id=test_website.id)
 
     fetched_website: WebsiteRead = WebsiteService(session).get(id=test_website.id)
@@ -228,10 +229,10 @@ def test_update_website_internal_links(session: Session, test_website: WebsiteRe
         test_website: The test website record.
     """
     internal_link_service = InternalLinkService(session)
-    existing_link_url = f"https://{test_website.url}/link_to_delete"
+    existing_link_url = HttpUrl(f"{test_website.url}link_to_delete")
     internal_link_service.create_batch(urls=[existing_link_url], website_id=test_website.id)
 
-    new_link_url = f"https://{test_website.url}/link_to_add"
+    new_link_url = HttpUrl(f"{test_website.url}link_to_add")
     model_update = WebsiteUpdate(
         recent_added_internal_links=[new_link_url],
         recent_removed_internal_links=[existing_link_url],
@@ -249,7 +250,7 @@ def test_update_website_internal_links(session: Session, test_website: WebsiteRe
 
     # Confirm the website read model counts its links, rather than loading them all
     assert updated_website.internal_link_count == len(internal_link_service.get_urls_for_website(test_website.id))
-    assert new_link_url in internal_link_service.get_urls_for_website(test_website.id)
+    assert str(new_link_url) in internal_link_service.get_urls_for_website(test_website.id)
 
 
 def test_delete_website(session: Session, test_website: WebsiteRead) -> None:
@@ -289,13 +290,13 @@ def test_delete_website_cascades(session: Session, test_website: WebsiteRead) ->
     # create link and page to be deleted on cascade
     created_internal_link: InternalLinkRead = InternalLinkService(session).create(
         model_create=InternalLinkCreate(
-            url=f"https://{test_website.url}/internal_link",
+            url=HttpUrl(f"{test_website.url}internal_link"),
             website_id=test_website.id,
         )
     )
     created_critical_page: CriticalPageRead = CriticalPageService(session).create(
         model_create=CriticalPageCreate(
-            url=f"https://{test_website.url}/critical_page",
+            url=HttpUrl(f"{test_website.url}critical_page"),
             website_id=test_website.id,
         )
     )
@@ -322,12 +323,12 @@ def test_update_website_critical_page_updates(session: Session, test_website: We
     critical_page_service = CriticalPageService(session)
     created_page = critical_page_service.create(
         model_create=CriticalPageCreate(
-            url=f"https://{test_website.url}/critical_1",
+            url=HttpUrl(f"{test_website.url}critical_1"),
             website_id=test_website.id,
         )
     )
 
-    updated_url = f"https://{test_website.url}/critical_1_updated"
+    updated_url = HttpUrl(f"{test_website.url}critical_1_updated")
     model_update = WebsiteUpdate(critical_page_updates={created_page.id: CriticalPageUpdate(url=updated_url)})
 
     WebsiteService(session).update(id=test_website.id, model_update=model_update)

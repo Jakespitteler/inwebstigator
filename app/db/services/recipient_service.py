@@ -2,6 +2,7 @@ import logging
 import uuid
 from collections.abc import Sequence
 
+from pydantic import EmailStr
 from sqlalchemy import Exists, Select, select
 from sqlalchemy.orm import Session
 
@@ -9,7 +10,6 @@ from app.core.errors import NotFoundError
 from app.db import repository
 from app.db.schema import DBRecipient, website_recipient_association
 from app.db.services.crud_protocol import CRUDService
-from app.models.field_types import EmailString
 from app.models.recipient_models import RecipientCreate, RecipientRead, RecipientUpdate
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -75,7 +75,7 @@ class RecipientService(CRUDService[RecipientRead, RecipientCreate, RecipientUpda
         recipient_record: DBRecipient = repository.get(self._db, table=DBRecipient, id=id)
         return RecipientRead.model_validate(recipient_record)
 
-    def get_by_email(self, email: EmailString) -> RecipientRead:
+    def get_by_email(self, email: EmailStr) -> RecipientRead:
         """Retrieves a single recipient record and its relationships by its associated email attribute.
 
         Args:

@@ -9,7 +9,7 @@
 {%- endmacro %}
 
 {% macro link(url) -%}
-{% if url.lower().startswith(("http://", "https://")) %}<a href="{{ url }}" class="link-active">{{ url }}</a>{% else %}<span class="link-inactive">{{ url }}</span>{% endif %}
+{% if (url | string).lower().startswith(("http://", "https://")) %}<a href="{{ url }}" class="link-active">{{ url }}</a>{% else %}<span class="link-inactive">{{ url }}</span>{% endif %}
 {%- endmacro %}
 
 {% macro badge(kind, text) -%}

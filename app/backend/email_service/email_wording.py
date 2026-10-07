@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, tzinfo
 from typing import NamedTuple
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from pydantic import HttpUrl
+
 from app.backend.links import website_name
 from app.core.config import config
 from app.models.website_models import DeactivationReason, WebsiteRead
@@ -82,7 +84,7 @@ class WebsiteHealth(NamedTuple):
         needs_attention: Whether something is stopping it being fully monitored.
     """
 
-    url: str
+    url: HttpUrl
     status: str
     needs_attention: bool
 

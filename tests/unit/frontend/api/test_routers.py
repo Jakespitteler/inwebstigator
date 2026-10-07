@@ -8,7 +8,7 @@ import pytest
 from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 from httpx2 import ASGITransport, AsyncClient, MockTransport, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl
 from pytest_mock import MockerFixture
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -103,7 +103,7 @@ class TestCRUDRouters:
         """
         response: Response = api_client.patch(
             url=f"{self.prefix}/{api_record.id}",
-            json=self.model_update.model_dump(exclude_unset=True),
+            json=self.model_update.model_dump(mode="json", exclude_unset=True),
         )
         assert response.status_code == 200, response.text
 
@@ -164,8 +164,8 @@ class TestRecipientRouter(TestCRUDRouters):
 class TestWebsiteRouter(TestCRUDRouters):
     __test__ = True
     prefix = routers.WEBSITE_ROUTER.prefix
-    model_create = website_models.WebsiteCreate(url="https://www.test_website.com")
-    model_update = website_models.WebsiteUpdate(url="https://www.updated_website.com")
+    model_create = website_models.WebsiteCreate(url=HttpUrl("https://www.test_website.com"))
+    model_update = website_models.WebsiteUpdate(url=HttpUrl("https://www.updated_website.com"))
     fixture_name = "test_website"
 
 
@@ -173,10 +173,12 @@ class TestCriticalPageRouter(TestCRUDRouters):
     __test__ = True
     prefix = routers.CRITICAL_PAGE_ROUTER.prefix
     model_create = critical_page_models.CriticalPageCreate(
-        url="https://www.test_website.com/test_critical_page",
+        url=HttpUrl("https://www.test_website.com/test_critical_page"),
         website_id=uuid.uuid4(),
     )
-    model_update = critical_page_models.CriticalPageUpdate(links=["https://www.test_website.com/updated_critical_page"])
+    model_update = critical_page_models.CriticalPageUpdate(
+        links=[HttpUrl("https://www.test_website.com/updated_critical_page")]
+    )
     fixture_name = "test_critical_page"
 
 
@@ -266,7 +268,7 @@ def test_updates_are_listed_most_recent_change_first(api_client: TestClient, ses
     change_times = [" ".join(time.get_text().split()) for time in dashboard.select(".page-change-record .change-time")]
 
     assert website_names == ["newer.example.com", "older.example.com"]
-    assert page_urls == ["https://newer.example.com/news", "https://newer.example.com", "https://older.example.com"]
+    assert page_urls == ["https://newer.example.com/news", "https://newer.example.com/", "https://older.example.com/"]
     assert change_times == ["Changed 04 Oct 2026, 09:00", "Changed 02 Oct 2026, 09:00", "Changed 01 Oct 2026, 09:00"]
 
 
@@ -292,14 +294,14 @@ def test_manual_scan_records_scan_time(
     mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
     before = datetime.now()
 
-    response = api_client.post("/scanner/run", data={"url": test_website.url})
+    response = api_client.post("/scanner/run", data={"url": str(test_website.url)})
 
     assert response.status_code == 200, response.text
     website = session.get(DBWebsite, test_website.id)
     assert website
     last_scan_at = website.last_scan_at
     assert last_scan_at is not None and last_scan_at >= before
-    assert _last_scan_by_website(api_client)[website_name(test_website.url)] == (
+    assert _last_scan_by_website(api_client)[website_name(str(test_website.url))] == (
         f"Last scanned: {last_scan_at:%d %b %Y, %H:%M}"
     )
 
@@ -308,10 +310,10 @@ def test_manual_scan_of_a_website_already_queued_is_refused(
     api_client: TestClient, test_website: website_models.WebsiteRead, mocker: MockerFixture
 ) -> None:
     """Tests "Run Scan Now" for a website already queued or being scanned is refused rather than queued twice."""
-    mocker.patch.dict("app.scanner.queued_crawls", {test_website.url: mocker.Mock()})
+    mocker.patch.dict("app.scanner.queued_crawls", {str(test_website.url): mocker.Mock()})
     mock_get_website_updates = mocker.patch("app.scanner.get_website_updates")
 
-    response = api_client.post("/scanner/run", data={"url": test_website.url})
+    response = api_client.post("/scanner/run", data={"url": str(test_website.url)})
 
     assert response.status_code == 409, response.text
     mock_get_website_updates.assert_not_called()
@@ -323,9 +325,9 @@ def test_cancel_scan_reports_whether_there_was_a_scan_to_cancel(
     """Tests "Cancel Scan" cancels a queued or running scan, and says so when there was nothing to cancel."""
     mock_crawl = mocker.Mock()
     mock_crawl.cancel.return_value = True
-    mocker.patch.dict("app.scanner.queued_crawls", {test_website.url: mock_crawl})
+    mocker.patch.dict("app.scanner.queued_crawls", {str(test_website.url): mock_crawl})
 
-    assert api_client.post("/scanner/cancel", data={"url": test_website.url}).json() is True
+    assert api_client.post("/scanner/cancel", data={"url": str(test_website.url)}).json() is True
     mock_crawl.cancel.assert_called_once()
     assert api_client.post("/scanner/cancel", data={"url": "https://not-queued.com"}).json() is False
 
@@ -337,11 +339,11 @@ def test_dashboard_shows_cancel_button_only_for_websites_being_scanned(
     refresh, and other websites do not."""
     session.add(DBWebsite(url="https://not-scanning.example.com"))
     session.flush()
-    mocker.patch.dict("app.scanner.queued_crawls", {test_website.url: mocker.Mock()})
+    mocker.patch.dict("app.scanner.queued_crawls", {str(test_website.url): mocker.Mock()})
 
     dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
 
-    for url, scanning in [(test_website.url, True), ("https://not-scanning.example.com", False)]:
+    for url, scanning in [(test_website.url, True), ("https://not-scanning.example.com/", False)]:
         run_button = dashboard.select_one(f'.run-scan-button[data-website-url="{url}"]')
         cancel_button = dashboard.select_one(f'.cancel-scan-button[data-website-url="{url}"]')
         assert run_button is not None and cancel_button is not None
@@ -359,7 +361,7 @@ def test_deleting_a_website_cancels_its_scan(
 ) -> None:
     """Tests deleting a website that is queued or being scanned cancels its scan as well as deleting it."""
     mock_crawl = mocker.Mock()
-    mocker.patch.dict("app.scanner.queued_crawls", {test_website.url: mock_crawl})
+    mocker.patch.dict("app.scanner.queued_crawls", {str(test_website.url): mock_crawl})
 
     response = api_client.delete(f"/websites/{test_website.id}")
 
@@ -478,7 +480,7 @@ def test_adding_a_website_too_large_to_scan_deactivates_it(
 def _website_notice(api_client: TestClient, url: str) -> str | None:
     """Returns the notice on a website's dashboard card saying why it was deactivated, or None if it has none."""
     dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
-    delete_button = dashboard.select_one(f'.delete-website-button[data-website-url="{url}"]')
+    delete_button = dashboard.select_one(f'.delete-website-button[data-website-url="{HttpUrl(url)}"]')
     assert delete_button is not None
     card = delete_button.find_parent(class_="website-card")
     assert card is not None
@@ -489,7 +491,7 @@ def _website_notice(api_client: TestClient, url: str) -> str | None:
 def _run_scan_button_text(api_client: TestClient, url: str) -> str:
     """Returns the text of a website's run scan button on the dashboard."""
     dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
-    button = dashboard.select_one(f'.run-scan-button[data-website-url="{url}"]')
+    button = dashboard.select_one(f'.run-scan-button[data-website-url="{HttpUrl(url)}"]')
     assert button is not None
     return " ".join(button.get_text().split())
 
@@ -582,7 +584,7 @@ async def test_stopping_a_new_websites_first_scan_leaves_no_website(
             response = await client.post("/scanner/cancel", data={"url": url})
             assert response.json() is True
         else:
-            website = session.scalars(select(DBWebsite).where(DBWebsite.url == url)).one()
+            website = session.scalars(select(DBWebsite).where(DBWebsite.url == HttpUrl(url))).one()
             response = await client.delete(f"/websites/{website.id}")
             assert response.status_code == 204, response.text
 
@@ -668,7 +670,7 @@ def test_adding_a_critical_page_already_watched_is_refused(
     assert "already being watched" in response.json()["detail"]
     mock_check_pages_exist.assert_not_called()
     pages = session.scalars(select(DBCriticalPage).where(DBCriticalPage.website_id == test_critical_page.website_id))
-    assert [page.url for page in pages] == [test_critical_page.url]
+    assert [page.url for page in pages] == [str(test_critical_page.url)]
 
 
 def test_adding_a_known_email_is_emailed_without_waiting_for_a_bounce(

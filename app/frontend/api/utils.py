@@ -4,9 +4,9 @@ from datetime import datetime
 from typing import Protocol
 
 from markupsafe import Markup, escape
+from pydantic import HttpUrl
 
 from app.backend.diff_checker.word_diff import DiffWord, WordChange, WordDiff, diff_words
-from app.models.field_types import URLString
 
 
 def format_timestamp(moment: datetime) -> str:
@@ -42,15 +42,15 @@ class ContentBlockRecord:
 
 @dataclass
 class DailyRecord:
-    url: URLString
-    website_url: URLString
+    url: HttpUrl
+    website_url: HttpUrl
     changed: list[TextChangeRecord] = field(default_factory=list[TextChangeRecord])
     added: list[ContentBlockRecord] = field(default_factory=list[ContentBlockRecord])
     removed: list[ContentBlockRecord] = field(default_factory=list[ContentBlockRecord])
-    links_added: list[str] = field(default_factory=list[str])
-    links_removed: list[str] = field(default_factory=list[str])
-    documents_added: list[str] = field(default_factory=list[str])
-    documents_removed: list[str] = field(default_factory=list[str])
+    links_added: list[HttpUrl] = field(default_factory=list[HttpUrl])
+    links_removed: list[HttpUrl] = field(default_factory=list[HttpUrl])
+    documents_added: list[HttpUrl] = field(default_factory=list[HttpUrl])
+    documents_removed: list[HttpUrl] = field(default_factory=list[HttpUrl])
     changed_at: datetime | None = None
 
 
@@ -59,17 +59,17 @@ class WebsiteDailyRecord:
     """A website's changes from its latest scan: each critical page that changed and its new or removed pages.
 
     Attributes:
-        website_url (URLString): The URL of the website the critical pages belong to.
+        website_url (HttpUrl): The URL of the website the critical pages belong to.
         pages (list[DailyRecord]): The changes found on each of the website's critical pages.
-        internal_links_added (list[str]): Pages found on the website that were not there in the previous scan.
-        internal_links_removed (list[str]): Pages from the previous scan that are no longer on the website.
+        internal_links_added (list[HttpUrl]): Pages found on the website that were not there in the previous scan.
+        internal_links_removed (list[HttpUrl]): Pages from the previous scan that are no longer on the website.
         internal_links_changed_at (datetime | None): When the added and removed internal links were found.
     """
 
-    website_url: URLString
+    website_url: HttpUrl
     pages: list[DailyRecord]
-    internal_links_added: list[str] = field(default_factory=list[str])
-    internal_links_removed: list[str] = field(default_factory=list[str])
+    internal_links_added: list[HttpUrl] = field(default_factory=list[HttpUrl])
+    internal_links_removed: list[HttpUrl] = field(default_factory=list[HttpUrl])
     internal_links_changed_at: datetime | None = None
 
     @property

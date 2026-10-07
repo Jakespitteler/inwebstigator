@@ -1,4 +1,5 @@
 from bs4 import BeautifulSoup
+from pydantic import HttpUrl
 
 from app.backend.email_service.email_wording import WebsiteHealth
 from app.backend.email_service.html_bodies import (
@@ -113,7 +114,7 @@ def test_recipient_added_names_the_website() -> None:
 
 
 def test_health_check_says_all_is_well_when_nothing_needs_attention() -> None:
-    body: str = health_check_html([WebsiteHealth("https://a.example/", "Working.", needs_attention=False)])
+    body: str = health_check_html([WebsiteHealth(HttpUrl("https://a.example/"), "Working.", needs_attention=False)])
 
     assert "Monitoring is running, and no changes have been found" in visible_text(body)
     assert list_items(body) == ["https://a.example/: Working."]
@@ -122,8 +123,8 @@ def test_health_check_says_all_is_well_when_nothing_needs_attention() -> None:
 def test_health_check_says_when_a_website_needs_attention() -> None:
     body: str = health_check_html(
         [
-            WebsiteHealth("https://a.example/", "Working.", needs_attention=False),
-            WebsiteHealth("https://b.example/", "2 watched pages cannot be reached.", needs_attention=True),
+            WebsiteHealth(HttpUrl("https://a.example/"), "Working.", needs_attention=False),
+            WebsiteHealth(HttpUrl("https://b.example/"), "2 watched pages cannot be reached.", needs_attention=True),
         ]
     )
 

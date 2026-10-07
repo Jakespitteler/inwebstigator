@@ -27,7 +27,6 @@ from app.db import repository, schema
 from app.db.session import get_db_session
 from app.main import app
 from app.models import critical_page_models, internal_link_models, recipient_models, website_models
-from app.models.field_types import URLString
 from tests.fakes import FakeEmailSender
 
 type RequestHandler = Callable[[httpx2.Request], httpx2.Response]
@@ -162,7 +161,7 @@ def disable_retry_wait() -> Iterator[None]:
 
 
 @pytest.fixture
-def test_url() -> URLString:
+def test_url() -> str:
     """Provides a standard test URL matching test_website domain."""
     return normalise_url("https://www.test_website.com/")
 
@@ -201,7 +200,7 @@ def test_recipient(session: Session) -> recipient_models.RecipientRead:
 
 @pytest.fixture()
 def test_website(
-    session: Session, test_recipient: recipient_models.RecipientRead, test_url: URLString
+    session: Session, test_recipient: recipient_models.RecipientRead, test_url: str
 ) -> website_models.WebsiteRead:
     return website_models.WebsiteRead.model_validate(
         _create_and_add(
@@ -245,7 +244,7 @@ def test_internal_link(session: Session, test_website: schema.DBWebsite) -> inte
 
 
 @pytest.fixture
-def test_html_content(test_url: URLString) -> str:
+def test_html_content(test_url: str) -> str:
     """Provides a mock HTML string containing various link structures."""
     return f"""
     <html>
@@ -266,7 +265,7 @@ def test_html_content(test_url: URLString) -> str:
 
 
 @pytest.fixture
-def mock_client_factory(test_url: URLString) -> Callable[[RequestHandler], httpx2.AsyncClient]:
+def mock_client_factory(test_url: str) -> Callable[[RequestHandler], httpx2.AsyncClient]:
     """Fixture factory to easily create an AsyncClient with a MockTransport."""
 
     def _create_client(handler: RequestHandler, base_url: str = test_url) -> httpx2.AsyncClient:
@@ -313,7 +312,7 @@ def website_handler(test_url: str, test_html_content: str) -> RequestHandler:
 
 
 @pytest.fixture
-def redirect_handler(test_url: URLString) -> RequestHandler:
+def redirect_handler(test_url: str) -> RequestHandler:
     """Provides a mock request handler simulating an HTTP redirect."""
 
     def handler(request: httpx2.Request) -> httpx2.Response:

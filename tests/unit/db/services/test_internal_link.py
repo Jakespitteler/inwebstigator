@@ -2,6 +2,7 @@ import uuid
 from collections.abc import Sequence
 
 import pytest
+from pydantic import HttpUrl
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
@@ -66,7 +67,7 @@ def test_get_internal_link_by_url_not_found(session: Session) -> None:
     Args:
         session: The database session fixture.
     """
-    non_existent_url = "https://www.test_website.com/non-existent-link"
+    non_existent_url = HttpUrl("https://www.test_website.com/non-existent-link")
 
     with pytest.raises(NotFoundError):
         InternalLinkService(session).get_by_url(url=non_existent_url)
@@ -80,7 +81,7 @@ def test_create_internal_link(session: Session, test_website: WebsiteRead) -> No
         session: The database session fixture.
     """
     internal_link_details = InternalLinkCreate(
-        url="https://www.test_website.com/test_internal_link",
+        url=HttpUrl("https://www.test_website.com/test_internal_link"),
         website_id=test_website.id,
     )
 
@@ -101,8 +102,8 @@ def test_create_batch_internal_links(session: Session, test_website: WebsiteRead
         test_website: The test website record.
     """
     urls = [
-        "https://www.test_website.com/batch_link_1",
-        "https://www.test_website.com/batch_link_2",
+        HttpUrl("https://www.test_website.com/batch_link_1"),
+        HttpUrl("https://www.test_website.com/batch_link_2"),
     ]
     InternalLinkService(session).create_batch(urls, test_website.id)
 
@@ -124,10 +125,10 @@ def test_get_urls_for_website_returns_only_that_websites_links(
         test_internal_link: The test website's internal link.
     """
     service = InternalLinkService(session)
-    other_website = WebsiteService(session).create(WebsiteCreate(url="https://other.example.com"))
-    service.create_batch(["https://other.example.com/page"], website_id=other_website.id)
+    other_website = WebsiteService(session).create(WebsiteCreate(url=HttpUrl("https://other.example.com")))
+    service.create_batch([HttpUrl("https://other.example.com/page")], website_id=other_website.id)
 
-    assert service.get_urls_for_website(test_website.id) == [test_internal_link.url]
+    assert service.get_urls_for_website(test_website.id) == [str(test_internal_link.url)]
     assert service.get_urls_for_website(other_website.id) == ["https://other.example.com/page"]
 
 
@@ -143,13 +144,13 @@ def test_delete_batch_deletes_more_links_than_one_statement_can_hold(
         test_website: The test website record.
     """
     service = InternalLinkService(session)
-    removed_urls = [f"https://www.test_website.com/removed/{number}" for number in range(40_000)]
-    kept_url = "https://www.test_website.com/kept"
+    removed_urls = [HttpUrl(f"https://www.test_website.com/removed/{number}") for number in range(40_000)]
+    kept_url = HttpUrl("https://www.test_website.com/kept")
     service.create_batch([*removed_urls, kept_url], website_id=test_website.id)
 
     service.delete_batch(urls=removed_urls, website_id=test_website.id)
 
-    assert service.get_urls_for_website(test_website.id) == [kept_url]
+    assert service.get_urls_for_website(test_website.id) == [str(kept_url)]
 
 
 def test_update_internal_link(session: Session, test_internal_link: InternalLinkRead) -> None:
@@ -160,7 +161,7 @@ def test_update_internal_link(session: Session, test_internal_link: InternalLink
         session: The database session fixture.
         test_internal_link: The test critical page record.
     """
-    model_update = InternalLinkUpdate(url="https://www.test_website.com/updated_internal_link")
+    model_update = InternalLinkUpdate(url=HttpUrl("https://www.test_website.com/updated_internal_link"))
 
     updated_internal_link: InternalLinkRead = InternalLinkService(session).update(
         id=test_internal_link.id, model_update=model_update
@@ -197,8 +198,8 @@ def test_delete_batch_internal_links(session: Session, test_website: WebsiteRead
     """
     service = InternalLinkService(session)
     urls = [
-        "https://www.test_website.com/batch_delete_1",
-        "https://www.test_website.com/batch_delete_2",
+        HttpUrl("https://www.test_website.com/batch_delete_1"),
+        HttpUrl("https://www.test_website.com/batch_delete_2"),
     ]
     service.create_batch(urls, website_id=test_website.id)
 
@@ -240,7 +241,7 @@ def test_update_internal_link_raises_not_found(session: Session) -> None:
     Args:
         session: The database session fixture.
     """
-    model_update = InternalLinkUpdate(url="https://www.test_website.com/updated_link")
+    model_update = InternalLinkUpdate(url=HttpUrl("https://www.test_website.com/updated_link"))
     with pytest.raises(NotFoundError):
         InternalLinkService(session).update(id=uuid.uuid4(), model_update=model_update)
 

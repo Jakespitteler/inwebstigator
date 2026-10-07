@@ -1,33 +1,35 @@
+import re
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 from app.backend.diff_checker.models import ChangedBlock, ContentBlock
 from app.core.config import config
-from app.models.field_types import RegexString, URLString
+
+ALERT_AFTER_FAILURES: int = config.critical_page_alert_after_failures
 
 
 class CriticalPageCreate(BaseModel):
-    url: URLString
+    url: HttpUrl
     website_id: uuid.UUID | None = Field(default=None, examples=[""])
-    ignore_rules: list[RegexString] = Field(default_factory=list[RegexString])
+    ignore_rules: list[re.Pattern[str]] = Field(default_factory=list[re.Pattern[str]])
 
 
 class CriticalPageRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
     website_id: uuid.UUID
-    url: URLString
-    links: list[URLString] | None = None
-    documents: list[URLString] | None = None
+    url: HttpUrl
+    links: list[HttpUrl] | None = None
+    documents: list[HttpUrl] | None = None
     text_body: str | None = None
     ignore_rules: list[str] | None = None
 
-    recent_links_added: list[URLString] | None = None
-    recent_links_removed: list[URLString] | None = None
-    recent_documents_added: list[URLString] | None = None
-    recent_documents_removed: list[URLString] | None = None
+    recent_links_added: list[HttpUrl] | None = None
+    recent_links_removed: list[HttpUrl] | None = None
+    recent_documents_added: list[HttpUrl] | None = None
+    recent_documents_removed: list[HttpUrl] | None = None
     recent_text_added: list[ContentBlock] | None = None
     recent_text_removed: list[ContentBlock] | None = None
     recent_text_changed: list[ChangedBlock] | None = None
@@ -38,16 +40,16 @@ class CriticalPageRead(BaseModel):
 
 
 class CriticalPageUpdate(BaseModel):
-    url: URLString | None = None
-    links: list[URLString] | None = None
-    documents: list[URLString] | None = None
+    url: HttpUrl | None = None
+    links: list[HttpUrl] | None = None
+    documents: list[HttpUrl] | None = None
     text_body: str | None = None
-    ignore_rules: list[RegexString] | None = None
+    ignore_rules: list[re.Pattern[str]] | None = None
 
-    recent_links_added: list[URLString] | None = None
-    recent_links_removed: list[URLString] | None = None
-    recent_documents_added: list[URLString] | None = None
-    recent_documents_removed: list[URLString] | None = None
+    recent_links_added: list[HttpUrl] | None = None
+    recent_links_removed: list[HttpUrl] | None = None
+    recent_documents_added: list[HttpUrl] | None = None
+    recent_documents_removed: list[HttpUrl] | None = None
     recent_text_added: list[ContentBlock] | None = None
     recent_text_removed: list[ContentBlock] | None = None
     recent_text_changed: list[ChangedBlock] | None = None
@@ -59,7 +61,7 @@ class CriticalPageUpdate(BaseModel):
     @property
     def has_just_reached_failure_limit(self) -> bool:
         """Whether this scan is the one where the page reached the failure limit, which is reported once."""
-        return self.consecutive_failures == config.critical_page_alert_after_failures
+        return self.consecutive_failures == ALERT_AFTER_FAILURES
 
     @property
     def has_changes(self) -> bool:

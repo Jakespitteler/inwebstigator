@@ -7,6 +7,11 @@ from pydantic import BaseModel, Field
 
 from app.core.config import config
 
+TEXT_SIMILARITY_THRESHOLD: float = config.diff_checker_text_similarity_threshold
+MAX_COMPARISON_PER_BLOCK: int = config.diff_checker_max_comparisons_per_block
+MIN_CONTENT_RATIO: float = config.diff_checker_min_content_ratio
+MIN_CONTENT_CHARS: int = config.diff_checker_min_content_chars
+
 
 class HTMLBlockType(StrEnum):
     """The kinds of HTML element a block of page text can come from."""
@@ -204,8 +209,8 @@ class DiffSettings:
             The settings currently configured.
         """
         return cls(
-            similarity_threshold=config.diff_checker_text_similarity_threshold,
-            max_comparisons_per_block=config.diff_checker_max_comparisons_per_block,
-            min_content_ratio=config.diff_checker_min_content_ratio,
-            min_content_chars=config.diff_checker_min_content_chars,
+            similarity_threshold=TEXT_SIMILARITY_THRESHOLD,
+            max_comparisons_per_block=MAX_COMPARISON_PER_BLOCK,
+            min_content_ratio=MIN_CONTENT_RATIO,
+            min_content_chars=MIN_CONTENT_CHARS,
         )

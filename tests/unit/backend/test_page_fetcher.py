@@ -6,7 +6,6 @@ import pytest
 from app.backend.page_fetcher import fetch_content_from_url
 from app.core.config import config
 from app.core.errors import TrafficError, WebConnectionError
-from app.models.field_types import URLString
 from tests.conftest import RequestHandler
 
 
@@ -70,7 +69,7 @@ async def test_fetch_content_from_url_retries_rate_limit(
 
 @pytest.mark.anyio
 async def test_fetch_content_from_url_redirects(
-    test_url: URLString,
+    test_url: str,
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
     redirect_handler: RequestHandler,
 ) -> None:

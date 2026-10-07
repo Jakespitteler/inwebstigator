@@ -7,6 +7,7 @@ import httpx2
 import pytest
 from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
+from pydantic import HttpUrl
 from pytest_mock import MockerFixture
 from sqlalchemy.orm import Session
 
@@ -128,19 +129,19 @@ def test_send_report_to_recipients_uses_one_connection(email_sender: FakeEmailSe
 def test_monitoring_started_html_lists_the_main_page_and_critical_pages():
     """Tests the email lists the website's main page, which is always watched, then its other critical pages,
     each only once (here "/" is the main page again)."""
-    body = monitoring_started_html(WebsiteCreate(url="https://example.com", critical_pages=["/news", "/"]), 7)
+    body = monitoring_started_html(WebsiteCreate(url=HttpUrl("https://example.com"), critical_pages=["/news", "/"]), 7)
 
     assert body.count("<li") == 2
-    assert body.index("https://example.com<") < body.index("https://example.com/news<")
+    assert body.index("https://example.com/<") < body.index("https://example.com/news<")
 
 
 def test_monitoring_started_html_escapes_urls_and_describes_schedule():
     """Tests the email body escapes URLs and states the scan and health check intervals."""
-    website = WebsiteCreate(url="https://example.com/?a=1&b=<script>", days_between_scans=1)
+    website = WebsiteCreate(url=HttpUrl("https://example.com/?a=1&b=<script>"), days_between_scans=1)
 
     body = monitoring_started_html(website, 7)
 
-    assert "https://example.com/?a=1&amp;b=&lt;script&gt;" in body
+    assert "https://example.com/?a=1&amp;b=%3Cscript%3E" in body  # pydantic percent-encodes the "<" and ">"
     assert "<script>" not in body
     assert "checked every day" in body
     assert "every 7 days" in body
@@ -158,7 +159,7 @@ async def test_main_url_content_is_scanned_and_shown_in_updates(
     """Scan the starting page without manually adding it, then detect a real content change."""
     main_url = "https://example.com/au?edition=local"
     service = WebsiteService(session)
-    website = service.create(WebsiteCreate(url=main_url))
+    website = service.create(WebsiteCreate(url=HttpUrl(main_url)))
 
     mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
     mocker.patch("app.backend.change_detection.crawl_site", return_value=set())
@@ -174,7 +175,7 @@ async def test_main_url_content_is_scanned_and_shown_in_updates(
         baseline = service.get(website.id)
         assert len(baseline.critical_pages) == 1
         main_page = baseline.critical_pages[0]
-        assert main_page.url == main_url
+        assert main_page.url == HttpUrl(main_url)
         assert main_page.text_body == html
 
         html = html.replace("</body>", "<p>New main-page announcement.</p></body>")
@@ -235,7 +236,7 @@ async def test_adding_a_website_saves_a_baseline_and_only_later_changes_are_repo
     # Next scan: the page text changes and a new internal page appears
     html = html.replace("$100", "$120")
     crawl.return_value = {main_url, f"{main_url}/about", f"{main_url}/new-page"}
-    website = WebsiteService(session).get_by_url(main_url)
+    website = WebsiteService(session).get_by_url(HttpUrl(main_url))
     async with mock_client() as client:
         report = await scanner.scan_website(client, website)
 
@@ -248,13 +249,16 @@ async def test_adding_a_website_saves_a_baseline_and_only_later_changes_are_repo
 def test_create_monitors_main_url_once(session: Session):
     """Tests the main URL is always a critical page, without duplicates, and is in the returned website."""
     payload = WebsiteCreate(
-        url="https://example.com", critical_pages=["https://example.com/fees", "https://example.com"]
+        url=HttpUrl("https://example.com"), critical_pages=["https://example.com/fees", "https://example.com"]
     )
 
     website = WebsiteService(session).create(payload)
 
-    assert sorted(page.url for page in website.critical_pages) == ["https://example.com", "https://example.com/fees"]
-    assert payload.critical_pages == ["https://example.com/fees", "https://example.com"]  # caller's model untouched
+    assert sorted(str(page.url) for page in website.critical_pages) == [
+        "https://example.com/",
+        "https://example.com/fees",
+    ]
+    assert payload.critical_pages == ["https://example.com/fees", "https://example.com/"]  # caller's model untouched
 
 
 @pytest.mark.anyio
@@ -273,7 +277,9 @@ async def test_scan_report_only_includes_changes_found_by_that_scan(session: Ses
     mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
     mocker.patch("app.backend.change_detection.crawl_site", return_value={main_url})
     service = WebsiteService(session)
-    website = service.create(WebsiteCreate(url=main_url, critical_pages=[f"{main_url}/fees", f"{main_url}/dates"]))
+    website = service.create(
+        WebsiteCreate(url=HttpUrl(main_url), critical_pages=[f"{main_url}/fees", f"{main_url}/dates"])
+    )
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
         assert await scanner.scan_website(client, website) is None  # baseline
@@ -308,10 +314,10 @@ async def test_unreachable_critical_page_is_reported_once_and_reset_when_back(se
     mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
     mocker.patch("app.backend.change_detection.crawl_site", return_value={main_url})
     service = WebsiteService(session)
-    website = service.create(WebsiteCreate(url=main_url, critical_pages=[fees_url]))
+    website = service.create(WebsiteCreate(url=HttpUrl(main_url), critical_pages=[fees_url]))
 
     def fees_page() -> CriticalPageRead:
-        return next(page for page in service.get(website.id).critical_pages if page.url == fees_url)
+        return next(page for page in service.get(website.id).critical_pages if page.url == HttpUrl(fees_url))
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
         assert await scanner.scan_website(client, website) is None  # baseline
@@ -339,7 +345,7 @@ async def test_scan_after_a_failed_first_scan_saves_a_baseline_instead_of_report
 ):
     """Tests a website whose first scan failed is baselined by its next scan, not reported as entirely new."""
     main_url = "https://example.com"
-    crawled = {main_url, f"{main_url}/about"}
+    crawled = {f"{main_url}/", f"{main_url}/about"}
     html = "<html><body><p>The fee is $100.</p></body></html>"
 
     mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
@@ -347,7 +353,7 @@ async def test_scan_after_a_failed_first_scan_saves_a_baseline_instead_of_report
         "app.backend.change_detection.crawl_site", side_effect=WebConnectionError("Connection timed out")
     )
     service = WebsiteService(session)
-    website = service.create(WebsiteCreate(url=main_url))
+    website = service.create(WebsiteCreate(url=HttpUrl(main_url)))
 
     async with httpx2.AsyncClient(
         transport=httpx2.MockTransport(lambda request: httpx2.Response(200, text=html))
@@ -368,11 +374,14 @@ async def test_scan_after_a_failed_first_scan_saves_a_baseline_instead_of_report
     "website_updates",
     [
         None,
-        WebsiteUpdate(initial_internal_links=["https://www.test_website.com/"]),
+        WebsiteUpdate(initial_internal_links=[HttpUrl("https://www.test_website.com/")]),
         WebsiteUpdate(
             critical_page_updates={
                 uuid.uuid4(): CriticalPageUpdate(
-                    url="https://www.test_website.com/new-page", text_body="<p>New page.</p>", links=[], documents=[]
+                    url=HttpUrl("https://www.test_website.com/new-page"),
+                    text_body="<p>New page.</p>",
+                    links=[],
+                    documents=[],
                 )
             }
         ),
@@ -402,7 +411,7 @@ async def test_scan_website_traffic_error_handling(populated_website: WebsiteRea
     mock_client = mocker.AsyncMock(spec=httpx2.AsyncClient)
     mocker.patch(
         "app.scanner.get_website_updates",
-        side_effect=TrafficError(url=populated_website.url, status_code=429),
+        side_effect=TrafficError(url=str(populated_website.url), status_code=429),
     )
     mock_handle_traffic = mocker.patch.object(WebsiteService, "handle_traffic_error", return_value="Cooldown applied")
     mock_reset_failed_attempts = mocker.patch.object(WebsiteService, "reset_failed_attempts")
@@ -421,7 +430,7 @@ async def test_scan_website_traffic_error_re_raised_with_params(populated_websit
     mock_client = mocker.AsyncMock(spec=httpx2.AsyncClient)
     mocker.patch(
         "app.scanner.get_website_updates",
-        side_effect=TrafficError(url=populated_website.url, status_code=429),
+        side_effect=TrafficError(url=str(populated_website.url), status_code=429),
     )
 
     with pytest.raises(TrafficError, match="Scan aborted, try increasing delay or reducing concurrent"):
@@ -461,7 +470,7 @@ async def test_scan_website_deactivates_a_website_too_large_to_scan(session: Ses
         "app.backend.change_detection.crawl_site", side_effect=WebsiteTooLargeError(main_url, max_pages=50_000)
     )
     service = WebsiteService(session)
-    website = service.create(WebsiteCreate(url=main_url))
+    website = service.create(WebsiteCreate(url=HttpUrl(main_url)))
 
     async with httpx2.AsyncClient(
         transport=httpx2.MockTransport(lambda request: httpx2.Response(200, text="<p>Home page.</p>"))
@@ -490,7 +499,7 @@ async def test_changes_found_when_a_website_becomes_too_large_are_still_reported
     mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
     crawl = mocker.patch("app.backend.change_detection.crawl_site", return_value={main_url})
     service = WebsiteService(session)
-    website = service.create(WebsiteCreate(url=main_url))
+    website = service.create(WebsiteCreate(url=HttpUrl(main_url)))
 
     def respond(request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(200, text=html)
@@ -516,7 +525,7 @@ async def test_inactive_website_only_has_its_critical_pages_scanned(session: Ses
     mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
     crawl = mocker.patch("app.backend.change_detection.crawl_site")
     service = WebsiteService(session)
-    website = service.create(WebsiteCreate(url=main_url))
+    website = service.create(WebsiteCreate(url=HttpUrl(main_url)))
     service.update(id=website.id, model_update=WebsiteUpdate(active=False))
 
     def respond(request: httpx2.Request) -> httpx2.Response:
@@ -598,7 +607,7 @@ async def test_cancelling_a_scan_stops_it_and_saves_nothing(populated_website: W
     first_crawl_started = asyncio.Event()
 
     async def crawl(client: httpx2.AsyncClient, website: WebsiteRead, *args: object) -> None:
-        crawls_started.append(website.url)
+        crawls_started.append(str(website.url))
         first_crawl_started.set()
         await asyncio.Event().wait()  # Runs until cancelled
 
@@ -612,16 +621,16 @@ async def test_cancelling_a_scan_stops_it_and_saves_nothing(populated_website: W
     ]
     await first_crawl_started.wait()
 
-    assert scanner.cancel_scan(queued_website.url)
-    assert scanner.cancel_scan(populated_website.url)
+    assert scanner.cancel_scan(str(queued_website.url))
+    assert scanner.cancel_scan(str(populated_website.url))
 
     for scan in scans:
         with pytest.raises(ScanCancelledError):
             await scan
-    assert crawls_started == [populated_website.url]  # The queued scan never started
+    assert crawls_started == [str(populated_website.url)]  # The queued scan never started
     mock_update.assert_not_called()
     assert scanner.queued_crawls == {}
-    assert not scanner.cancel_scan(populated_website.url)  # Nothing left to cancel
+    assert not scanner.cancel_scan(str(populated_website.url))  # Nothing left to cancel
 
 
 @pytest.mark.anyio

@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from datetime import datetime
 
 from httpx2 import AsyncClient, HTTPStatusError, RequestError
+from pydantic import HttpUrl
 
 from app.backend.diff_checker.content_diff import (
     compare_page_content,
@@ -20,7 +21,7 @@ from app.backend.site_crawler import crawl_site
 from app.core.config import config
 from app.core.errors import StandInPageError, TrafficError, WebConnectionError
 from app.models.critical_page_models import CriticalPageRead, CriticalPageUpdate
-from app.models.website_models import WebsiteRead, WebsiteUpdate
+from app.models.website_models import URL_LIST_ADAPTER, WebsiteRead, WebsiteUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,28 @@ UNREACHABLE_PAGE_ERRORS: tuple[type[UnreachablePageError], ...] = (
     WebConnectionError,
     StandInPageError,
 )
+
+
+def _find_url_difference(
+    previous_urls: Sequence[HttpUrl], current_urls: Sequence[HttpUrl]
+) -> tuple[list[HttpUrl], list[HttpUrl]]:
+    """Finds the URLs added and removed since the last scan.
+
+    Both sides are validated URLs, so a URL is not reported as changed just because it was written differently
+    (e.g. with a space instead of "%20").
+
+    Args:
+        previous_urls: The URLs saved by the last scan.
+        current_urls: The URLs found now.
+
+    Returns:
+        The added URLs and the removed URLs.
+    """
+    added_urls, removed_urls = find_link_difference(
+        previous_state=[str(url) for url in previous_urls],
+        current_state=[str(url) for url in current_urls],
+    )
+    return URL_LIST_ADAPTER.validate_python(added_urls), URL_LIST_ADAPTER.validate_python(removed_urls)
 
 
 def _website_has_been_updated(updates: WebsiteUpdate) -> bool:
@@ -70,10 +93,12 @@ async def get_critical_page_updates(
             (e.g. a browser check or maintenance page). The saved page is kept to compare with once it is back.
     """
 
-    text_body, _ = await fetch_content_from_url(client, url=stored_page.url)
-    documents, links = separate_document_links(
-        links=extract_links_from_html(url=stored_page.url, html_content=text_body)
+    text_body, _ = await fetch_content_from_url(client, url=str(stored_page.url))
+    document_urls, link_urls = separate_document_links(
+        links=extract_links_from_html(url=str(stored_page.url), html_content=text_body)
     )
+    documents: list[HttpUrl] = URL_LIST_ADAPTER.validate_python(document_urls)
+    links: list[HttpUrl] = URL_LIST_ADAPTER.validate_python(link_urls)
 
     if init or stored_page.text_body is None:
         return CriticalPageUpdate(url=stored_page.url, links=links, documents=documents, text_body=text_body)
@@ -83,20 +108,20 @@ async def get_critical_page_updates(
     old_content: PageContent = without_ignored_text(parse_html(html=stored_page.text_body), ignore_rules)
     new_content: PageContent = without_ignored_text(parse_html(html=text_body), ignore_rules)
     if has_lost_most_content(old_content, new_content, diff_settings):
-        raise StandInPageError(stored_page.url)
+        raise StandInPageError(str(stored_page.url))
 
     updates = CriticalPageUpdate(url=stored_page.url)
 
-    updates.recent_documents_added, updates.recent_documents_removed = find_link_difference(
-        previous_state=stored_page.documents or [],
-        current_state=documents,
+    updates.recent_documents_added, updates.recent_documents_removed = _find_url_difference(
+        previous_urls=stored_page.documents or [],
+        current_urls=documents,
     )
     if updates.recent_documents_added or updates.recent_documents_removed:
         updates.documents = documents
 
-    updates.recent_links_added, updates.recent_links_removed = find_link_difference(
-        previous_state=stored_page.links or [],
-        current_state=links,
+    updates.recent_links_added, updates.recent_links_removed = _find_url_difference(
+        previous_urls=stored_page.links or [],
+        current_urls=links,
     )
     if updates.recent_links_added or updates.recent_links_removed:
         updates.links = links
@@ -224,7 +249,7 @@ async def get_critical_page_only_updates(
 async def get_website_updates(
     client: AsyncClient,
     stored_website: WebsiteRead,
-    stored_internal_links: Sequence[str],
+    stored_internal_links: Sequence[HttpUrl],
     max_pages: int | None,
     delay: float | None,
     concurrent: int | None,
@@ -239,7 +264,7 @@ async def get_website_updates(
     Args:
         client (AsyncClient): The HTTP client used for web crawling and page fetching.
         stored_website (WebsiteRead): The current state of the website retrieved from the database.
-        stored_internal_links (Sequence[str]): The URLs of the website's internal links saved by its last scan.
+        stored_internal_links (Sequence[HttpUrl]): The URLs of the website's internal links saved by its last scan.
         max_pages (int | None): Maximum number of pages to crawl. Overrides the default if provided.
         delay (float | None): Delay between requests. Uses the website's recommended delay if None.
         concurrent (int | None): Maximum concurrent requests. Uses the website's recommended concurrency if None.
@@ -249,13 +274,17 @@ async def get_website_updates(
         differences for internal links (added/removed).
     """
     updates = WebsiteUpdate(url=stored_website.url)
-    critical_page_updates = await _gather_critical_page_updates(client, stored_website.critical_pages, init)
+    critical_page_updates: dict[uuid.UUID, CriticalPageUpdate] = await _gather_critical_page_updates(
+        client=client,
+        critical_pages=stored_website.critical_pages,
+        init=init,
+    )
     updates.critical_page_updates = critical_page_updates or None
 
-    current_internal_links: list[str] = list(
+    current_internal_links: list[HttpUrl] = URL_LIST_ADAPTER.validate_python(
         await crawl_site(
-            client,
-            url=stored_website.url,
+            client=client,
+            url=str(stored_website.url),
             delay=delay or stored_website.recommended_delay,
             max_concurrent=concurrent or stored_website.recommended_concurrent,
             max_pages=max_pages or DEFAULT_MAX_PAGES,
@@ -266,9 +295,9 @@ async def get_website_updates(
         updates.initial_internal_links = current_internal_links
         logger.info(f"{len(updates.initial_internal_links)=}")
     else:
-        updates.recent_added_internal_links, updates.recent_removed_internal_links = find_link_difference(
-            previous_state=list(stored_internal_links),
-            current_state=current_internal_links,
+        updates.recent_added_internal_links, updates.recent_removed_internal_links = _find_url_difference(
+            previous_urls=stored_internal_links,
+            current_urls=current_internal_links,
         )
         logger.info(f"{updates.recent_added_internal_links=}")
         logger.info(f"{updates.recent_removed_internal_links=}")

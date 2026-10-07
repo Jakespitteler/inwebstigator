@@ -232,7 +232,7 @@ def monitoring_started_html(website: WebsiteCreate, days_between_health_checks: 
         "monitoring_started.html",
         website=website,
         scan_interval=_format_days(website.days_between_scans),
-        watched_pages=remove_repeated_pages([website.url, *website.critical_pages]),
+        watched_pages=remove_repeated_pages([str(website.url), *website.critical_pages]),
         health_check_interval=_format_days(days_between_health_checks),
     )
 

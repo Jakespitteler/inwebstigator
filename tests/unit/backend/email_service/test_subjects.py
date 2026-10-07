@@ -1,4 +1,5 @@
 import pytest
+from pydantic import HttpUrl
 
 from app.backend.email_service.email_wording import (
     WebsiteHealth,
@@ -29,12 +30,18 @@ def test_manual_scan_subject_names_the_website() -> None:
 
 
 def test_health_check_subject_when_all_is_well() -> None:
-    healths = [WebsiteHealth("https://a.example/", "Working.", False), WebsiteHealth("https://b.example/", "", False)]
+    healths = [
+        WebsiteHealth(HttpUrl("https://a.example/"), "Working.", False),
+        WebsiteHealth(HttpUrl("https://b.example/"), "", False),
+    ]
 
     assert health_check_subject(healths) == "Health check: monitoring is running for 2 websites"
 
 
 def test_health_check_subject_when_a_website_needs_attention() -> None:
-    healths = [WebsiteHealth("https://a.example/", "Working.", False), WebsiteHealth("https://b.example/", "", True)]
+    healths = [
+        WebsiteHealth(HttpUrl("https://a.example/"), "Working.", False),
+        WebsiteHealth(HttpUrl("https://b.example/"), "", True),
+    ]
 
     assert health_check_subject(healths) == "Health check: 1 of 2 websites needs attention"

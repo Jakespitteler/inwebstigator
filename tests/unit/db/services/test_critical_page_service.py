@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 
 import pytest
+from pydantic import HttpUrl
 from sqlalchemy.orm import Session
 
 from app.backend.diff_checker.models import ChangedBlock, ContentBlock, HTMLBlockType
@@ -51,7 +52,7 @@ def test_create_critical_page(session: Session, test_website: WebsiteRead) -> No
         session: The database session fixture.
     """
     critical_page_details = CriticalPageCreate(
-        url="https://www.test_website.com/test_critical_page",
+        url=HttpUrl("https://www.test_website.com/test_critical_page"),
         website_id=test_website.id,
     )
 
@@ -71,7 +72,7 @@ def test_update_critical_page(session: Session, test_critical_page: CriticalPage
         session: The database session fixture.
         test_critical_page: The test critical page record.
     """
-    model_update = CriticalPageUpdate(links=["https://www.test_website.com/updated_critical_page_link"])
+    model_update = CriticalPageUpdate(links=[HttpUrl("https://www.test_website.com/updated_critical_page_link")])
 
     updated_critical_page: CriticalPageRead = CriticalPageService(session).update(
         id=test_critical_page.id, model_update=model_update
@@ -107,20 +108,20 @@ def test_create_critical_page_with_recent_changes(session: Session, test_website
     )
 
     critical_page_details = CriticalPageCreate(
-        url="https://www.test_website.com/test_recent_changes",
+        url=HttpUrl("https://www.test_website.com/test_recent_changes"),
         website_id=test_website.id,
     )
 
     created_page: CriticalPageRead = CriticalPageService(session).create(critical_page_details)
 
     update_data: CriticalPageUpdate = CriticalPageUpdate(
-        recent_links_added=["https://www.test_website.com/new-link"],
+        recent_links_added=[HttpUrl("https://www.test_website.com/new-link")],
         recent_text_added=[sample_block],
     )
 
     updated_page: CriticalPageRead = CriticalPageService(session).update(id=created_page.id, model_update=update_data)
 
-    assert updated_page.recent_links_added == ["https://www.test_website.com/new-link"]
+    assert updated_page.recent_links_added == [HttpUrl("https://www.test_website.com/new-link")]
     assert updated_page.recent_text_added
     assert len(updated_page.recent_text_added) == 1
     assert updated_page.recent_text_added[0].text == "Sample text content"
@@ -135,7 +136,7 @@ def test_update_critical_page_complex_diff_fields(session: Session, test_critica
 
     model_update: CriticalPageUpdate = CriticalPageUpdate(
         recent_text_changed=[changed_block_item],
-        recent_documents_removed=["https://www.test_website.com/doc-v1.pdf"],
+        recent_documents_removed=[HttpUrl("https://www.test_website.com/doc-v1.pdf")],
     )
 
     updated_critical_page: CriticalPageRead = CriticalPageService(session).update(
@@ -146,10 +147,10 @@ def test_update_critical_page_complex_diff_fields(session: Session, test_critica
     assert updated_critical_page.recent_text_changed[0].similarity == 0.85
     assert updated_critical_page.recent_text_changed[0].old_block.text == "Old version"
     assert updated_critical_page.recent_text_changed[0].new_block.text == "New version"
-    assert updated_critical_page.recent_documents_removed == ["https://www.test_website.com/doc-v1.pdf"]
+    assert updated_critical_page.recent_documents_removed == [HttpUrl("https://www.test_website.com/doc-v1.pdf")]
 
     fetched_page: CriticalPageRead = CriticalPageService(session).get(id=test_critical_page.id)
     assert fetched_page.recent_text_changed
     assert fetched_page.recent_text_changed[0].similarity == 0.85
     assert fetched_page.recent_documents_removed
-    assert fetched_page.recent_documents_removed[0] == "https://www.test_website.com/doc-v1.pdf"
+    assert fetched_page.recent_documents_removed[0] == HttpUrl("https://www.test_website.com/doc-v1.pdf")

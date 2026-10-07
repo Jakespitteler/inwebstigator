@@ -2,6 +2,7 @@ import logging
 import uuid
 from collections.abc import Sequence
 
+from pydantic import HttpUrl
 from sqlalchemy import Delete, Select, delete, select
 from sqlalchemy.orm import Session
 
@@ -9,7 +10,6 @@ from app.core.errors import NotFoundError
 from app.db import repository
 from app.db.schema import DBInternalLink
 from app.db.services.crud_protocol import CRUDService
-from app.models.field_types import URLString
 from app.models.internal_link_models import (
     InternalLinkCreate,
     InternalLinkRead,
@@ -60,7 +60,7 @@ class InternalLinkService(CRUDService[InternalLinkRead, InternalLinkCreate, Inte
         internal_link_record: DBInternalLink = repository.get(self._db, table=DBInternalLink, id=id)
         return InternalLinkRead.model_validate(internal_link_record)
 
-    def get_by_url(self, url: str) -> InternalLinkRead:
+    def get_by_url(self, url: HttpUrl) -> InternalLinkRead:
         """Retrieves a single internal link record by its URL attribute.
 
         Args:
@@ -113,7 +113,7 @@ class InternalLinkService(CRUDService[InternalLinkRead, InternalLinkCreate, Inte
         statement: Select[str] = select(DBInternalLink.url).where(DBInternalLink.website_id == website_id)
         return list(self._db.scalars(statement).all())
 
-    def create_batch(self, urls: Sequence[URLString], website_id: uuid.UUID) -> None:
+    def create_batch(self, urls: Sequence[HttpUrl], website_id: uuid.UUID) -> None:
         """Creates internal link records for a website in one bulk insert.
 
         The records are not read back after saving, so a large website's tens of thousands of links
@@ -162,7 +162,7 @@ class InternalLinkService(CRUDService[InternalLinkRead, InternalLinkCreate, Inte
         repository.get(self._db, table=DBInternalLink, id=id)
         repository.delete(self._db, table=DBInternalLink, id=id)
 
-    def delete_batch(self, urls: Sequence[str], website_id: uuid.UUID) -> None:
+    def delete_batch(self, urls: Sequence[HttpUrl], website_id: uuid.UUID) -> None:
         """Deletes a website's internal link records matching a sequence of URLs.
 
         The links are deleted in bulk, a chunk of URLs at a time, without loading each record first.

@@ -9,6 +9,7 @@ from fastapi import APIRouter, Body, Depends, Form, HTTPException, Request, stat
 from fastapi.responses import FileResponse
 from fastapi.templating import Jinja2Templates
 from httpx2 import AsyncClient, HTTPError
+from pydantic import HttpUrl
 from sqlalchemy.orm import Session
 
 from app.backend.change_detection import get_critical_page_updates
@@ -50,7 +51,7 @@ from app.frontend.api.utils import (
 )
 from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead, CriticalPageUpdate
 from app.models.recipient_models import RecipientCreate, RecipientUpdate
-from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
+from app.models.website_models import NewHttpUrl, WebsiteCreate, WebsiteRead, WebsiteUpdate
 from app.scanner import (
     cancel_scan,
     queued_crawls,
@@ -124,10 +125,10 @@ def get_dashboard(session: SessionDep, request: Request):
                     )
                 )
 
-            links_added = list(critical_page.recent_links_added or [])
-            links_removed = list(critical_page.recent_links_removed or [])
-            documents_added = list(critical_page.recent_documents_added or [])
-            documents_removed = list(critical_page.recent_documents_removed or [])
+            links_added: list[HttpUrl] = critical_page.recent_links_added or []
+            links_removed: list[HttpUrl] = critical_page.recent_links_removed or []
+            documents_added: list[HttpUrl] = critical_page.recent_documents_added or []
+            documents_removed: list[HttpUrl] = critical_page.recent_documents_removed or []
 
             has_changes = any(
                 [
@@ -157,8 +158,8 @@ def get_dashboard(session: SessionDep, request: Request):
                     )
                 )
 
-        internal_links_added = list(website.recent_added_internal_links or [])
-        internal_links_removed = list(website.recent_removed_internal_links or [])
+        internal_links_added: list[HttpUrl] = website.recent_added_internal_links or []
+        internal_links_removed: list[HttpUrl] = website.recent_removed_internal_links or []
 
         # Only websites with a changed critical page or internal link get a card on the updates page
         if page_records or internal_links_added or internal_links_removed:
@@ -202,9 +203,6 @@ async def favicon() -> FileResponse:
 # ======================
 
 SCANNER_ROUTER = APIRouter(prefix="/scanner", tags=["Scanner"])
-
-
-# TODO: May be good to change "Add Website" to "Initialise Website"
 
 
 def _discard_website(website_id: uuid.UUID) -> None:
@@ -332,7 +330,7 @@ async def website_initial_scan(session: SessionDep, email_sender: EmailSenderDep
         ScanCancelledError: If the website's first scan was cancelled.
         ScanAlreadyQueuedError: If the same website is already being added or scanned.
     """
-    await _check_pages_exist([model_create.url, *model_create.critical_pages])
+    await _check_pages_exist([str(model_create.url), *model_create.critical_pages])
     await _check_emails_can_be_received(
         session,
         model_create.recipient_emails,
@@ -387,16 +385,18 @@ async def critical_page_initial_scan(
     """
     website: WebsiteRead = WebsiteService(session).get(website_id)
     try:
-        model_create = CriticalPageCreate(website_id=website_id, url=resolve_critical_page_url(website.url, url))
+        model_create = CriticalPageCreate(
+            website_id=website_id, url=HttpUrl(resolve_critical_page_url(str(website.url), url))
+        )
     except ValueError as error:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)) from error
 
-    if any(is_same_page(page.url, model_create.url) for page in website.critical_pages):
+    if any(is_same_page(str(page.url), str(model_create.url)) for page in website.critical_pages):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail=f"{model_create.url} is already being watched."
         )
 
-    await _check_pages_exist([model_create.url])
+    await _check_pages_exist([str(model_create.url)])
     critical_page: CriticalPageRead = CriticalPageService(session).create(model_create)
     session.commit()
 
@@ -433,7 +433,7 @@ async def scan_websites(email_sender: EmailSenderDep) -> str | None:
 async def manually_scan_website(
     session: SessionDep,
     email_sender: EmailSenderDep,
-    url: str = Form(...),
+    url: NewHttpUrl = Form(...),
     recipient_email: str | None = Form(None),
     max_pages: int | None = Form(None),
     delay: float | None = Form(None),
@@ -458,14 +458,14 @@ async def manually_scan_website(
         if recipient_email and recipient_email not in recipient_emails:
             recipient_emails.append(recipient_email)
         await asyncio.to_thread(
-            send_report_to_recipients, recipient_emails, report, manual_scan_subject(website.url), email_sender
+            send_report_to_recipients, recipient_emails, report, manual_scan_subject(str(website.url)), email_sender
         )
 
         return report
 
 
 @SCANNER_ROUTER.post("/cancel", response_model=bool)
-async def cancel_website_scan(url: str = Form(...)) -> bool:
+async def cancel_website_scan(url: HttpUrl = Form(...)) -> bool:
     """Cancels a website's scan from the UI, whether it is waiting its turn or already running.
 
     Nothing found by the cancelled scan is saved, and the request that started it fails with a 409 status.
@@ -473,7 +473,7 @@ async def cancel_website_scan(url: str = Form(...)) -> bool:
     Returns:
         bool: True if the scan was cancelled, or False if it had already finished.
     """
-    return cancel_scan(url)
+    return cancel_scan(str(url))
 
 
 # ======================
@@ -528,7 +528,7 @@ async def update_website(
             session,
             model_update.add_recipient_emails,
             subject="Email address added to website monitoring",
-            html_body=recipient_added_html(website_service.get(id).url),
+            html_body=recipient_added_html(str(website_service.get(id).url)),
             email_sender=email_sender,
         )
     website: WebsiteRead = website_service.update(id, model_update)
@@ -556,4 +556,4 @@ async def delete_website(session: SessionDep, id: uuid.UUID) -> None:
     website_service.delete(id)
     session.commit()
 
-    cancel_scan(website.url)
+    cancel_scan(str(website.url))

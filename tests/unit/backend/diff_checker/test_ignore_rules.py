@@ -36,5 +36,5 @@ def test_a_page_without_rules_is_returned_unchanged() -> None:
 
 
 def test_an_ignore_rule_must_be_a_valid_regular_expression() -> None:
-    with pytest.raises(ValidationError, match="is not a valid regular expression"):
-        CriticalPageUpdate(ignore_rules=["Fee is ($50"])
+    with pytest.raises(ValidationError, match="valid regular expression"):
+        CriticalPageUpdate.model_validate({"ignore_rules": ["Fee is ($50"]})

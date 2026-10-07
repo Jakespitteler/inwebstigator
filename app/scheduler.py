@@ -150,7 +150,9 @@ def restart_scan_countdown() -> None:
         return
     # A new interval trigger first fires one interval from now
     scheduler.reschedule_job(  # pyright: ignore[reportUnknownMemberType]
-        SCAN_JOB_ID, trigger="interval", days=config.scheduler_minimum_days_between_scans
+        job_id=SCAN_JOB_ID,
+        trigger="interval",
+        days=config.scheduler_minimum_days_between_scans,
     )
 
 
@@ -167,8 +169,8 @@ async def schedule_scans(app: FastAPI) -> AsyncGenerator[None]:
     """
 
     scheduler.add_job(  # pyright: ignore[reportUnknownMemberType]
-        _scan_then_send_health_checks,
-        "interval",
+        func=_scan_then_send_health_checks,
+        trigger="interval",
         days=config.scheduler_minimum_days_between_scans,
         next_run_time=datetime.now() + timedelta(seconds=1),
         misfire_grace_time=None,
