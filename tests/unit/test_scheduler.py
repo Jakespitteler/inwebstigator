@@ -231,7 +231,7 @@ def test_restart_scan_countdown_gives_the_scan_job_a_new_interval_from_now(mocke
     restart_scan_countdown()
 
     mock_reschedule_job.assert_called_once_with(
-        SCAN_JOB_ID, trigger="interval", days=config.scheduler_minimum_days_between_scans
+        job_id=SCAN_JOB_ID, trigger="interval", days=config.scheduler_minimum_days_between_scans
     )
 
 
@@ -261,11 +261,13 @@ async def test_schedule_scans_lifespan(mocker: MockerFixture):
 
     async with schedule_scans(FastAPI()):
         mock_add_job.assert_called_once()
-        assert mock_add_job.call_args.args == (_scan_then_send_health_checks, "interval")
+        assert mock_add_job.call_args.args == ()
         job_options = dict(mock_add_job.call_args.kwargs)
         next_run_time = job_options.pop("next_run_time")
         assert started_at < next_run_time <= datetime.now() + timedelta(seconds=1)
         assert job_options == {
+            "func": _scan_then_send_health_checks,
+            "trigger": "interval",
             "days": config.scheduler_minimum_days_between_scans,
             "misfire_grace_time": None,  # a late run (e.g. after the computer slept) still happens
             "id": "scan_then_send_health_checks",

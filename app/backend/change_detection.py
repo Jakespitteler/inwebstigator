@@ -30,6 +30,8 @@ DEFAULT_DELAY: float = config.web_crawler_default_delay
 DEFAULT_CONCURRENT: int = config.web_crawler_default_concurrent
 BATCH_402_THRESHOLD_SECONDS: int = config.web_crawler_batch_402_threshold_seconds
 ALERT_AFTER_FAILURES: int = config.critical_page_alert_after_failures
+STAND_IN_FAILURES_BEFORE_ACCEPTING: int = config.critical_page_stand_in_failures_before_accepting
+STAND_IN_PAGE_REASON: str = "Most of the page's content is missing, so it may be blocked or under maintenance"
 
 type UnreachablePageError = HTTPStatusError | RequestError | TrafficError | WebConnectionError | StandInPageError
 UNREACHABLE_PAGE_ERRORS: tuple[type[UnreachablePageError], ...] = (
@@ -63,6 +65,24 @@ def _find_url_difference(
     return URL_LIST_ADAPTER.validate_python(added_urls), URL_LIST_ADAPTER.validate_python(removed_urls)
 
 
+def _has_been_a_stand_in_for_too_long(stored_page: CriticalPageRead) -> bool:
+    """Checks whether a page has looked like a stand-in for so many scans in a row that it is really a redesign.
+
+    A stand-in page (e.g. a browser check) usually goes away by the next scan. A redesign that cut most of the
+    page's text looks the same, but never goes away, so after enough scans in a row it is accepted as the real page.
+
+    Args:
+        stored_page: The current state of the critical page retrieved from the database.
+
+    Returns:
+        True if the page's latest failed checks were all stand-ins and there have been enough of them in a row.
+    """
+    return (
+        stored_page.last_failure_reason == STAND_IN_PAGE_REASON
+        and stored_page.consecutive_failures >= STAND_IN_FAILURES_BEFORE_ACCEPTING
+    )
+
+
 def _website_has_been_updated(updates: WebsiteUpdate) -> bool:
     return bool(updates.critical_page_updates or updates.initial_internal_links is not None or updates.has_changes)
 
@@ -90,7 +110,8 @@ async def get_critical_page_updates(
 
     Raises:
         StandInPageError: If the page loaded but has lost most of its text, so it is almost certainly a stand-in
-            (e.g. a browser check or maintenance page). The saved page is kept to compare with once it is back.
+            (e.g. a browser check or maintenance page). The saved page is kept to compare with once it is back,
+            unless it has been a stand-in for several scans in a row, when the new content is accepted as real.
     """
 
     text_body, _ = await fetch_content_from_url(client, url=str(stored_page.url))
@@ -108,7 +129,9 @@ async def get_critical_page_updates(
     old_content: PageContent = without_ignored_text(parse_html(html=stored_page.text_body), ignore_rules)
     new_content: PageContent = without_ignored_text(parse_html(html=text_body), ignore_rules)
     if has_lost_most_content(old_content, new_content, diff_settings):
-        raise StandInPageError(str(stored_page.url))
+        if not _has_been_a_stand_in_for_too_long(stored_page):
+            raise StandInPageError(str(stored_page.url))
+        logger.warning(f"{stored_page.url} has lost most of its content for several scans, so it is accepted as real.")
 
     updates = CriticalPageUpdate(url=stored_page.url)
 
@@ -147,6 +170,8 @@ def _failed_check_update(stored_page: CriticalPageRead, error: UnreachablePageEr
     """Records a failed check of a critical page. Its saved content is kept to compare with once it is back.
 
     A missing (404) or gone (410) page counts as having failed enough checks to be reported straight away.
+    A stand-in page after a different failure (e.g. the page could not be reached) starts the count again, so only
+    stand-ins in a row count towards accepting the page's new content (see `_has_been_a_stand_in_for_too_long`).
 
     Args:
         stored_page (CriticalPageRead): The current state of the critical page retrieved from the database.
@@ -164,13 +189,15 @@ def _failed_check_update(stored_page: CriticalPageRead, error: UnreachablePageEr
     if status_code:
         reason = f"HTTP {status_code}"
     elif isinstance(error, StandInPageError):
-        reason = "Most of the page's content is missing, so it may be blocked or under maintenance"
+        reason = STAND_IN_PAGE_REASON
     elif isinstance(error, WebConnectionError):
         reason = "Connection failed or timed out"
     else:
         reason = "Request failed"
 
     failures: int = stored_page.consecutive_failures + 1
+    if isinstance(error, StandInPageError) and stored_page.last_failure_reason != STAND_IN_PAGE_REASON:
+        failures = 1
     if status_code in {404, 410}:
         failures = max(failures, ALERT_AFTER_FAILURES)
     return CriticalPageUpdate(url=stored_page.url, consecutive_failures=failures, last_failure_reason=reason)

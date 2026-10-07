@@ -7,7 +7,13 @@ import pytest
 from pydantic import HttpUrl
 from pytest_mock import MockerFixture
 
-from app.backend.change_detection import get_critical_page_only_updates, get_critical_page_updates, get_website_updates
+from app.backend.change_detection import (
+    STAND_IN_FAILURES_BEFORE_ACCEPTING,
+    STAND_IN_PAGE_REASON,
+    get_critical_page_only_updates,
+    get_critical_page_updates,
+    get_website_updates,
+)
 from app.core.errors import TrafficError
 from app.models.critical_page_models import CriticalPageRead, CriticalPageUpdate
 from app.models.internal_link_models import InternalLinkRead
@@ -509,6 +515,77 @@ async def test_a_stand_in_page_is_a_failed_check_that_keeps_the_saved_page(
     assert (page_update.last_failure_reason or "").startswith("Most of the page's content is missing")
     assert page_update.text_body is None
     assert page_update.recent_text_removed is None
+
+
+@pytest.mark.anyio
+async def test_a_page_that_stays_a_stand_in_is_accepted_as_its_new_content(
+    test_website: WebsiteRead,
+    test_critical_page: CriticalPageRead,
+    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
+):
+    """Tests a page that has lost most of its text for several scans in a row (e.g. a redesign that cut most of
+    its text) is accepted as the real page, so it stops failing and its changes are reported."""
+    stored_page = test_critical_page.model_copy(
+        update={
+            "text_body": FEES_PAGE,
+            "links": [],
+            "documents": [],
+            "consecutive_failures": STAND_IN_FAILURES_BEFORE_ACCEPTING,
+            "last_failure_reason": STAND_IN_PAGE_REASON,
+        }
+    )
+    website = test_website.model_copy(update={"critical_pages": [stored_page]})
+
+    async with mock_client_factory(lambda request: httpx2.Response(200, html=CHALLENGE_PAGE)) as client:
+        updates: WebsiteUpdate | None = await get_critical_page_only_updates(client, website)
+
+    assert updates is not None and updates.critical_page_updates is not None
+    page_update = updates.critical_page_updates[stored_page.id]
+    assert page_update.text_body == CHALLENGE_PAGE
+    assert page_update.recent_text_removed
+    assert page_update.has_changes
+    assert page_update.consecutive_failures == 0
+    assert page_update.last_failure_reason is None
+
+
+@pytest.mark.parametrize(
+    ("failures_before", "last_failure_reason", "failures_after"),
+    [
+        (STAND_IN_FAILURES_BEFORE_ACCEPTING - 1, STAND_IN_PAGE_REASON, STAND_IN_FAILURES_BEFORE_ACCEPTING),
+        (STAND_IN_FAILURES_BEFORE_ACCEPTING, "HTTP 500", 1),  # Failing to reach the page does not count
+    ],
+    ids=["not-enough-scans-yet", "latest-failure-was-not-a-stand-in"],
+)
+@pytest.mark.anyio
+async def test_a_stand_in_page_is_not_accepted_too_early(
+    test_website: WebsiteRead,
+    test_critical_page: CriticalPageRead,
+    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
+    failures_before: int,
+    last_failure_reason: str,
+    failures_after: int,
+):
+    """Tests a stand-in page keeps failing, keeping the saved page, until it has been a stand-in for enough scans
+    in a row. Scans where the page could not be reached at all are not counted."""
+    stored_page = test_critical_page.model_copy(
+        update={
+            "text_body": FEES_PAGE,
+            "links": [],
+            "documents": [],
+            "consecutive_failures": failures_before,
+            "last_failure_reason": last_failure_reason,
+        }
+    )
+    website = test_website.model_copy(update={"critical_pages": [stored_page]})
+
+    async with mock_client_factory(lambda request: httpx2.Response(200, html=CHALLENGE_PAGE)) as client:
+        updates: WebsiteUpdate | None = await get_critical_page_only_updates(client, website)
+
+    assert updates is not None and updates.critical_page_updates is not None
+    page_update = updates.critical_page_updates[stored_page.id]
+    assert page_update.consecutive_failures == failures_after
+    assert page_update.last_failure_reason == STAND_IN_PAGE_REASON
+    assert page_update.text_body is None
 
 
 @pytest.mark.anyio

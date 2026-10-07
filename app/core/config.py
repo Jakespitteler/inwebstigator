@@ -54,6 +54,7 @@ class Config(BaseSettings):
     fetch_site_retry_multiplier: int = 1
 
     critical_page_alert_after_failures: int = 2
+    critical_page_stand_in_failures_before_accepting: int = 3
 
     diff_checker_text_similarity_threshold: float = 0.6
     diff_checker_max_comparisons_per_block: int = 20

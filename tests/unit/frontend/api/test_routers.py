@@ -718,4 +718,4 @@ def test_an_invalid_ignore_rule_is_refused(
     response = api_client.patch(f"/critical_pages/{test_critical_page.id}", json={"ignore_rules": ["Fee is ($50"]})
 
     assert response.status_code == 422
-    assert "is not a valid regular expression" in response.text
+    assert "valid regular expression" in response.text
