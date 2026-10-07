@@ -1498,6 +1498,35 @@ button:disabled {
     margin: 0 0 16px;
 }
 
+/* Tells people they can close the window while scans run */
+.background-scan-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 0 0 16px;
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    background: var(--accent-light);
+    border: 1px solid var(--border-md);
+    border-radius: var(--radius-md);
+}
+
+[data-theme="dark"] .background-scan-note {
+    background: var(--content-bg);
+}
+
+.background-scan-note[hidden] {
+    display: none;
+}
+
+.background-scan-note svg {
+    flex-shrink: 0;
+    margin-top: 1px;
+    color: var(--link);
+}
+
 #website-form-message:empty,
 .critical-page-message:empty,
 .recipient-message:empty,
