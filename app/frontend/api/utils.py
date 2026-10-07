@@ -1,17 +1,20 @@
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 from difflib import SequenceMatcher
+from ipaddress import ip_address
 from typing import Protocol
 from urllib.parse import urlsplit
 
+from bs4 import BeautifulSoup, SoupStrainer
 from markupsafe import Markup, escape
 
 from app.db.utils.field_types import URLString
 
 
-def website_name(url: str) -> str:
-    """Display the hostname, including its domain ending, without a leading www."""
+def website_name(url: str, html: str | None = None) -> str:
+    """Use saved page titles to restore the short name's spacing and capitalisation."""
     try:
         hostname = (urlsplit(url).hostname or "").rstrip(".")
     except ValueError:
@@ -19,7 +22,49 @@ def website_name(url: str) -> str:
     if not hostname:
         return "Website"
 
-    return hostname.removeprefix("www.")
+    try:
+        ip_address(hostname)
+        return hostname
+    except ValueError:
+        pass
+
+    labels = hostname.removeprefix("www.").split(".")
+    # Common country-code endings, e.g. uwa.edu.au and bbc.co.uk.
+    country_categories = {"ac", "asn", "co", "com", "edu", "gov", "id", "mil", "net", "org"}
+    if len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in country_categories:
+        name = labels[-3]
+    else:
+        name = labels[-2] if len(labels) > 1 else labels[0]
+
+    if html:
+        recognised_name = _website_name_from_html(name, html)
+        if recognised_name:
+            return recognised_name
+    return name.replace("-", " ").replace("_", " ").title()
+
+
+def _website_name_from_html(name: str, html: str) -> str | None:
+    """Match the domain label to words in site metadata, avoiding article titles."""
+    soup = BeautifulSoup(html, "html.parser", parse_only=SoupStrainer(["title", "meta"]))
+    candidates = [
+        str(meta.get("content") or "")
+        for meta in soup.find_all("meta")
+        if str(meta.get("property") or meta.get("name") or "").lower() in {"og:site_name", "application-name"}
+    ]
+    candidates.extend(title.get_text(" ", strip=True) for title in soup.find_all("title"))
+    target = re.sub(r"[\W_]+", "", name).casefold()
+    for candidate in candidates:
+        words = re.findall(r"[^\W_]+", candidate)
+        for start in range(len(words)):
+            combined = ""
+            for end in range(start, len(words)):
+                combined += words[end].casefold()
+                if combined == target:
+                    # Preserve acronyms and brand capitals supplied by the site itself.
+                    return " ".join(word[0].upper() + word[1:] for word in words[start : end + 1])
+                if not target.startswith(combined):
+                    break
+    return None
 
 
 def format_timestamp(moment: datetime) -> str:

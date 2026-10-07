@@ -18,7 +18,6 @@ from app.core.errors import ScanCancelledError, WebsiteTooLargeError
 from app.db.core import get_db_session
 from app.db.schema import Base, DBCriticalPage, DBRecipient, DBWebsite
 from app.frontend.api import routers
-from app.frontend.api.utils import website_name
 from app.main import app
 from app.models import critical_page_models, recipient_models, website_models
 from app.scanner import queued_crawls
@@ -192,12 +191,12 @@ def _next_check_text(api_client: TestClient) -> str | None:
 
 
 def _last_scan_by_website(api_client: TestClient) -> dict[str, str]:
-    """Returns each website card's "Last scanned" line, keyed by the website's display name."""
+    """Returns each website card's "Last scanned" line, keyed by its full URL."""
     response = api_client.get("/")
     assert response.status_code == 200, response.text
     cards = BeautifulSoup(response.text, "html.parser").select(".website-card")
     return {
-        card["data-website-name"]: " ".join(card.select_one(".last-scan").get_text().split())  # type: ignore[union-attr]
+        card.select_one(".website-url")["href"]: " ".join(card.select_one(".last-scan").get_text().split())  # type: ignore
         for card in cards
     }
 
@@ -214,9 +213,9 @@ def test_dashboard_shows_each_websites_own_scan_time(api_client: TestClient, ses
     session.flush()
 
     assert _last_scan_by_website(api_client) == {
-        "older.example.com": "Last scanned: 28 Sep 2026, 09:05",
-        "newer.example.com": "Last scanned: 01 Oct 2026, 14:30",
-        "never-scanned.example.com": "Last scanned: Not scanned yet",
+        "https://older.example.com": "Last scanned: 28 Sep 2026, 09:05",
+        "https://newer.example.com": "Last scanned: 01 Oct 2026, 14:30",
+        "https://never-scanned.example.com": "Last scanned: Not scanned yet",
     }
 
 
@@ -259,11 +258,11 @@ def test_updates_are_listed_most_recent_change_first(api_client: TestClient, ses
     session.flush()
 
     dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
-    website_names = [name.get_text(strip=True) for name in dashboard.select(".website-change-record .website-name")]
+    website_urls = [link["href"] for link in dashboard.select(".website-change-record .website-url")]
     page_urls = [url.get_text(strip=True) for url in dashboard.select(".page-change-record .page-url")]
     change_times = [" ".join(time.get_text().split()) for time in dashboard.select(".page-change-record .change-time")]
 
-    assert website_names == ["newer.example.com", "older.example.com"]
+    assert website_urls == ["https://newer.example.com", "https://older.example.com"]
     assert page_urls == ["https://newer.example.com/news", "https://newer.example.com", "https://older.example.com"]
     assert change_times == ["Changed 04 Oct 2026, 09:00", "Changed 02 Oct 2026, 09:00", "Changed 01 Oct 2026, 09:00"]
 
@@ -295,7 +294,7 @@ def test_manual_scan_records_scan_time(
     assert website
     last_scan_at = website.last_scan_at
     assert last_scan_at is not None and last_scan_at >= before
-    assert _last_scan_by_website(api_client)[website_name(test_website.url)] == (
+    assert _last_scan_by_website(api_client)[test_website.url] == (
         f"Last scanned: {last_scan_at:%d %b %Y, %H:%M}"
     )
 

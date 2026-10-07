@@ -65,6 +65,15 @@ templates.env.filters["scan_time"] = scan_time  # pyright: ignore[reportUnknownM
 def get_dashboard(session: SessionDep, request: Request):
     websites: Sequence[WebsiteRead] = WebsiteService(session).get_all()
 
+    website_names: dict[str, str] = {}
+    for website in websites:
+        saved_html = next(
+            (page.text_body for page in website.critical_pages if page.url == website.url and page.text_body),
+            None,
+        )
+        if saved_html or website.url not in website_names:
+            website_names[website.url] = website_name(website.url, saved_html)
+
     website_records: list[WebsiteDailyRecord] = []
 
     for website in websites:
@@ -166,6 +175,7 @@ def get_dashboard(session: SessionDep, request: Request):
             "website_records": newest_first(website_records),
             "next_check": next_scheduled_check(),
             "websites": websites,
+            "website_names": website_names,
             "default_delay": config.web_crawler_default_delay,
             "max_delay": config.web_crawler_max_delay,
             "default_concurrent": config.web_crawler_default_concurrent,
