@@ -214,9 +214,9 @@ def test_dashboard_shows_each_websites_own_scan_time(api_client: TestClient, ses
     session.flush()
 
     assert _last_scan_by_website(api_client) == {
-        "older.example.com": "Last scanned: 28 Sep 2026, 09:05",
-        "newer.example.com": "Last scanned: 01 Oct 2026, 14:30",
-        "never-scanned.example.com": "Last scanned: Not scanned yet",
+        "older.example.com": "Last scanned 28 Sep 2026, 09:05",
+        "newer.example.com": "Last scanned 01 Oct 2026, 14:30",
+        "never-scanned.example.com": "Not scanned yet",
     }
 
 
@@ -296,7 +296,7 @@ def test_manual_scan_records_scan_time(
     last_scan_at = website.last_scan_at
     assert last_scan_at is not None and last_scan_at >= before
     assert _last_scan_by_website(api_client)[website_name(test_website.url)] == (
-        f"Last scanned: {last_scan_at:%d %b %Y, %H:%M}"
+        f"Last scanned {last_scan_at:%d %b %Y, %H:%M}"
     )
 
 
@@ -460,10 +460,10 @@ def test_dashboard_explains_inactive_websites_only_have_critical_pages_scanned(
     assert "Only its critical pages are checked" in switched_off_notice
 
     for url in ["https://too-large.example.com", "https://switched-off.example.com"]:
-        assert _run_scan_button_text(api_client, url) == "Scan Critical Pages Now"
+        assert _run_scan_button_text(api_client, url) == "Scan critical pages"
     for url in ["https://active.example.com", "https://reactivated.example.com"]:
         assert _website_notice(api_client, url) is None
-        assert _run_scan_button_text(api_client, url) == "Run Scan Now"
+        assert _run_scan_button_text(api_client, url) == "Run scan"
 
 
 def test_scan_settings_explain_what_inactive_means(api_client: TestClient, test_website: website_models.WebsiteRead):

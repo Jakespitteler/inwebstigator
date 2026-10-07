@@ -811,16 +811,22 @@
                         <div class="website-card-header card-header">
                             <div class="website-identity">
                                 <h3 class="website-name">{{ website.url | website_name }}</h3>
-                                <a
-                                    class="website-url"
-                                    href="{{ website.url }}"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                >
-                                    {{ website.url }}
-                                </a>
-                                <p class="last-scan">
-                                    Last scanned: {{ website.last_scan_at | scan_time }}
+                                <!-- The name already shows the domain, so only the path is shown under it -->
+                                {% set website_path = website.url.split("//", 1)[-1].partition("/")[2].rstrip("/") %}
+                                <p class="website-meta">
+                                    {% if website_path %}
+                                        <a
+                                            class="website-url"
+                                            href="{{ website.url }}"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            title="{{ website.url }}"
+                                        >/{{ website_path }}</a>
+                                        <span aria-hidden="true">&middot;</span>
+                                    {% endif %}
+                                    <span class="last-scan">
+                                        {% if website.last_scan_at %}Last scanned {% endif %}{{ website.last_scan_at | scan_time }}
+                                    </span>
                                 </p>
                             </div>
 
@@ -841,7 +847,7 @@
                                     data-website-url="{{ website.url }}"
                                     {% if website.url in queued_website_urls %}disabled{% endif %}
                                 >
-                                    {% if website.active %}Run Scan Now{% else %}Scan Critical Pages Now{% endif %}
+                                    {% if website.active %}Run scan{% else %}Scan critical pages{% endif %}
                                 </button>
 
                                 <button
@@ -888,30 +894,32 @@
                             hidden
                         >
 
-                        <button
-                            type="button"
-                            class="delete-website-button"
-                            data-website-id="{{ website.id }}"
-                            data-website-url="{{ website.url }}"
-                        >
-                            Delete Website
-                        </button>
-
-
-
                         <div class="website-summary">
 
                             <p>
-                                <strong>Internal pages:</strong>
-                                {{ website.internal_links | length
-                                   if website.internal_links else 0 }}
+                                Internal pages:
+                                <strong>{{ website.internal_links | length if website.internal_links else 0 }}</strong>
                             </p>
+
+                            <button
+                                type="button"
+                                class="delete-website-button"
+                                data-website-id="{{ website.id }}"
+                                data-website-url="{{ website.url }}"
+                            >
+                                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                                    <path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"
+                                        fill="none" stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                                Delete website
+                            </button>
 
                         </div>
 
 
 
-                        <h4>Critical Pages</h4>
+                        <h4>Critical pages ({{ website.critical_pages | length }})</h4>
 
                         {% if website.critical_pages %}
 
@@ -934,10 +942,15 @@
                                         {% else %}
                                         <button
                                             type="button"
-                                            class="delete-critical-page-button"
+                                            class="delete-critical-page-button icon-button"
                                             data-page-id="{{ page.id }}"
+                                            aria-label="Delete critical page {{ page.url }}"
+                                            title="Delete critical page"
                                         >
-                                            Delete
+                                            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                                                <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor"
+                                                    stroke-width="2" stroke-linecap="round"/>
+                                            </svg>
                                         </button>
                                         {% endif %}
 
@@ -949,9 +962,7 @@
 
                         {% else %}
 
-                            <p class="empty-state">
-                                No critical pages have been added.
-                            </p>
+                            <p class="empty-state">None yet</p>
 
                         {% endif %}
 
@@ -959,24 +970,24 @@
 
                         <!-- Add a critical page later -->
                         <form
-                            class="add-critical-page-form"
+                            class="add-critical-page-form inline-add-form"
                             data-website-id="{{ website.id }}"
                         >
 
-                            <label>
-                                Add Critical Page
-                            </label>
+                            <button type="submit" aria-label="Add critical page" title="Add critical page">
+                                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                                    <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round"/>
+                                </svg>
+                            </button>
 
                             <input
                                 type="text"
                                 class="new-critical-page-url"
                                 placeholder="https://example.com/page"
+                                aria-label="Add critical page"
                                 required
                             >
-
-                            <button type="submit">
-                                Add Critical Page
-                            </button>
 
                             <p
                                 class="critical-page-message"
@@ -988,7 +999,7 @@
 
 
                         <!-- Notification recipients -->
-                        <h4>Notification Emails</h4>
+                        <h4>Notification emails ({{ website.recipients | length }})</h4>
 
                         {% if website.recipients %}
 
@@ -1004,11 +1015,16 @@
 
                                         <button
                                             type="button"
-                                            class="delete-recipient-button"
+                                            class="delete-recipient-button icon-button"
                                             data-website-id="{{ website.id }}"
                                             data-recipient-email="{{ recipient.email }}"
+                                            aria-label="Remove {{ recipient.email }}"
+                                            title="Remove notification email"
                                         >
-                                            Delete
+                                            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                                                <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor"
+                                                    stroke-width="2" stroke-linecap="round"/>
+                                            </svg>
                                         </button>
 
                                     </li>
@@ -1019,33 +1035,31 @@
 
                         {% else %}
 
-                            <p class="empty-state">
-                                No notification emails have been added.
-                            </p>
+                            <p class="empty-state">None yet</p>
 
                         {% endif %}
 
 
 
                         <form
-                            class="add-recipient-form"
+                            class="add-recipient-form inline-add-form"
                             data-website-id="{{ website.id }}"
                         >
 
-                            <label>
-                                Add Notification Email
-                            </label>
+                            <button type="submit" aria-label="Add notification email" title="Add notification email">
+                                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                                    <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round"/>
+                                </svg>
+                            </button>
 
                             <input
                                 type="email"
                                 class="new-recipient-email"
                                 placeholder="name@example.com"
+                                aria-label="Add notification email"
                                 required
                             >
-
-                            <button type="submit">
-                                Add Email
-                            </button>
 
                             <p
                                 class="recipient-message"
@@ -1053,9 +1067,6 @@
                             ></p>
 
                         </form>
-
-
-
                         <!-- Scan settings -->
                         <details class="scan-settings">
 
