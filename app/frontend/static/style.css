@@ -310,6 +310,21 @@ button, input {
     box-shadow: var(--header-glow), inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
+.dashboard-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.brand-logo {
+    display: block;
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+
 .dashboard-header h1 {
     margin: 0;
     color: #fff;
@@ -1569,6 +1584,30 @@ button:disabled {
     .comparison-table th,
     .comparison-table td {
         padding: 10px;
+    }
+}
+
+
+@media (max-width: 480px) {
+    .dashboard-header {
+        gap: 12px;
+    }
+
+    .dashboard-brand {
+        gap: 8px;
+    }
+
+    .brand-logo {
+        width: 40px;
+        height: 40px;
+    }
+
+    .dashboard-header .theme-toggle {
+        padding: 8px;
+    }
+
+    .dashboard-header #themeToggleLabel {
+        display: none;
     }
 }
 
