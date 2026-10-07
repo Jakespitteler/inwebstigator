@@ -2302,6 +2302,9 @@
                             ".cancel-scan-button"
                         );
 
+                    // Collapse the card while it scans, leaving its header and scan progress on show
+                    setCardExpanded(button.closest(".website-card"), false);
+
                     button.disabled = true;
                     cancelButton.hidden = false;
                     message.classList.add("is-busy");
