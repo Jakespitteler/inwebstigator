@@ -605,6 +605,20 @@
 
             <p id="run-all-scans-message" class="run-all-scans-message" aria-live="polite"></p>
 
+            <!-- Shown while any scan runs: closing the window only hides it to the tray, so scans carry on -->
+            <p id="background-scan-note" class="background-scan-note" hidden>
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/>
+                    <path d="M12 11v6M12 7.5v.5" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round"/>
+                </svg>
+                <span>
+                    You can close this window and the scan will keep running in the background.
+                    Inwebstigator stays in the system tray, near the clock. To stop it completely,
+                    right-click the tray icon and choose <strong>Quit</strong>.
+                </span>
+            </p>
+
             <!-- ADD WEBSITE WIZARD -->
             <section class="guide-section" aria-label="Add website">
 
@@ -2388,6 +2402,29 @@
 
                 window.location.reload();
             });
+        }
+
+        // While any scan runs (a spinner is showing), say that closing the window won't stop it
+        const backgroundScanNote = document.getElementById("background-scan-note");
+
+        function updateBackgroundScanNote() {
+            const addingWebsite = document.getElementById("add-website-progress");
+            const scanning =
+                Boolean(document.querySelector(".is-busy"))
+                || Boolean(addingWebsite && !addingWebsite.hidden);
+
+            // Only touch it when it changes, as the observer below would otherwise be woken up forever
+            if (backgroundScanNote.hidden === scanning) {
+                backgroundScanNote.hidden = !scanning;
+            }
+        }
+
+        if (backgroundScanNote) {
+            new MutationObserver(updateBackgroundScanNote).observe(
+                document.querySelector(".websites-section"),
+                { subtree: true, attributes: true, attributeFilter: ["class", "hidden"] }
+            );
+            updateBackgroundScanNote();
         }
 
         // Cancel a website's scan, whether it is still queued or already running
