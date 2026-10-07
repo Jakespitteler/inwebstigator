@@ -38,6 +38,7 @@ class Config(BaseSettings):
     imap_port: int = 993
     email_bounce_wait_seconds: int = 30
     email_bounce_poll_seconds: int = 3
+    email_time_zone: str = ""
 
     web_crawler_default_max_pages: int = 50_000
     web_crawler_default_delay: float = 0.5
@@ -54,8 +55,10 @@ class Config(BaseSettings):
 
     critical_page_alert_after_failures: int = 2
 
-    diff_checker_text_similarity_threshold: float = 0.6  # TODO may have to drop to 0
+    diff_checker_text_similarity_threshold: float = 0.6
     diff_checker_max_comparisons_per_block: int = 20
+    diff_checker_min_content_ratio: float = 0.3
+    diff_checker_min_content_chars: int = 200
 
     email_retry_max_attempts: int = 3
     email_retry_min_wait_seconds: int = 2

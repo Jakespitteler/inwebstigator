@@ -94,6 +94,19 @@ class WebConnectionError(WebCrawlerError):
         super().__init__(f"Network traffic issue (Timeout/Connection drop) reaching {url=}.")
 
 
+class StandInPageError(WebCrawlerError):
+    """Exception raised when a page loads but has lost most of its text, so what was served is almost certainly a
+    stand-in for the real page (e.g. a "Just a moment..." browser check, a maintenance page or a login wall).
+
+    Attributes:
+        url: The URL of the page that was served without its content.
+    """
+
+    def __init__(self, url: str) -> None:
+        self.url: str = url
+        super().__init__(f"{url} loaded, but most of its content is missing.")
+
+
 class WebsiteTooLargeError(WebCrawlerError):
     """Exception raised when a website has more pages than the crawler will scan.
 

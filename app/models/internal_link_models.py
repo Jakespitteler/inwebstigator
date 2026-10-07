@@ -2,7 +2,7 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict
 
-from app.db.utils.field_types import URLString
+from app.models.field_types import URLString
 
 
 class InternalLinkCreate(BaseModel):

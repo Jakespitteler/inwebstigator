@@ -5,15 +5,15 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.backend.utils.links import remove_repeated_pages
+from app.backend.links import remove_repeated_pages
 from app.core.config import config
 from app.core.errors import NotFoundError
 from app.db import repository
 from app.db.schema import DBWebsite
 from app.db.services.critical_page_service import CriticalPageService
+from app.db.services.crud_protocol import CRUDService
 from app.db.services.internal_link_service import InternalLinkService
 from app.db.services.recipient_service import RecipientService
-from app.db.utils.interfaces import CRUDService
 from app.models.critical_page_models import CriticalPageCreate
 from app.models.recipient_models import RecipientCreate
 from app.models.website_models import DeactivationReason, WebsiteCreate, WebsiteRead, WebsiteUpdate

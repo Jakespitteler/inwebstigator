@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.db.core import get_db_session
-from app.db.utils.interfaces import CRUDOperation, CRUDService
+from app.db.services.crud_protocol import CRUDOperation, CRUDService
+from app.db.session import get_db_session
 
 SessionDep = Annotated[Session, Depends(get_db_session)]
 

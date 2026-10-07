@@ -5,10 +5,10 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
-from app.backend.utils.links import resolve_critical_page_url
+from app.backend.links import resolve_critical_page_url
 from app.core.config import config
-from app.db.utils.field_types import EmailString, NewURLString, URLString
 from app.models.critical_page_models import CriticalPageRead, CriticalPageUpdate
+from app.models.field_types import EmailString, NewURLString, URLString
 from app.models.recipient_models import RecipientRead
 
 DEFAULT_DELAY: float = config.web_crawler_default_delay

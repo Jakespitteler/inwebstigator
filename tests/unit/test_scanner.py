@@ -2,7 +2,6 @@ import asyncio
 import uuid
 from contextlib import nullcontext
 from datetime import datetime, timedelta
-from email.message import EmailMessage
 
 import httpx2
 import pytest
@@ -12,7 +11,8 @@ from pytest_mock import MockerFixture
 from sqlalchemy.orm import Session
 
 from app import scanner
-from app.backend.format_message import monitoring_started_html
+from app.backend.email_service.html_bodies import monitoring_started_html
+from app.backend.email_service.message_builder import OutgoingEmail
 from app.core.errors import (
     NotFoundError,
     ScanAlreadyQueuedError,
@@ -28,6 +28,7 @@ from app.models.critical_page_models import CriticalPageRead, CriticalPageUpdate
 from app.models.internal_link_models import InternalLinkRead
 from app.models.recipient_models import RecipientRead
 from app.models.website_models import DeactivationReason, WebsiteCreate, WebsiteRead, WebsiteUpdate
+from tests.fakes import FakeEmailSender
 
 # ======================================
 # Setup Fixtures
@@ -67,38 +68,56 @@ def websites_unchanged_during_run(mocker: MockerFixture) -> None:
 # ======================================
 
 
-def test_send_notification_success(mocker: MockerFixture, test_recipient: RecipientRead):
-    """Tests that send_notification builds and sends an email with the given subject, updating last_email_at."""
-    mock_msg = EmailMessage()
-    mock_build_message = mocker.patch("app.scanner.build_message", return_value=mock_msg)
-    mock_send_email = mocker.patch("app.scanner.send_email")
+def test_send_notification_success(
+    mocker: MockerFixture, test_recipient: RecipientRead, email_sender: FakeEmailSender
+) -> None:
+    """Tests that send_notification sends an email with the given subject, then updates last_email_at."""
     mocker.patch.object(RecipientService, "get_by_email", return_value=test_recipient)
     mock_recipient_service_update = mocker.patch.object(RecipientService, "update")
 
-    result = scanner.send_notification(test_recipient.email, "<p>Scan Report HTML</p>", subject="Website Update")
+    scanner.send_notification(test_recipient.email, "<p>Scan Report HTML</p>", "Website update", email_sender)
 
-    mock_build_message.assert_called_once_with(
-        subject="Website Update",
-        recipients=[test_recipient.email],
-        html_body="<p>Scan Report HTML</p>",
-    )
-    mock_send_email.assert_called_once_with(msg=mock_msg)
+    assert email_sender.sent == [
+        OutgoingEmail(to=test_recipient.email, subject="Website update", html_body="<p>Scan Report HTML</p>")
+    ]
     mock_recipient_service_update.assert_called_once()
     assert mock_recipient_service_update.call_args.kwargs["id"] == test_recipient.id
-    assert result is None
 
 
-def test_send_notification_failure(mocker: MockerFixture, test_recipient: RecipientRead):
+def test_send_notification_failure(mocker: MockerFixture, test_recipient: RecipientRead) -> None:
     """Tests that send_notification propagates exceptions if email delivery fails, preventing metadata updates."""
-    mocker.patch("app.scanner.build_message")
-    mock_send_email = mocker.patch("app.scanner.send_email", side_effect=Exception("SMTP connection timed out"))
+
+    class FailingSender(FakeEmailSender):
+        def send(self, email: OutgoingEmail) -> None:
+            raise ConnectionError("SMTP connection timed out")
+
     mock_recipient_service_update = mocker.patch.object(RecipientService, "update")
 
-    with pytest.raises(Exception, match="SMTP connection timed out"):
-        scanner.send_notification(test_recipient.email, "<p>Scan Report HTML</p>", subject="Website Update")
+    with pytest.raises(ConnectionError, match="SMTP connection timed out"):
+        scanner.send_notification(test_recipient.email, "<p>Scan Report HTML</p>", "Website update", FailingSender())
 
-    mock_send_email.assert_called_once()
     mock_recipient_service_update.assert_not_called()
+
+
+def test_send_notification_does_not_report_a_sent_email_as_failed(
+    mocker: MockerFixture, test_recipient: RecipientRead, email_sender: FakeEmailSender
+) -> None:
+    """Tests that an email that went out is not reported as failed when recording it fails afterwards."""
+    mocker.patch.object(RecipientService, "get_by_email", side_effect=RuntimeError("Database is locked"))
+
+    scanner.send_notification(test_recipient.email, "<p>Report</p>", "Website update", email_sender)
+
+    assert len(email_sender.sent) == 1
+
+
+def test_send_report_to_recipients_uses_one_connection(email_sender: FakeEmailSender, mocker: MockerFixture) -> None:
+    """Tests a report emailed to several recipients is sent over one connection to the mail server."""
+    mocker.patch("app.scanner._record_email_sent")
+
+    scanner.send_report_to_recipients(["a@gmail.com", "b@gmail.com"], "<p>Report</p>", "Manual scan", email_sender)
+
+    assert [email.to for email in email_sender.sent] == ["a@gmail.com", "b@gmail.com"]
+    assert email_sender.connections_opened == 1
 
 
 # ======================================
@@ -142,7 +161,7 @@ async def test_main_url_content_is_scanned_and_shown_in_updates(
     website = service.create(WebsiteCreate(url=main_url))
 
     mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
-    mocker.patch("app.backend.engine.crawl_site", return_value=set())
+    mocker.patch("app.backend.change_detection.crawl_site", return_value=set())
     requested_urls: list[str] = []
     html = "<html><body><p>Original main page content.</p></body></html>"
 
@@ -201,7 +220,7 @@ async def test_adding_a_website_saves_a_baseline_and_only_later_changes_are_repo
     mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
     mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
     mocker.patch("app.frontend.api.routers.AsyncClient", side_effect=mock_client)
-    crawl = mocker.patch("app.backend.engine.crawl_site", return_value={main_url, f"{main_url}/about"})
+    crawl = mocker.patch("app.backend.change_detection.crawl_site", return_value={main_url, f"{main_url}/about"})
 
     response = api_client.post("/scanner/initial_scan", json={"url": main_url})
     assert response.status_code == 200, response.text
@@ -252,7 +271,7 @@ async def test_scan_report_only_includes_changes_found_by_that_scan(session: Ses
         return httpx2.Response(200, text=pages[str(request.url).rstrip("/")])
 
     mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
-    mocker.patch("app.backend.engine.crawl_site", return_value={main_url})
+    mocker.patch("app.backend.change_detection.crawl_site", return_value={main_url})
     service = WebsiteService(session)
     website = service.create(WebsiteCreate(url=main_url, critical_pages=[f"{main_url}/fees", f"{main_url}/dates"]))
 
@@ -287,7 +306,7 @@ async def test_unreachable_critical_page_is_reported_once_and_reset_when_back(se
         return httpx2.Response(200, text="<html><body><p>Home page.</p></body></html>")
 
     mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
-    mocker.patch("app.backend.engine.crawl_site", return_value={main_url})
+    mocker.patch("app.backend.change_detection.crawl_site", return_value={main_url})
     service = WebsiteService(session)
     website = service.create(WebsiteCreate(url=main_url, critical_pages=[fees_url]))
 
@@ -324,7 +343,9 @@ async def test_scan_after_a_failed_first_scan_saves_a_baseline_instead_of_report
     html = "<html><body><p>The fee is $100.</p></body></html>"
 
     mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
-    crawl = mocker.patch("app.backend.engine.crawl_site", side_effect=WebConnectionError("Connection timed out"))
+    crawl = mocker.patch(
+        "app.backend.change_detection.crawl_site", side_effect=WebConnectionError("Connection timed out")
+    )
     service = WebsiteService(session)
     website = service.create(WebsiteCreate(url=main_url))
 
@@ -436,7 +457,9 @@ async def test_scan_website_deactivates_a_website_too_large_to_scan(session: Ses
     pages are still checked straight away, without saving anything from the refused crawl."""
     main_url = "https://example.com"
     mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
-    mocker.patch("app.backend.engine.crawl_site", side_effect=WebsiteTooLargeError(main_url, max_pages=50_000))
+    mocker.patch(
+        "app.backend.change_detection.crawl_site", side_effect=WebsiteTooLargeError(main_url, max_pages=50_000)
+    )
     service = WebsiteService(session)
     website = service.create(WebsiteCreate(url=main_url))
 
@@ -465,7 +488,7 @@ async def test_changes_found_when_a_website_becomes_too_large_are_still_reported
     main_url = "https://example.com"
     html = "<html><body><p>The fee is $100.</p></body></html>"
     mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
-    crawl = mocker.patch("app.backend.engine.crawl_site", return_value={main_url})
+    crawl = mocker.patch("app.backend.change_detection.crawl_site", return_value={main_url})
     service = WebsiteService(session)
     website = service.create(WebsiteCreate(url=main_url))
 
@@ -491,7 +514,7 @@ async def test_inactive_website_only_has_its_critical_pages_scanned(session: Ses
     main_url = "https://example.com"
     html = "<html><body><p>Applications close in May.</p></body></html>"
     mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
-    crawl = mocker.patch("app.backend.engine.crawl_site")
+    crawl = mocker.patch("app.backend.change_detection.crawl_site")
     service = WebsiteService(session)
     website = service.create(WebsiteCreate(url=main_url))
     service.update(id=website.id, model_update=WebsiteUpdate(active=False))
@@ -739,8 +762,12 @@ async def test_scan_all_websites_continues_after_a_website_fails(
     assert mock_scan_website.call_count == 3
     sent_to = [call.args[0] for call in mock_send_notification.call_args_list]
     assert sent_to == ["first@gmail.com", "broken@gmail.com", "last@gmail.com"]
-    assert all(call.kwargs["subject"] == "Website Update" for call in mock_send_notification.call_args_list)
-    failure_report: str = mock_send_notification.call_args_list[1].kwargs["report"]
+    assert [call.kwargs["subject"] for call in mock_send_notification.call_args_list] == [
+        "Website update: first.com",
+        "Website update: broken.com",
+        "Website update: last.com",
+    ]
+    failure_report: str = mock_send_notification.call_args_list[1].kwargs["html_body"]
     assert "Scan Failure Report" in failure_report
     assert "https://broken.com" in failure_report
     assert result is not None

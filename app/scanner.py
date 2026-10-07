@@ -1,14 +1,17 @@
 import asyncio
 import logging
 from collections import defaultdict
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime, timedelta
+from typing import NamedTuple
 
 from httpx2 import AsyncClient
 
-from app.backend.email_service import build_message, send_email
-from app.backend.engine import get_critical_page_only_updates, get_website_updates
-from app.backend.format_message import ScanStatus, generate_scan_report_html
+from app.backend.change_detection import get_critical_page_only_updates, get_website_updates
+from app.backend.email_service.html_bodies import ScanStatus, generate_scan_report_html, join_scan_reports
+from app.backend.email_service.message_builder import OutgoingEmail
+from app.backend.email_service.sender import EmailSender, get_email_sender
+from app.backend.email_service.subjects import scan_report_subject
 from app.core.config import config
 from app.core.errors import (
     NotFoundError,
@@ -18,44 +21,126 @@ from app.core.errors import (
     WebConnectionError,
     WebsiteTooLargeError,
 )
-from app.db.core import db_context
 from app.db.services.internal_link_service import InternalLinkService
 from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
-from app.db.utils.field_types import EmailString
+from app.db.session import db_context
 from app.models.critical_page_models import CriticalPageRead
+from app.models.field_types import EmailString
 from app.models.recipient_models import RecipientUpdate
 from app.models.website_models import WebsiteRead, WebsiteUpdate
 
 logger = logging.getLogger(__name__)
 
-# Websites are scanned one at a time, in the order requested, so a new scan waits for the current one to finish
-scan_lock = asyncio.Lock()
-
-# The crawl of each website that is queued or being scanned, by URL, so it can be cancelled
 queued_crawls: dict[str, asyncio.Task[WebsiteUpdate | None]] = {}
+scan_lock: asyncio.Lock = asyncio.Lock()
 
 
-def send_notification(recipient_email: EmailString, report: str, subject: str):
-    """Builds and sends an HTML email notification containing a website scan report
-    and updates the recipient's `last_email_at` timestamp.
+class WebsiteReport(NamedTuple):
+    """One website's scan report, ready to be emailed to its recipients.
 
-    Args:
-        recipient (RecipientRead): The target recipient recipient.
-        report (str): The HTML formatted scan report to include in the email body.
-        subject (str, optional): The email subject line.
+    Attributes:
+        website_url: The URL of the website the report is about, used to name it in the subject line.
+        html: The report card as HTML.
     """
 
-    send_email(msg=build_message(subject=subject, recipients=[recipient_email], html_body=report))
+    website_url: str
+    html: str
 
+
+def _record_email_sent(recipient_email: EmailString) -> None:
+    """Records that a recipient was just emailed, so their health checks count from now.
+
+    Args:
+        recipient_email (EmailString): The recipient's email address.
+    """
     with db_context() as session:
         recipient_service = RecipientService(session)
         recipient = recipient_service.get_by_email(recipient_email)
         recipient_service.update(id=recipient.id, model_update=RecipientUpdate(last_email_at=datetime.now()))
 
 
+def send_notification(recipient_email: EmailString, html_body: str, subject: str, email_sender: EmailSender) -> None:
+    """Emails a recipient, then records when they were emailed.
+
+    The email has already gone by the time it is recorded, so a failure to record it is logged rather than
+    raised, and is not mistaken for the email failing to send.
+
+    Args:
+        recipient_email (EmailString): The recipient's email address.
+        html_body (str): The email's content as HTML.
+        subject (str): The email's subject line.
+        email_sender (EmailSender): Sends the email.
+
+    Raises:
+        smtplib.SMTPException: If the email could not be sent.
+        OSError: If the mail server could not be reached.
+    """
+    email_sender.send(OutgoingEmail(to=recipient_email, subject=subject, html_body=html_body))
+    try:
+        _record_email_sent(recipient_email)
+    except Exception:
+        logger.exception(
+            "%s was emailed, but when could not be recorded, so a health check may come early.", recipient_email
+        )
+
+
+def send_report_to_recipients(
+    recipient_emails: Sequence[EmailString],
+    html_body: str,
+    subject: str,
+    email_sender: EmailSender,
+) -> None:
+    """Emails the same report to each recipient, over one connection to the mail server.
+
+    Blocks while the emails send, so async code runs it in a thread.
+
+    Args:
+        recipient_emails (Sequence[EmailString]): Who to email.
+        html_body (str): The report as HTML.
+        subject (str): The email's subject line.
+        email_sender (EmailSender): Sends the emails.
+
+    Raises:
+        smtplib.SMTPException: If an email could not be sent. The recipients after it are not emailed.
+        OSError: If the mail server could not be reached.
+    """
+    with email_sender:
+        for recipient_email in recipient_emails:
+            send_notification(recipient_email, html_body, subject, email_sender)
+
+
+def _email_scan_reports(
+    reports_by_recipient: Mapping[EmailString, Sequence[WebsiteReport]],
+    email_sender: EmailSender,
+) -> None:
+    """Emails each recipient one email holding the reports for all of their websites, over one connection.
+
+    A failed email is logged, so one bad address does not stop the other recipients being emailed. Blocks while
+    the emails send, so async code runs it in a thread.
+
+    Args:
+        reports_by_recipient (Mapping[EmailString, Sequence[WebsiteReport]]): Each recipient's reports.
+        email_sender (EmailSender): Sends the emails.
+    """
+    with email_sender:
+        for recipient_email, reports in reports_by_recipient.items():
+            try:
+                send_notification(
+                    recipient_email,
+                    html_body=f"<ul>{join_scan_reports(report.html for report in reports)}</ul>",
+                    subject=scan_report_subject([report.website_url for report in reports]),
+                    email_sender=email_sender,
+                )
+            except Exception:
+                logger.exception("Failed to send scan report to %s", recipient_email)
+
+
 async def _crawl_in_turn(crawl: Callable[[], Awaitable[WebsiteUpdate | None]]) -> WebsiteUpdate | None:
-    """Waits for the scans requested before this one to finish, then crawls the website."""
+    """Waits for the scans requested before this one to finish, then crawls the website.
+
+    Every scan waits on the same `scan_lock`, so websites are scanned one at a time, in the order requested.
+    """
     async with scan_lock:
         return await crawl()
 
@@ -164,7 +249,7 @@ async def _handle_too_large_website(client: AsyncClient, website: WebsiteRead, m
     too_large_report: str = generate_scan_report_html(website, status=ScanStatus.TOO_LARGE, message=action_message)
     # The website is now inactive, so this scan only checks its critical pages and cannot find it too large again
     critical_page_report: str | None = await scan_website(client, inactive_website, init=init)
-    return too_large_report + (critical_page_report or "")
+    return join_scan_reports(report for report in (too_large_report, critical_page_report) if report)
 
 
 async def scan_website(
@@ -206,7 +291,7 @@ async def scan_website(
             website.url, lambda: _check_for_updates(client, website, max_pages, delay, concurrent, init)
         )
     except TrafficError as e:
-        logger.error(f"Temporary ban or severe rate limit detected for {website.url}: {e}")
+        logger.error("Temporary ban or severe rate limit detected for %s: %s", website.url, e)
         if delay or concurrent:
             raise TrafficError(
                 url=website.url,
@@ -217,12 +302,12 @@ async def scan_website(
             action_message: str = WebsiteService(session).handle_traffic_error(website)
         return generate_scan_report_html(website, status=ScanStatus.TRAFFIC_ERROR, message=action_message)
     except WebConnectionError as e:
-        logger.error(f"Site unreachable: {e}")
+        logger.error("Site unreachable: %s", e)
         with db_context() as session:
             action_message: str = WebsiteService(session).handle_connection_error(website.id)
         return generate_scan_report_html(website, status=ScanStatus.CONNECTION_ERROR, message=action_message)
     except WebsiteTooLargeError as e:
-        logger.warning(f"Website too large to scan: {e}")
+        logger.warning("Website too large to scan: %s", e)
         return await _handle_too_large_website(client, website, e.max_pages, init)
 
     with db_context() as session:
@@ -232,7 +317,7 @@ async def scan_website(
         website_service.reset_failed_attempts(website.id)
 
     if not (website_updates and website_updates.has_changes):
-        logger.info(f"No changes found for {website.url}")
+        logger.info("No changes found for %s", website.url)
         return None
 
     # Unchanged pages keep the recent changes from an earlier scan, so only pages changed by this scan are reported
@@ -289,12 +374,13 @@ def _is_due_a_scan(website: WebsiteRead, run_started_at: datetime) -> bool:
     return run_started_at - website.last_scan_at >= interval - tolerance
 
 
-async def scan_all_websites(ignore_schedule: bool = False) -> str | None:
+async def scan_all_websites(ignore_schedule: bool = False, email_sender: EmailSender | None = None) -> str | None:
     """Asynchronously scans all non-cooldown websites that are due a scan. Inactive websites
     only have their critical pages checked.
 
     Updates the recipient's `last_scan_at` metadata and dispatches an HTML email notification
-    if any scan reports were generated.
+    if any scan reports were generated. The emails are sent from a thread, so the dashboard and other
+    scans keep running while the mail server is slow.
 
     A website whose scan fails unexpectedly is logged and its recipients are sent a failure report, a
     website that cannot be read or updated in the database is logged and skipped, and a failed email is
@@ -304,6 +390,7 @@ async def scan_all_websites(ignore_schedule: bool = False) -> str | None:
     Args:
         ignore_schedule (bool, optional): Also scan websites that are not due a scan yet, e.g. for
             "Run All Scans" on the dashboard. Websites on cooldown are still skipped. Defaults to False.
+        email_sender (EmailSender | None, optional): Sends the reports. Defaults to the configured mail server.
 
     Returns:
         str | None: Consolidated HTML list of scan reports if updates/errors occurred,
@@ -315,35 +402,35 @@ async def scan_all_websites(ignore_schedule: bool = False) -> str | None:
         websites: Sequence[WebsiteRead] = website_service.get_all(limit=None)  # Every website, not just the first 100
 
     run_started_at = datetime.now()
-    reports_by_recipient: dict[EmailString, list[str]] = defaultdict(list)
+    reports_by_recipient: dict[EmailString, list[WebsiteReport]] = defaultdict(list)
     all_reports: list[str] = []
     async with AsyncClient() as client:
         for listed_website in websites:
             try:
                 website: WebsiteRead | None = _get_latest_state(listed_website)
             except Exception:
-                logger.exception(f"{listed_website.url} has been skipped as it could not be read from the database.")
+                logger.exception("%s has been skipped as it could not be read from the database.", listed_website.url)
                 continue
             if website is None:
-                logger.info(f"{listed_website.url} has been skipped as it was deleted during the run.")
+                logger.info("%s has been skipped as it was deleted during the run.", listed_website.url)
                 continue
             if website.on_cooldown_until and website.on_cooldown_until > datetime.now():
-                logger.warning(f"{website.url} has been skipped as it is on cooldown.")
+                logger.warning("%s has been skipped as it is on cooldown.", website.url)
                 continue
             if not ignore_schedule and not _is_due_a_scan(website, run_started_at):
-                logger.info(f"{website.url} has been skipped as there has not been enough time since last scan.")
+                logger.info("%s has been skipped as there has not been enough time since last scan.", website.url)
                 continue
 
             try:
                 report: str | None = await scan_website(client, website)
             except ScanAlreadyQueuedError:
-                logger.info(f"{website.url} has been skipped as it is already queued or being scanned.")
+                logger.info("%s has been skipped as it is already queued or being scanned.", website.url)
                 continue
             except ScanCancelledError:
-                logger.info(f"{website.url} has been skipped as its scan was cancelled.")
+                logger.info("%s has been skipped as its scan was cancelled.", website.url)
                 continue
             except Exception:
-                logger.exception(f"Scan failed for {website.url}, continuing with the remaining websites.")
+                logger.exception("Scan failed for %s, continuing with the remaining websites.", website.url)
                 # Tell the recipients, rather than leaving them to think nothing has changed
                 report = generate_scan_report_html(
                     website,
@@ -355,9 +442,9 @@ async def scan_all_websites(ignore_schedule: bool = False) -> str | None:
             if report:
                 all_reports.append(report)
                 for recipient in website.recipients:
-                    reports_by_recipient[recipient.email].append(report)
+                    reports_by_recipient[recipient.email].append(WebsiteReport(website.url, report))
             else:
-                logger.info(f"No updates found for: {website.url}")
+                logger.info("No updates found for: %s", website.url)
 
             # A failure here is logged rather than raised, so the reports already found are still emailed
             try:
@@ -366,16 +453,8 @@ async def scan_all_websites(ignore_schedule: bool = False) -> str | None:
                         id=website.id, model_update=WebsiteUpdate(last_scan_at=run_started_at)
                     )
             except Exception:
-                logger.exception(f"Could not record when {website.url} was scanned, so it may be scanned again early.")
+                logger.exception("Could not record when %s was scanned, so it may be scanned again early.", website.url)
 
-    for recipient_email, recipient_reports in reports_by_recipient.items():
-        try:
-            send_notification(
-                recipient_email,
-                report=f"<ul>{''.join(recipient_reports)}</ul>",
-                subject="Website Update",
-            )
-        except Exception:
-            logger.exception(f"Failed to send scan report to {recipient_email}")
+    await asyncio.to_thread(_email_scan_reports, reports_by_recipient, email_sender or get_email_sender())
 
     return "".join(all_reports) or None

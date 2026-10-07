@@ -1,0 +1,87 @@
+{% extends "card.html" %}
+{% import "components.html" as ui %}
+
+{% block title %}{{ style.title }} for {{ website.url }}{% endblock %}
+
+{% block content %}
+<p class="header-meta">Checked {{ checked_at }}{% if is_success and not has_changes %} &middot; No changes detected since the last scan.{% endif %}</p>
+{% if not is_success %}
+<div class="alert {{ severity }}">
+<strong class="alert-title">{{ style.title }}</strong>
+<span class="alert-message">{{ message }}</span>
+</div>
+{% else %}
+{% if website.recent_added_internal_links %}
+{{ ui.section_title("New Internal Links (%d)" % website.recent_added_internal_links | length) }}
+{{ ui.badge_list("added", website.recent_added_internal_links) }}
+{% endif %}
+{% if website.recent_removed_internal_links %}
+{{ ui.section_title("Removed Internal Links (%d)" % website.recent_removed_internal_links | length) }}
+{{ ui.badge_list("removed", website.recent_removed_internal_links) }}
+{% endif %}
+{% if unreachable_pages %}
+{{ ui.section_title("Watched Pages Unreachable (%d)" % unreachable_pages | length, "error") }}
+<ul class="change-list unreachable-pages">
+{% for page in unreachable_pages %}
+<li class="change-item">{{ ui.link(page.url) }}: {{ page.last_failure_reason or "Unknown error" }} ({{ page.consecutive_failures }} scans in a row)</li>
+{% endfor %}
+</ul>
+{% endif %}
+{% if changed_pages %}
+{{ ui.section_title("Watched Pages Changed (%d)" % changed_pages | length) }}
+{% for page in changed_pages %}
+<p class="page-title"><strong>{{ ui.link(page.url) }}</strong></p>
+<div class="page-changes-container">
+{% for label, kind, items in [
+    ("Links Added", "added", page.recent_links_added),
+    ("Links Removed", "removed", page.recent_links_removed),
+    ("Documents Added", "added", page.recent_documents_added),
+    ("Documents Removed", "removed", page.recent_documents_removed),
+] if items %}
+{{ ui.change_label(label) }}
+{{ ui.badge_list(kind, items) }}
+{% endfor %}
+{% for label, kind, blocks in [
+    ("Text Added", "added", page.recent_text_added),
+    ("Text Removed", "removed", page.recent_text_removed),
+] if blocks %}
+{{ ui.change_label(label) }}
+<ul class="change-list">
+{% for block in blocks %}
+<li class="change-item">{{ ui.text_block(kind, block) }}</li>
+{% endfor %}
+</ul>
+{% endfor %}
+{% set edits = (page.recent_text_changed or []) | rejectattr("is_move") | list %}
+{% set moves = (page.recent_text_changed or []) | selectattr("is_move") | list %}
+{% if edits %}
+{{ ui.change_label("Text Changed") }}
+<table class="diff-table" role="presentation" cellspacing="0" cellpadding="0">
+<tr class="diff-header"><th class="diff-head before">Before</th><th class="diff-head after">After</th></tr>
+{% for change in edits %}
+{% set old_heading = change.old_block.parent_heading %}
+{% set new_heading = change.new_block.parent_heading %}
+{% if new_heading %}
+<tr><td colspan="2" class="diff-heading-row">[{% if old_heading and old_heading != new_heading %}{{ old_heading }} &rarr; {% endif %}{{ new_heading }}]</td></tr>
+{% endif %}
+{% set word_diff = diff_words(change.old_block.text, change.new_block.text) %}
+<tr>
+<td class="diff-cell removed">- {{ ui.words(word_diff.old_words, "removed") }}</td>
+<td class="diff-cell added">+ {{ ui.words(word_diff.new_words, "added") }}</td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}
+{% if moves %}
+{{ ui.change_label("Text Moved") }}
+<ul class="change-list">
+{% for move in moves %}
+<li class="change-item">&ldquo;{{ move.new_block.text }}&rdquo; moved from <strong>{{ move.old_block.parent_heading }}</strong> to <strong>{{ move.new_block.parent_heading }}</strong></li>
+{% endfor %}
+</ul>
+{% endif %}
+</div>
+{% endfor %}
+{% endif %}
+{% endif %}
+{% endblock %}

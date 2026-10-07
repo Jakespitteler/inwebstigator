@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 from app.core.errors import NotFoundError
 from app.db import repository
 from app.db.schema import DBRecipient, website_recipient_association
-from app.db.utils.field_types import EmailString
-from app.db.utils.interfaces import CRUDService
+from app.db.services.crud_protocol import CRUDService
+from app.models.field_types import EmailString
 from app.models.recipient_models import RecipientCreate, RecipientRead, RecipientUpdate
 
 logger: logging.Logger = logging.getLogger(__name__)

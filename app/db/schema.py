@@ -73,6 +73,7 @@ class DBCriticalPage(Base):
     links: Mapped[list[str]] = mapped_column(JSON, nullable=True)
     documents: Mapped[list[str]] = mapped_column(JSON, nullable=True)
     text_body: Mapped[str] = mapped_column(String, nullable=True)
+    ignore_rules: Mapped[list[str]] = mapped_column(JSON, nullable=True)
 
     website_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("websites.id", ondelete="CASCADE"), nullable=False)
     website: Mapped["DBWebsite"] = relationship(back_populates="critical_pages")

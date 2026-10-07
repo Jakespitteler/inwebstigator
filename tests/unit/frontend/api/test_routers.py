@@ -13,15 +13,17 @@ from pytest_mock import MockerFixture
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.backend.email_service.message_builder import OutgoingEmail
+from app.backend.links import website_name
 from app.core.config import config
 from app.core.errors import ScanAlreadyQueuedError, ScanCancelledError, WebsiteTooLargeError
-from app.db.core import get_db_session
 from app.db.schema import Base, DBCriticalPage, DBRecipient, DBWebsite
+from app.db.session import get_db_session
 from app.frontend.api import routers
-from app.frontend.api.utils import website_name
 from app.main import app
 from app.models import critical_page_models, recipient_models, website_models
 from app.scanner import queued_crawls
+from tests.fakes import FakeEmailSender
 
 
 class TestCRUDRouters:
@@ -268,7 +270,9 @@ def test_updates_are_listed_most_recent_change_first(api_client: TestClient, ses
     assert change_times == ["Changed 04 Oct 2026, 09:00", "Changed 02 Oct 2026, 09:00", "Changed 01 Oct 2026, 09:00"]
 
 
-def test_run_all_scans_every_website_and_restarts_the_countdown(api_client: TestClient, mocker: MockerFixture) -> None:
+def test_run_all_scans_every_website_and_restarts_the_countdown(
+    api_client: TestClient, mocker: MockerFixture, email_sender: FakeEmailSender
+) -> None:
     """Tests "Run All Scans" restarts the countdown to the next scheduled check and scans every website, due or not."""
     mock_restart_scan_countdown = mocker.patch("app.frontend.api.routers.restart_scan_countdown")
     mock_scan_all_websites = mocker.patch("app.frontend.api.routers.scan_all_websites", return_value=None)
@@ -277,7 +281,7 @@ def test_run_all_scans_every_website_and_restarts_the_countdown(api_client: Test
 
     assert response.status_code == 200, response.text
     mock_restart_scan_countdown.assert_called_once()
-    mock_scan_all_websites.assert_awaited_once_with(ignore_schedule=True)
+    mock_scan_all_websites.assert_awaited_once_with(ignore_schedule=True, email_sender=email_sender)
 
 
 def test_manual_scan_records_scan_time(
@@ -412,7 +416,7 @@ def test_adding_a_website_counts_as_emailing_its_recipients(
 
 
 def test_adding_a_website_sends_each_recipient_one_email(
-    api_client: TestClient, session: Session, mocker: MockerFixture
+    api_client: TestClient, session: Session, mocker: MockerFixture, email_sender: FakeEmailSender
 ) -> None:
     """Tests each recipient of a new website gets one email saying what is monitored, which also confirms their
     address, and no second email once the first scan has finished."""
@@ -423,7 +427,6 @@ def test_adding_a_website_sends_each_recipient_one_email(
     mocker.patch("app.frontend.api.routers.scan_website", return_value=None)
     mock_confirm = mocker.patch("app.frontend.api.routers.confirm_address_can_receive_email")
     mock_send = mocker.patch("app.frontend.api.routers.send_confirmation")
-    mock_send_email = mocker.patch("app.scanner.send_email")
 
     response = api_client.post(
         "/scanner/initial_scan",
@@ -432,12 +435,12 @@ def test_adding_a_website_sends_each_recipient_one_email(
 
     assert response.status_code == 200, response.text
     emails = [*mock_send.call_args_list, *mock_confirm.call_args_list]
-    assert sorted(email.args[0] for email in emails) == ["known@example.com", "new@example.com"]
-    for email in emails:
-        _, subject, html_body = email.args
-        assert subject == "Website monitoring started"
-        assert "Now monitoring https://example.com" in html_body
-    mock_send_email.assert_not_called()
+    sent: list[OutgoingEmail] = [email.args[0] for email in emails]
+    assert sorted(email.to for email in sent) == ["known@example.com", "new@example.com"]
+    for email in sent:
+        assert email.subject == "Website monitoring started"
+        assert "Now monitoring https://example.com" in email.html_body
+    assert email_sender.sent == []  # No scan report email after the first scan
 
 
 def test_adding_a_website_too_large_to_scan_deactivates_it(
@@ -453,7 +456,9 @@ def test_adding_a_website_too_large_to_scan_deactivates_it(
     mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
     mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
     mocker.patch("app.frontend.api.routers.AsyncClient", side_effect=mock_client)
-    mocker.patch("app.backend.engine.crawl_site", side_effect=WebsiteTooLargeError(main_url, max_pages=50_000))
+    mocker.patch(
+        "app.backend.change_detection.crawl_site", side_effect=WebsiteTooLargeError(main_url, max_pages=50_000)
+    )
 
     response = api_client.post(
         "/scanner/initial_scan", json={"url": main_url, "recipient_emails": ["someone@example.com"]}
@@ -672,7 +677,9 @@ def test_adding_a_known_email_is_emailed_without_waiting_for_a_bounce(
     test_website: website_models.WebsiteRead,
     mocker: MockerFixture,
 ) -> None:
-    """Tests an address that is already a recipient is only emailed, while a new address is also checked for a bounce."""
+    """Tests an address that is already a recipient is only emailed, while a new address is also
+    checked for a bounce.
+    """
     session.add(DBRecipient(email="known@example.com"))
     session.flush()
     mock_confirm = mocker.patch("app.frontend.api.routers.confirm_address_can_receive_email")
@@ -684,7 +691,29 @@ def test_adding_a_known_email_is_emailed_without_waiting_for_a_bounce(
 
     assert response.status_code == 200, response.text
     mock_send.assert_called_once()
-    assert mock_send.call_args.args[0] == "known@example.com"
+    assert mock_send.call_args.args[0].to == "known@example.com"
     mock_confirm.assert_called_once()
-    assert mock_confirm.call_args.args[0] == "new@example.com"
+    assert mock_confirm.call_args.args[0].to == "new@example.com"
 
+
+def test_a_critical_pages_ignore_rules_can_be_set(
+    api_client: TestClient, test_critical_page: critical_page_models.CriticalPageRead
+) -> None:
+    """Tests ignore rules are saved through the API, so text that changes every scan can be silenced."""
+    response = api_client.patch(
+        f"/critical_pages/{test_critical_page.id}", json={"ignore_rules": [r"Page last updated: .*"]}
+    )
+
+    assert response.status_code == 200, response.text
+    assert api_client.get(f"/critical_pages/{test_critical_page.id}").json()["ignore_rules"] == [
+        r"Page last updated: .*"
+    ]
+
+
+def test_an_invalid_ignore_rule_is_refused(
+    api_client: TestClient, test_critical_page: critical_page_models.CriticalPageRead
+) -> None:
+    response = api_client.patch(f"/critical_pages/{test_critical_page.id}", json={"ignore_rules": ["Fee is ($50"]})
+
+    assert response.status_code == 422
+    assert "is not a valid regular expression" in response.text

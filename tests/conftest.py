@@ -19,13 +19,16 @@ from sqlalchemy import Connection, DateTime, Engine, MetaData, StaticPool, Strin
 from sqlalchemy.orm import Mapped, Session, declarative_base, mapped_column
 from tenacity import wait_none
 
-from app.backend.email_service import send_email
-from app.backend.utils.http_client import fetch_content_from_url
-from app.backend.utils.links import normalise_url
-from app.db import core, repository, schema
-from app.db.utils.field_types import URLString
+from app.backend.email_service.message_builder import OutgoingEmail
+from app.backend.email_service.sender import EmailSender, get_email_sender
+from app.backend.links import normalise_url
+from app.backend.page_fetcher import fetch_content_from_url
+from app.db import repository, schema
+from app.db.session import get_db_session
 from app.main import app
 from app.models import critical_page_models, internal_link_models, recipient_models, website_models
+from app.models.field_types import URLString
+from tests.fakes import FakeEmailSender
 
 type RequestHandler = Callable[[httpx2.Request], httpx2.Response]
 
@@ -109,25 +112,47 @@ def api_client(session: Session) -> Iterator[TestClient]:
     Yields:
         The configured TestClient instance.
     """
-    app.dependency_overrides[core.get_db_session] = lambda: session
+    app.dependency_overrides[get_db_session] = lambda: session
     with TestClient(app) as client:
         yield client
         app.dependency_overrides.clear()
 
 
+def _skip_confirmation(email: OutgoingEmail, email_sender: EmailSender) -> None:
+    """Stands in for confirming an address can receive email, so tests do not send emails or wait for bounces.
+
+    Args:
+        email: The confirmation email that would have been sent.
+        email_sender: The sender that would have sent it.
+    """
+
+
 @pytest.fixture(autouse=True)
 def skip_email_confirmations(monkeypatch: pytest.MonkeyPatch) -> None:
     """Treats every added email address as able to receive email, so tests do not send confirmation emails."""
-    monkeypatch.setattr(
-        "app.frontend.api.routers.confirm_address_can_receive_email", lambda address, subject, html_body: None
-    )
-    monkeypatch.setattr("app.frontend.api.routers.send_confirmation", lambda address, subject, html_body: None)
+    monkeypatch.setattr("app.frontend.api.routers.confirm_address_can_receive_email", _skip_confirmation)
+    monkeypatch.setattr("app.frontend.api.routers.send_confirmation", _skip_confirmation)
 
 
 @pytest.fixture(autouse=True)
-def disable_retry_wait():
+def email_sender(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeEmailSender]:
+    """Replaces the mail server with a fake for every test, so no test can send a real email.
+
+    Yields:
+        The fake sender, holding every email the test sent.
+    """
+    fake_sender = FakeEmailSender()
+    monkeypatch.setattr("app.scanner.get_email_sender", lambda: fake_sender)
+    monkeypatch.setattr("app.scheduler.get_email_sender", lambda: fake_sender)
+    app.dependency_overrides[get_email_sender] = lambda: fake_sender
+    yield fake_sender
+    app.dependency_overrides.pop(get_email_sender, None)
+
+
+@pytest.fixture(autouse=True)
+def disable_retry_wait() -> Iterator[None]:
+    """Stops fetching pages waiting between retries, so tests of failures run quickly."""
     fetch_content_from_url.retry.wait = wait_none()  # pyright: ignore[reportFunctionMemberAccess]
-    send_email.retry.wait = wait_none()  # pyright: ignore[reportFunctionMemberAccess]
     yield
 
 

@@ -5,17 +5,20 @@ from contextlib import suppress
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Form, HTTPException, Request, status
+from fastapi import APIRouter, Body, Depends, Form, HTTPException, Request, status
 from fastapi.responses import FileResponse
 from fastapi.templating import Jinja2Templates
 from httpx2 import AsyncClient, HTTPError
 from sqlalchemy.orm import Session
 
-from app.backend.email_service import confirm_address_can_receive_email, send_confirmation
-from app.backend.engine import get_critical_page_updates
-from app.backend.format_message import monitoring_started_html, recipient_added_html
-from app.backend.utils.http_client import fetch_content_from_url
-from app.backend.utils.links import is_same_page, resolve_critical_page_url
+from app.backend.change_detection import get_critical_page_updates
+from app.backend.email_service.bounce_check import confirm_address_can_receive_email
+from app.backend.email_service.html_bodies import monitoring_started_html, recipient_added_html
+from app.backend.email_service.message_builder import OutgoingEmail
+from app.backend.email_service.sender import EmailSender, get_email_sender, send_confirmation
+from app.backend.email_service.subjects import manual_scan_subject
+from app.backend.links import is_same_page, resolve_critical_page_url, website_name
+from app.backend.page_fetcher import fetch_content_from_url
 from app.core.config import config
 from app.core.errors import (
     NotFoundError,
@@ -25,11 +28,11 @@ from app.core.errors import (
     WebCrawlerError,
 )
 from app.core.paths import resource_path
-from app.db.core import db_context
 from app.db.services.critical_page_service import CriticalPageService
+from app.db.services.crud_protocol import CRUDOperation
 from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
-from app.db.utils.interfaces import CRUDOperation
+from app.db.session import db_context
 from app.frontend.api.db_router_factory import SessionDep, create_crud_router
 from app.frontend.api.utils import (
     ContentBlockRecord,
@@ -40,7 +43,6 @@ from app.frontend.api.utils import (
     format_timestamp,
     newest_first,
     scan_time,
-    website_name,
 )
 from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead, CriticalPageUpdate
 from app.models.recipient_models import RecipientCreate, RecipientUpdate
@@ -50,9 +52,11 @@ from app.scanner import (
     queued_crawls,
     scan_all_websites,
     scan_website,
-    send_notification,
+    send_report_to_recipients,
 )
 from app.scheduler import next_scheduled_check, restart_scan_countdown
+
+EmailSenderDep = Annotated[EmailSender, Depends(get_email_sender)]
 
 ROOT_ROUTER = APIRouter()
 templates = Jinja2Templates(directory=resource_path("app", "frontend", "templates"))
@@ -245,7 +249,13 @@ def _is_known_recipient(session: Session, email: str) -> bool:
     return True
 
 
-async def _check_emails_can_be_received(session: Session, emails: Sequence[str], subject: str, html_body: str) -> None:
+async def _check_emails_can_be_received(
+    session: Session,
+    emails: Sequence[str],
+    subject: str,
+    html_body: str,
+    email_sender: EmailSender,
+) -> None:
     """Emails each address to confirm it, so an address that bounces is not added.
 
     An address that is already a recipient has been confirmed before, so it is emailed without waiting for a bounce.
@@ -255,6 +265,7 @@ async def _check_emails_can_be_received(session: Session, emails: Sequence[str],
         emails (Sequence[str]): The email addresses being added.
         subject (str): The subject of the email.
         html_body (str): The HTML content of the email.
+        email_sender (EmailSender): Sends the emails.
 
     Raises:
         HTTPException: 422 if an email to an address could not be delivered.
@@ -264,9 +275,8 @@ async def _check_emails_can_be_received(session: Session, emails: Sequence[str],
             *(
                 asyncio.to_thread(
                     send_confirmation if _is_known_recipient(session, email) else confirm_address_can_receive_email,
-                    email,
-                    subject,
-                    html_body,
+                    OutgoingEmail(to=email, subject=subject, html_body=html_body),
+                    email_sender,
                 )
                 for email in dict.fromkeys(emails)
             )
@@ -294,7 +304,7 @@ def _record_emails_sent(session: Session, emails: Sequence[str]) -> None:
 
 
 @SCANNER_ROUTER.post("/initial_scan", response_model=None)
-async def website_initial_scan(session: SessionDep, model_create: WebsiteCreate) -> None:
+async def website_initial_scan(session: SessionDep, email_sender: EmailSenderDep, model_create: WebsiteCreate) -> None:
     """Registers a new website in the database and triggers an immediate initial crawl.
 
     Each recipient is sent one email before the crawl, saying what is being monitored, which also confirms
@@ -309,6 +319,7 @@ async def website_initial_scan(session: SessionDep, model_create: WebsiteCreate)
 
     Args:
         session (SessionDep): Database session dependency.
+        email_sender (EmailSenderDep): Sends the emails to the recipients.
         model_create (WebsiteCreate): Payload containing details to create the website record.
 
     Raises:
@@ -323,6 +334,7 @@ async def website_initial_scan(session: SessionDep, model_create: WebsiteCreate)
         model_create.recipient_emails,
         subject="Website monitoring started",
         html_body=monitoring_started_html(model_create, config.scheduler_default_days_between_health_checks),
+        email_sender=email_sender,
     )
     website: WebsiteRead = WebsiteService(session).create(model_create)
     _record_emails_sent(session, model_create.recipient_emails)  # They were just emailed to confirm their address
@@ -397,22 +409,26 @@ async def critical_page_initial_scan(
 
 
 @SCANNER_ROUTER.post("/run_all", response_model=str | None)
-async def scan_websites() -> str | None:
+async def scan_websites(email_sender: EmailSenderDep) -> str | None:
     """Scans every website now for "Run All Scans", emailing each recipient one report of all the changes found.
 
     Websites that are not due a scan yet are included, while websites on cooldown are still skipped. The countdown
     to the next scheduled check restarts, as every website is being scanned now.
 
+    Args:
+        email_sender (EmailSenderDep): Sends the reports.
+
     Returns:
         str | None: Consolidated HTML list of scan reports if updates occurred, otherwise None.
     """
     restart_scan_countdown()
-    return await scan_all_websites(ignore_schedule=True)
+    return await scan_all_websites(ignore_schedule=True, email_sender=email_sender)
 
 
 @SCANNER_ROUTER.post("/run", response_model=str | None)
 async def manually_scan_website(
     session: SessionDep,
+    email_sender: EmailSenderDep,
     url: str = Form(...),
     recipient_email: str | None = Form(None),
     max_pages: int | None = Form(None),
@@ -434,11 +450,12 @@ async def manually_scan_website(
         WebsiteService(session).update(id=website.id, model_update=WebsiteUpdate(last_scan_at=datetime.now()))
 
     if report and website.recipients:
-        if website.recipients:
-            for recipient in website.recipients:
-                send_notification(recipient.email, report, subject="Manual Website Scan")
-            if recipient_email and recipient_email not in [r.email for r in website.recipients]:
-                send_notification(recipient_email, report, subject="Manual Website Scan")
+        recipient_emails: list[str] = [recipient.email for recipient in website.recipients]
+        if recipient_email and recipient_email not in recipient_emails:
+            recipient_emails.append(recipient_email)
+        await asyncio.to_thread(
+            send_report_to_recipients, recipient_emails, report, manual_scan_subject(website.url), email_sender
+        )
 
         return report
 
@@ -483,11 +500,14 @@ WEBSITE_ROUTER: APIRouter = create_crud_router(
 
 
 @WEBSITE_ROUTER.patch("/{id}", response_model=WebsiteRead)
-async def update_website(session: SessionDep, id: uuid.UUID, model_update: WebsiteUpdate) -> WebsiteRead:
+async def update_website(
+    session: SessionDep, email_sender: EmailSenderDep, id: uuid.UUID, model_update: WebsiteUpdate
+) -> WebsiteRead:
     """Updates a website, first confirming that any recipient being added can receive email.
 
     Args:
         session (SessionDep): Database session dependency.
+        email_sender (EmailSenderDep): Sends the confirmation emails to added recipients.
         id (uuid.UUID): The ID of the website to update.
         model_update (WebsiteUpdate): The changes to make.
 
@@ -505,6 +525,7 @@ async def update_website(session: SessionDep, id: uuid.UUID, model_update: Websi
             model_update.add_recipient_emails,
             subject="Email address added to website monitoring",
             html_body=recipient_added_html(website_service.get(id).url),
+            email_sender=email_sender,
         )
     website: WebsiteRead = website_service.update(id, model_update)
     if model_update.add_recipient_emails:

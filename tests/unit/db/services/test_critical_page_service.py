@@ -3,7 +3,7 @@ from collections.abc import Sequence
 import pytest
 from sqlalchemy.orm import Session
 
-from app.backend.utils.html_parser import ChangedBlock, ContentBlock, HTMLBlockType
+from app.backend.diff_checker.models import ChangedBlock, ContentBlock, HTMLBlockType
 from app.core.errors import NotFoundError
 from app.db.services.critical_page_service import CriticalPageService
 from app.models.critical_page_models import (

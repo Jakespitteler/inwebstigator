@@ -1,6 +1,7 @@
 import asyncio
+from collections.abc import Callable
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 import pytest
 from apscheduler.schedulers.asyncio import AsyncIOScheduler  # pyright: ignore[reportMissingTypeStubs]
@@ -11,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.config import config
 from app.db.services.recipient_service import RecipientService
 from app.models.recipient_models import RecipientCreate, RecipientRead
-from app.models.website_models import WebsiteRead
+from app.models.website_models import DeactivationReason, WebsiteRead
 from app.scheduler import (
     SCAN_JOB_ID,
     _scan_then_send_health_checks,  # pyright: ignore[reportPrivateUsage]
@@ -20,8 +21,8 @@ from app.scheduler import (
     schedule_scans,
     scheduler,
 )
-
-HEALTH_CHECK_REPORT = "No changes have been found since the last notification"
+from tests.fakes import FakeEmailSender
+from tests.unit.backend.email_service.builders import make_website
 
 # ======================================
 # Setup Fixtures & Mocks
@@ -50,13 +51,14 @@ def _freeze_now(mocker: MockerFixture, now: datetime) -> None:
 def test_send_health_check_if_no_change_skipped_when_never_emailed(
     test_recipient: RecipientRead,
     mocker: MockerFixture,
+    email_sender: FakeEmailSender,
 ):
     """Tests a recipient who has never been emailed is not sent a health check, as there is no last email
     to count from."""
     recipient_no_email = test_recipient.model_copy(update={"last_email_at": None})
     mock_send_notification = mocker.patch("app.scheduler.send_notification")
 
-    _send_health_check_if_no_change(recipient_no_email)
+    _send_health_check_if_no_change(recipient_no_email, [], email_sender)
 
     mock_send_notification.assert_not_called()
 
@@ -78,6 +80,7 @@ def test_send_health_check_if_no_change_counts_from_start_of_day_last_emailed(
     last_email_at: datetime,
     now: datetime,
     expected_sent: bool,
+    email_sender: FakeEmailSender,
 ):
     """Tests a weekly health check is sent from the seventh day after the day of the last email, so it is
     not delayed a day because the last email went out later in the day than this run."""
@@ -85,10 +88,28 @@ def test_send_health_check_if_no_change_counts_from_start_of_day_last_emailed(
     _freeze_now(mocker, now)
     mock_send_notification = mocker.patch("app.scheduler.send_notification")
 
-    _send_health_check_if_no_change(recipient)
+    _send_health_check_if_no_change(recipient, [], email_sender)
 
-    expected_calls = [call(recipient.email, report=HEALTH_CHECK_REPORT, subject="Health Check")]
-    assert mock_send_notification.call_args_list == (expected_calls if expected_sent else [])
+    assert [call.args[0] for call in mock_send_notification.call_args_list] == (
+        [recipient.email] if expected_sent else []
+    )
+
+
+def test_health_check_says_when_a_website_needs_attention(
+    test_recipient: RecipientRead,
+    mocker: MockerFixture,
+    email_sender: FakeEmailSender,
+):
+    """Tests a health check does not say all is well while one of the recipient's websites is switched off."""
+    overdue = test_recipient.model_copy(update={"last_email_at": datetime.now() - timedelta(days=30)})
+    switched_off = make_website(active=False, deactivated_reason=DeactivationReason.TOO_LARGE)
+    mocker.patch("app.scanner._record_email_sent")
+
+    _send_health_check_if_no_change(overdue, [switched_off], email_sender)
+
+    [health_check] = email_sender.sent
+    assert health_check.subject == "Health check: 1 of 1 website needs attention"
+    assert "too many pages to crawl" in health_check.html_body
 
 
 # ======================================
@@ -110,12 +131,12 @@ async def test_scan_then_send_health_checks_reads_recipients_after_scanning(
         calls.append("read_recipients")
         return [test_recipient]
 
-    mocker.patch("app.scheduler.scan_all_websites", side_effect=lambda: calls.append("scan"))
+    def record(step: str) -> Callable[..., None]:
+        return lambda *args, **kwargs: calls.append(step)
+
+    mocker.patch("app.scheduler.scan_all_websites", side_effect=record("scan"))
     mocker.patch.object(RecipientService, "get_all_with_websites", side_effect=read_recipients)
-    mocker.patch(
-        "app.scheduler._send_health_check_if_no_change",
-        side_effect=lambda recipient: calls.append("health_check"),  # pyright: ignore[reportUnknownLambdaType]
-    )
+    mocker.patch("app.scheduler._send_health_check_if_no_change", side_effect=record("health_check"))
 
     await _scan_then_send_health_checks()
 
@@ -160,8 +181,7 @@ async def test_scan_then_send_health_checks_continues_after_a_failed_send(
 
     await _scan_then_send_health_checks()
 
-    assert mock_health_check.call_count == 2
-    mock_health_check.assert_called_with(other_recipient)
+    assert [call.args[0] for call in mock_health_check.call_args_list] == [test_recipient, other_recipient]
 
 
 @pytest.mark.anyio

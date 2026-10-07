@@ -4,13 +4,13 @@ from collections.abc import Awaitable, Iterable, Iterator
 
 import httpx2
 
-from app.backend.utils.http_client import fetch_content_from_url
-from app.backend.utils.links import (
+from app.backend.links import (
     extract_links_from_html,
     is_internal_web_page,
     normalise_url,
     page_key,
 )
+from app.backend.page_fetcher import fetch_content_from_url
 from app.core.errors import TrafficError, WebConnectionError, WebsiteTooLargeError
 
 logger = logging.getLogger(__name__)
@@ -112,6 +112,20 @@ async def _gather_or_cancel[T](awaitables: Iterable[Awaitable[T]]) -> list[T]:
         raise
 
 
+def _pages_left_to_visit(queue: list[str], visited: dict[str, str]) -> bool:
+    """The crawl only stops with pages left to visit when it has reached the limit. Queued links that
+    were already reached by following a redirect from another link are not counted as left to visit.
+
+    Args:
+        queue (list[str]): the queue of pages to visit
+        visited (dict[str, str]): the visited pages
+
+    Returns:
+        bool: true there there are pages left to visit
+    """
+    return any(page_key(link) not in visited for link in queue)
+
+
 async def crawl_site(
     client: httpx2.AsyncClient,
     url: str,
@@ -195,9 +209,8 @@ async def crawl_site(
                 f"Site-wide block detected: Encountered {batch_403_count} 403 Forbidden responses in a single batch."
             )
             raise TrafficError(url, 403)
-    # The crawl only stops with pages left to visit when it has reached the limit. Queued links that
-    # were already reached by following a redirect from another link are not counted as left to visit.
-    if any(page_key(link) not in visited for link in queue):
+
+    if _pages_left_to_visit(queue, visited):
         raise WebsiteTooLargeError(url, max_pages)
 
     logger.info(f"Crawl completed. Exhausted all discoverable links. Total visited: {len(visited)}")

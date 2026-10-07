@@ -5,7 +5,7 @@ a = Analysis(
     ['inwebstigator.py'],
     pathex=[],
     binaries=[],
-    datas=[('app/frontend', 'app/frontend')],
+    datas=[('app/frontend', 'app/frontend'), ('app/backend/email_service/templates', 'app/backend/email_service/templates')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

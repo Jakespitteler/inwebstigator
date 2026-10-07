@@ -1,25 +1,12 @@
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
-from difflib import SequenceMatcher
 from typing import Protocol
-from urllib.parse import urlsplit
 
 from markupsafe import Markup, escape
 
-from app.db.utils.field_types import URLString
-
-
-def website_name(url: str) -> str:
-    """Display the hostname, including its domain ending, without a leading www."""
-    try:
-        hostname = (urlsplit(url).hostname or "").rstrip(".")
-    except ValueError:
-        return "Website"
-    if not hostname:
-        return "Website"
-
-    return hostname.removeprefix("www.")
+from app.backend.diff_checker.word_diff import DiffWord, WordChange, WordDiff, diff_words
+from app.models.field_types import URLString
 
 
 def format_timestamp(moment: datetime) -> str:
@@ -120,28 +107,32 @@ def newest_first[RecordT: ChangeRecord](records: Iterable[RecordT]) -> list[Reco
     return sorted(records, key=lambda record: record.changed_at or datetime.min, reverse=True)
 
 
+def _word_html(word: DiffWord) -> Markup:
+    """Shows one word of an edited block, highlighted if it was added or removed.
+
+    Args:
+        word: The word and how it changed.
+
+    Returns:
+        The escaped word, wrapped in a highlight span if it changed.
+    """
+    if word.change is WordChange.SAME:
+        return escape(word.text)
+    return Markup(f'<span class="{word.change}-word">{escape(word.text)}</span>')
+
+
 def build_word_diff(old_text: str, new_text: str) -> tuple[Markup, Markup]:
-    old_words: list[str] = old_text.split()
-    new_words: list[str] = new_text.split()
+    """Shows the old and new text of an edited block with the removed and added words highlighted.
 
-    matcher = SequenceMatcher(None, old_words, new_words, autojunk=False)
+    Args:
+        old_text: The block's text before the edit.
+        new_text: The block's text after the edit.
 
-    old_parts: list[str] = []
-    new_parts: list[str] = []
-
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        if tag == "equal":
-            old_parts.extend(escape(word) for word in old_words[i1:i2])
-            new_parts.extend(escape(word) for word in new_words[j1:j2])
-
-        elif tag == "delete":
-            old_parts.extend(Markup(f'<span class="removed-word">{escape(word)}</span>') for word in old_words[i1:i2])
-
-        elif tag == "insert":
-            new_parts.extend(Markup(f'<span class="added-word">{escape(word)}</span>') for word in new_words[j1:j2])
-
-        elif tag == "replace":
-            old_parts.extend(Markup(f'<span class="removed-word">{escape(word)}</span>') for word in old_words[i1:i2])
-            new_parts.extend(Markup(f'<span class="added-word">{escape(word)}</span>') for word in new_words[j1:j2])
-
-    return (Markup(" ").join(old_parts), Markup(" ").join(new_parts))
+    Returns:
+        The old text and the new text as safe HTML.
+    """
+    word_diff: WordDiff = diff_words(old_text, new_text)
+    return (
+        Markup(" ").join(_word_html(word) for word in word_diff.old_words),
+        Markup(" ").join(_word_html(word) for word in word_diff.new_words),
+    )

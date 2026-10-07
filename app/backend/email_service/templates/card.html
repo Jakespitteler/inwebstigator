@@ -1,0 +1,6 @@
+<div class="email-container">
+<h2 class="header-title{% if severity %} {{ severity }}{% endif %}">{% block title %}{% endblock %}</h2>
+{% block content %}{% endblock %}
+<hr class="divider">
+<p class="footer-text">This is an automated message.</p>
+</div>

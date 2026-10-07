@@ -4,7 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 
 from app.core.config import config
-from app.db.utils.field_types import EmailString
+from app.models.field_types import EmailString
 
 DEFAULT_DAYS_BETWEEN_HEALTH_CHECKS: float = config.scheduler_default_days_between_health_checks
 

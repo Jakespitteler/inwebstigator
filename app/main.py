@@ -10,11 +10,11 @@ from app.core.errors import (
     ScanCancelledError,
     WebConnectionError,
 )
-from app.core.logging import setup_logging
+from app.core.logging_setup import setup_logging
 from app.core.paths import resource_path
-from app.db.core import engine
 from app.db.migrations import add_missing_columns
 from app.db.schema import Base
+from app.db.session import engine
 from app.frontend.api import routers
 from app.scheduler import schedule_scans
 
