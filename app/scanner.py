@@ -301,7 +301,7 @@ async def scan_all_websites(ignore_schedule: bool = False) -> str | None:
 
     with db_context() as session:
         website_service = WebsiteService(session)
-        websites: Sequence[WebsiteRead] = website_service.get_all()
+        websites: Sequence[WebsiteRead] = website_service.get_all(limit=None)
 
     run_started_at = datetime.now()
     reports_by_recipient: dict[EmailString, list[str]] = defaultdict(list)

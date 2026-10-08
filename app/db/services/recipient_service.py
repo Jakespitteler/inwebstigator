@@ -23,12 +23,13 @@ class RecipientService(CRUDService[RecipientRead, RecipientCreate, RecipientUpda
         """
         self._db = session
 
-    def get_all(self, skip: int = 0, limit: int = 100) -> Sequence[RecipientRead]:
+    def get_all(self, skip: int = 0, limit: int | None = 100) -> Sequence[RecipientRead]:
         """Retrieves a paginated list of recipient records from the database.
 
         Args:
             skip: The number of initial records to skip for pagination. Defaults to 0.
-            limit: The maximum number of records to return. Defaults to 100.
+            limit: The maximum number of records to return, or None to return them all. Defaults to 100,
+                which suits paging through the API; anything that must see every record passes None.
 
         Returns:
             A sequence of RecipientRead models representing the retrieved records.
