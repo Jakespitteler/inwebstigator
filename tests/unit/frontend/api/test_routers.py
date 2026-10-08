@@ -195,10 +195,13 @@ def _last_scan_by_website(api_client: TestClient) -> dict[str, str]:
     response = api_client.get("/")
     assert response.status_code == 200, response.text
     cards = BeautifulSoup(response.text, "html.parser").select(".website-card")
-    return {
-        card.select_one(".website-url")["href"]: " ".join(card.select_one(".last-scan").get_text().split())  # type: ignore
-        for card in cards
-    }
+    scan_times = {}
+    for card in cards:
+        button = card.select_one(".run-scan-button")
+        timestamp = card.select_one(".last-scan")
+        assert button is not None and timestamp is not None
+        scan_times[str(button["data-website-url"])] = " ".join(timestamp.get_text().split())
+    return scan_times
 
 
 def test_dashboard_shows_each_websites_own_scan_time(api_client: TestClient, session: Session) -> None:
@@ -213,9 +216,9 @@ def test_dashboard_shows_each_websites_own_scan_time(api_client: TestClient, ses
     session.flush()
 
     assert _last_scan_by_website(api_client) == {
-        "https://older.example.com": "Last scanned: 28 Sep 2026, 09:05",
-        "https://newer.example.com": "Last scanned: 01 Oct 2026, 14:30",
-        "https://never-scanned.example.com": "Last scanned: Not scanned yet",
+        "https://older.example.com": "Last scanned 28 Sep 2026, 09:05",
+        "https://newer.example.com": "Last scanned 01 Oct 2026, 14:30",
+        "https://never-scanned.example.com": "Not scanned yet",
     }
 
 
@@ -295,7 +298,7 @@ def test_manual_scan_records_scan_time(
     last_scan_at = website.last_scan_at
     assert last_scan_at is not None and last_scan_at >= before
     assert _last_scan_by_website(api_client)[test_website.url] == (
-        f"Last scanned: {last_scan_at:%d %b %Y, %H:%M}"
+        f"Last scanned {last_scan_at:%d %b %Y, %H:%M}"
     )
 
 
@@ -459,10 +462,10 @@ def test_dashboard_explains_inactive_websites_only_have_critical_pages_scanned(
     assert "Only its critical pages are checked" in switched_off_notice
 
     for url in ["https://too-large.example.com", "https://switched-off.example.com"]:
-        assert _run_scan_button_text(api_client, url) == "Scan Critical Pages Now"
+        assert _run_scan_button_text(api_client, url) == "Scan critical pages"
     for url in ["https://active.example.com", "https://reactivated.example.com"]:
         assert _website_notice(api_client, url) is None
-        assert _run_scan_button_text(api_client, url) == "Run Scan Now"
+        assert _run_scan_button_text(api_client, url) == "Run scan"
 
 
 def test_scan_settings_explain_what_inactive_means(api_client: TestClient, test_website: website_models.WebsiteRead):
@@ -536,7 +539,7 @@ def test_adding_a_known_email_is_emailed_without_waiting_for_a_bounce(
     test_website: website_models.WebsiteRead,
     mocker: MockerFixture,
 ) -> None:
-    """Tests an address that is already a recipient is only emailed, while a new address is also checked for a bounce."""
+    """Known recipients are emailed directly; new addresses are also checked for a bounce."""
     session.add(DBRecipient(email="known@example.com"))
     session.flush()
     mock_confirm = mocker.patch("app.frontend.api.routers.confirm_address_can_receive_email")
@@ -552,3 +555,30 @@ def test_adding_a_known_email_is_emailed_without_waiting_for_a_bounce(
     mock_confirm.assert_called_once()
     assert mock_confirm.call_args.args[0] == "new@example.com"
 
+
+
+def test_hosted_names_are_used_in_compact_cards_and_updates(api_client: TestClient, session: Session) -> None:
+    url = "https://webloom-two.vercel.app/test-site"
+    session.add(DBWebsite(
+        url=url,
+        critical_pages=[DBCriticalPage(
+            url=url,
+            text_body='<title>Webloom Two</title>',
+            recent_links_added=["https://webloom-two.vercel.app/new"],
+        )],
+    ))
+    session.flush()
+    response = api_client.get("/")
+    assert response.status_code == 200
+    dashboard = BeautifulSoup(response.text, "html.parser")
+    card = dashboard.select_one(".website-card")
+    update = dashboard.select_one(".website-change-record")
+    assert card is not None and update is not None
+    assert card.select_one(".website-name").get_text(strip=True) == "Webloom Two - Test Site"
+    assert update.select_one(".website-name").get_text(strip=True) == "Webloom Two - Test Site"
+    assert card["data-website-name"] == "Webloom Two - Test Site"
+    metadata = card.select_one(".website-meta")
+    assert metadata is not None
+    assert metadata.select_one(".website-url")["href"] == url
+    assert metadata.select_one(".website-url").get_text(strip=True) == "/test-site"
+    assert metadata.select_one(".last-scan").get_text(strip=True) == "Not scanned yet"

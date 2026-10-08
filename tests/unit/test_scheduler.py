@@ -105,7 +105,7 @@ async def test_scan_then_send_health_checks_reads_recipients_after_scanning(
     recipient is not told nothing has changed just after being told what did."""
     calls: list[str] = []
 
-    def read_recipients() -> list[RecipientRead]:
+    def read_recipients(limit: int | None = 100) -> list[RecipientRead]:
         calls.append("read_recipients")
         return [test_recipient]
 

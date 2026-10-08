@@ -63,7 +63,7 @@ templates.env.filters["scan_time"] = scan_time  # pyright: ignore[reportUnknownM
 
 @ROOT_ROUTER.get("/")
 def get_dashboard(session: SessionDep, request: Request):
-    websites: Sequence[WebsiteRead] = WebsiteService(session).get_all()
+    websites: Sequence[WebsiteRead] = WebsiteService(session).get_all(limit=None)
 
     website_names: dict[str, str] = {}
     for website in websites:

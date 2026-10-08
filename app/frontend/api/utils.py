@@ -32,7 +32,12 @@ def website_name(url: str, html: str | None = None) -> str:
     labels = hostname.removeprefix("www.").split(".")
     # Common country-code endings, e.g. uwa.edu.au and bbc.co.uk.
     country_categories = {"ac", "asn", "co", "com", "edu", "gov", "id", "mil", "net", "org"}
-    if len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in country_categories:
+    # These providers host separate sites on subdomains; name the tenant, not the provider.
+    hosting_domains = {"vercel.app", "github.io", "netlify.app"}
+    if len(labels) >= 3 and (
+        ".".join(labels[-2:]) in hosting_domains
+        or (len(labels[-1]) == 2 and labels[-2] in country_categories)
+    ):
         name = labels[-3]
     else:
         name = labels[-2] if len(labels) > 1 else labels[0]

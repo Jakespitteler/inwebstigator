@@ -35,3 +35,27 @@ def test_scan_time(value: datetime | None, expected: str):
 )
 def test_website_name_includes_path(url, html, expected):
     assert website_name(url, html) == expected
+
+
+@pytest.mark.parametrize(
+    ("url", "html", "expected"),
+    [
+        ("https://webloom-two.vercel.app/test-site", None, "Webloom Two - Test Site"),
+        ("https://aria.github.io/", None, "Aria"),
+        ("https://another-user.github.io/project/", None, "Another User - Project"),
+        ("https://my-site.netlify.app/news/", None, "My Site - News"),
+        ("https://www.my-site.netlify.app/", None, "My Site"),
+        ("https://preview.my-site.netlify.app/", None, "My Site"),
+        ("https://vercel.app/", None, "Vercel"),
+        ("https://notvercel.app/", None, "Notvercel"),
+        ("https://aria.github.io.example.com/", None, "Example"),
+        ("https://uwa.github.io/study/", "<title>UWA | Study</title>", "UWA - Study"),
+        (
+            "https://webloom-two.vercel.app/test-site",
+            '<meta property="og:site_name" content="Webloom Two">',
+            "Webloom Two - Test Site",
+        ),
+    ],
+)
+def test_website_name_uses_hosted_site_identity(url, html, expected):
+    assert website_name(url, html) == expected
