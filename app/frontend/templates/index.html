@@ -2491,11 +2491,14 @@
                         const cancelled =
                             await response.json();
 
+                        if (!cancelled) {
+                            window.location.reload();
+                            return;
+                        }
+
                         message.classList.remove("is-busy");
                         message.textContent =
-                            cancelled
-                                ? "Scan cancelled."
-                                : "The scan had already finished. Refresh the page to see the results.";
+                            "Scan cancelled.";
 
                         button.hidden = true;
                         card.querySelector(".run-scan-button").disabled = false;
