@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Table,
@@ -56,8 +57,11 @@ class DBRecipient(Base):
 
 class DBInternalLink(Base):
     __tablename__ = "internal_links"
+    # A link is unique within its website, not across every website: websites can overlap
+    # (e.g. uwa.edu.au and uwa.edu.au/news), so both can have the same page as an internal link
+    __table_args__ = (Index("uq_internal_link_url_website", "url", "website_id", unique=True),)
 
-    url: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    url: Mapped[str] = mapped_column(String, nullable=False, index=True)
     website_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("websites.id", ondelete="CASCADE"), nullable=False)
     website: Mapped["DBWebsite"] = relationship(back_populates="internal_links")
 
