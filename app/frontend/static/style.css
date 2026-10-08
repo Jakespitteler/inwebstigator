@@ -713,19 +713,20 @@ a.change-item-text {
 }
 
 .website-card h4 {
-    margin: 22px 0 10px;
-    font-size: 12px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--text-tertiary);
+    margin: 20px 0 8px;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0;
+    color: var(--text-secondary);
 }
 
 .website-summary {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
     gap: 8px;
-    margin-top: 12px;
+    margin-top: 16px;
 }
 
 .website-summary p {
@@ -756,7 +757,23 @@ a.change-item-text {
 }
 
 .website-card .website-identity h3 {
-    margin: 0 0 4px;
+    margin: 0 0 2px;
+}
+
+/* The website's path and when it was last scanned, on one line under its name */
+.website-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 6px;
+    margin: 0;
+    font-size: 13.5px;
+    color: var(--text-tertiary);
+}
+
+.website-meta .last-scan {
+    margin: 0;
+    font-size: inherit;
 }
 
 .website-name {
@@ -781,7 +798,7 @@ a.change-item-text {
 }
 
 .website-card .delete-website-button {
-    margin-top: 14px;
+    gap: 6px;
 }
 
 /* Explains that an inactive website only has its critical pages scanned, and why it is inactive */
@@ -991,10 +1008,10 @@ a.change-item-text {
 .recipient-list {
     list-style: none;
     padding: 0;
-    margin: 10px 0 20px;
+    margin: 0 0 8px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
 }
 
 .critical-page-list li,
@@ -1003,7 +1020,7 @@ a.change-item-text {
     justify-content: space-between;
     align-items: center;
     gap: 15px;
-    padding: 10px 12px;
+    padding: 6px 8px 6px 14px;
     background: var(--content-bg);
     border: 1px solid var(--content-border);
     border-radius: var(--radius-md);
@@ -1282,6 +1299,72 @@ button:disabled {
 }
 
 
+/* COMPACT WEBSITE CARD */
+
+/* "None yet" reads as plain text in a website card, not a boxed empty state */
+.website-card .empty-state {
+    margin: 0 0 8px;
+    padding: 0;
+    font-size: 14px;
+    color: var(--text-tertiary);
+    background: none;
+    border: none;
+}
+
+/* Delete buttons in a card's lists are a plain cross that only turns red on hover */
+.website-card .icon-button {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    color: var(--text-tertiary);
+    background: none;
+    border: 1px solid transparent;
+}
+
+.website-card .icon-button:hover {
+    color: var(--danger-text);
+    background: var(--danger-bg);
+    border-color: var(--danger-border);
+}
+
+/* Add a critical page or email: a "+" button beside the input, on one line */
+.inline-add-form {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: 6px 10px;
+    margin-top: 0;
+}
+
+.inline-add-form button {
+    width: 42px;
+    height: 42px;
+    margin-top: 0;
+    padding: 0;
+    color: var(--text-primary);
+    background: var(--control-bg);
+    border: 1px solid var(--control-border);
+    box-shadow: var(--control-shadow);
+}
+
+.inline-add-form button:hover {
+    background: var(--control-bg-hover);
+    transform: translateY(-1px);
+    box-shadow: var(--control-shadow);
+}
+
+.inline-add-form p {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.inline-add-form p:empty {
+    display: none;
+}
+
+
 /* SCAN SETTINGS */
 
 .scan-settings {
@@ -1464,6 +1547,35 @@ button:disabled {
 /* Sits between the websites header and the cards, so needs space below rather than above */
 .run-all-scans-message {
     margin: 0 0 16px;
+}
+
+/* Tells people they can close the window while scans run */
+.background-scan-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 0 0 16px;
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    background: var(--accent-light);
+    border: 1px solid var(--border-md);
+    border-radius: var(--radius-md);
+}
+
+[data-theme="dark"] .background-scan-note {
+    background: var(--content-bg);
+}
+
+.background-scan-note[hidden] {
+    display: none;
+}
+
+.background-scan-note svg {
+    flex-shrink: 0;
+    margin-top: 1px;
+    color: var(--link);
 }
 
 #website-form-message:empty,
@@ -1729,4 +1841,10 @@ button:disabled {
 .confirm-dialog-confirm:disabled {
     opacity: 0.45;
     cursor: not-allowed;
+}
+
+.confirm-dialog .confirm-dialog-error {
+    margin-top: 6px;
+    font-size: 13px;
+    color: var(--danger-text);
 }
