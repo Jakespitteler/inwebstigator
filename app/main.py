@@ -9,11 +9,12 @@ from app.core.errors import (
     ScanAlreadyQueuedError,
     ScanCancelledError,
     WebConnectionError,
+    WebsiteAlreadyMonitoredError,
 )
 from app.core.logging import setup_logging
 from app.core.paths import resource_path
 from app.db.core import engine
-from app.db.migrations import add_missing_columns
+from app.db.migrations import add_missing_columns, update_indexes
 from app.db.schema import Base
 from app.frontend.api import routers
 from app.scheduler import schedule_scans
@@ -22,6 +23,7 @@ setup_logging()
 
 Base.metadata.create_all(bind=engine)
 add_missing_columns(engine, Base.metadata)  # Brings databases made by older versions of the app up to date
+update_indexes(engine, Base.metadata)
 if config.automatic_scans:
     app = FastAPI(title=config.app_name, lifespan=schedule_scans)
 else:
@@ -97,6 +99,24 @@ async def scan_not_run_handler(request: Request, exc: ScanAlreadyQueuedError | S
     Args:
         request: The incoming request.
         exc: The ScanAlreadyQueuedError or ScanCancelledError exception.
+
+    Returns:
+        A JSONResponse with a 409 status.
+    """
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={"detail": str(exc)},
+    )
+
+
+@app.exception_handler(WebsiteAlreadyMonitoredError)
+async def website_already_monitored_handler(request: Request, exc: WebsiteAlreadyMonitoredError):
+    """
+    Handles WebsiteAlreadyMonitoredError exceptions by returning a 409 status, with a message the dashboard shows.
+
+    Args:
+        request: The incoming request.
+        exc: The WebsiteAlreadyMonitoredError exception.
 
     Returns:
         A JSONResponse with a 409 status.

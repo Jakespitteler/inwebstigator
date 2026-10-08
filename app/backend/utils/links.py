@@ -197,6 +197,22 @@ def resolve_critical_page_url(website_url: str, page_url: str) -> str:
     return full_page_url
 
 
+def same_page_key(url: str) -> tuple[str, str, str]:
+    """Returns what identifies a web page, however its address is written.
+
+    Addresses for the same page match whether they use http or https, have "www." or not,
+    use upper or lower case in the domain, or end with a "/".
+
+    Args:
+        url: The address of the page.
+
+    Returns:
+        The page's website, path and query, to compare with another page's key.
+    """
+    parsed: ParseResult = urlparse(normalise_url(url.strip()))
+    return _site_host(parsed.netloc), parsed.path, parsed.query
+
+
 def normalise_url(url: str) -> str:
     """Normalises a URL by removing fragments and trailing slashes for deduplication.
 

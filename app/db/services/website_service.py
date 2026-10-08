@@ -3,10 +3,12 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime, timedelta
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.backend.utils.links import same_page_key
 from app.core.config import config
-from app.core.errors import NotFoundError
+from app.core.errors import NotFoundError, WebsiteAlreadyMonitoredError
 from app.db import repository
 from app.db.schema import DBWebsite
 from app.db.services.critical_page_service import CriticalPageService
@@ -68,6 +70,9 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
     def get_by_url(self, url: str) -> WebsiteRead:
         """Retrieves a single website record and its relationships matching a URL.
 
+        The URL matches however it is written, e.g. with or without "www.", a trailing "/",
+        or http instead of https, so the same website is never treated as two.
+
         Args:
             url: The target URL string of the website.
 
@@ -77,18 +82,13 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         Raises:
             NotFoundError: If no matching website record exists for the provided URL.
         """
-        website_records: Sequence[DBWebsite] = repository.get_list(
-            self._db,
-            table=DBWebsite,
-            attributes={"url": url},
-            relations=[DBWebsite.internal_links, DBWebsite.critical_pages],
-            limit=1,
-        )
+        url_key = same_page_key(url)
+        # Only the ids and URLs are loaded to search, as a website's internal links can number thousands
+        for website_id, website_url in self._db.execute(select(DBWebsite.id, DBWebsite.url)).all():
+            if same_page_key(website_url) == url_key:
+                return self.get(website_id)
 
-        if not website_records:
-            raise NotFoundError(attributes={"url": url})
-
-        return WebsiteRead.model_validate(website_records[0])
+        raise NotFoundError(attributes={"url": url})
 
     def create(self, model_create: WebsiteCreate) -> WebsiteRead:
         """Creates and persists a new website record along with any associated critical pages.
@@ -100,8 +100,16 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
             The created WebsiteRead data model instance reflecting saved state.
 
         Raises:
+            WebsiteAlreadyMonitoredError: If the website is already being monitored, even if written differently.
             IntegrityError: If the record violates database constraints or already exists.
         """
+        try:
+            existing_website: WebsiteRead = self.get_by_url(model_create.url)
+        except NotFoundError:
+            pass
+        else:
+            raise WebsiteAlreadyMonitoredError(existing_website.url)
+
         website_record: DBWebsite = DBWebsite(**model_create.model_dump(exclude={"critical_pages", "recipient_emails"}))
         repository.add(self._db, record=website_record)
 
