@@ -1,0 +1,65 @@
+{# One website's card in the Updates tab, holding a card for each of its most recent scans. #}
+{# Needs `website_record` and `website_index`. #}
+
+<!-- One card per website, holding a card for each of its most recent scans -->
+<section
+    class="change-record website-change-record"
+    data-collapsible
+    data-card-key="website-update:{{ website_record.website_url }}"
+    data-card-name="{{ website_record.website_url | string | website_name }}"
+>
+
+    <div class="change-record-header card-header">
+        <div class="change-record-identity">
+            <h3 class="website-name">{{ website_record.website_url | string | website_name }}</h3>
+            <a
+                class="website-url"
+                href="{{ website_record.website_url }}"
+                target="_blank"
+                rel="noopener noreferrer"
+            >
+                {{ website_record.website_url }}
+            </a>
+
+            <!-- How recent scans went, so a collapsed website still says whether it is worth opening -->
+            <p class="change-summary">
+                <time class="change-time" datetime="{{ website_record.last_scanned_at.isoformat() }}">
+                    Last scanned {{ website_record.last_scanned_at | format_timestamp }}
+                </time>
+                {% set scan_count = website_record.scans | length %}
+                {% set scans_with_details = website_record.scans_with_details %}
+                {% if scans_with_details %}
+                    <span>{{ scans_with_details }} of {{ scan_count }} scan{{ "s" if scan_count != 1 }} found changes</span>
+                {% else %}
+                    <span>No changes in {{ "the last " ~ scan_count ~ " scans" if scan_count != 1 else "its only scan" }}</span>
+                {% endif %}
+            </p>
+        </div>
+
+        <button
+            type="button"
+            class="card-toggle"
+            aria-expanded="false"
+            aria-controls="website-updates-{{ website_index }}"
+            aria-label="Show details for {{ website_record.website_url | string | website_name }}"
+        >
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </button>
+    </div>
+
+    <!-- The website's scans are hidden until the website is expanded -->
+    <div class="card-body" id="website-updates-{{ website_index }}" hidden>
+
+    {% for scan in website_record.scans %}
+
+        {% set scan_index = loop.index %}
+        {% include "updates/scan_card.html" %}
+
+    {% endfor %}
+
+    </div>
+
+</section>

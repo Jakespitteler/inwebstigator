@@ -1,0 +1,73 @@
+/* The frosted glass look of the cards. */
+
+
+/* GLASS CARDS */
+
+.change-record,
+.website-card,
+#add-website-form {
+    position: relative;
+    overflow: hidden;
+    color: var(--text-primary);
+    background: var(--surface);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(1.04);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(1.04);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: var(--card-shadow);
+    animation: fadeSlideUp 0.5s ease both;
+    transition: box-shadow 0.28s ease, border-color 0.28s ease;
+}
+
+/* Top-edge specular - clean highlight, signature of liquid glass */
+.dashboard-header::before,
+.change-record::before,
+.website-card::before,
+#add-website-form::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        var(--glass-shimmer-b) 15%,
+        rgba(255, 255, 255, 0.95) 50%,
+        var(--glass-shimmer-a) 85%,
+        transparent 100%
+    );
+    pointer-events: none;
+    z-index: 1;
+}
+
+[data-theme="dark"] .dashboard-header::before,
+[data-theme="dark"] .change-record::before,
+[data-theme="dark"] .website-card::before,
+[data-theme="dark"] #add-website-form::before {
+    opacity: 0.55;
+}
+
+.change-record:hover,
+.website-card:hover {
+    box-shadow: var(--card-shadow-hover);
+}
+
+[data-theme="dark"] .change-record:hover,
+[data-theme="dark"] .website-card:hover {
+    border-color: rgba(180, 140, 255, 0.22);
+}
+
+@keyframes fadeSlideUp {
+    from {
+        opacity: 0;
+        transform: translateY(16px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

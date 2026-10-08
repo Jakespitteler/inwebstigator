@@ -26,7 +26,10 @@ def _is_known_recipient(email: str) -> bool:
 
 
 async def confirm_addresses_can_receive_email(
-    emails: Sequence[str], subject: str, html_body: str, email_sender: EmailSender
+    emails: Sequence[str],
+    subject: str,
+    html_body: str,
+    email_sender: EmailSender,
 ) -> None:
     """Emails each address to confirm it, so an address that bounces is not added.
 

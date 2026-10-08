@@ -1,0 +1,124 @@
+/* The website cards on the Websites tab: their name, address and notices. */
+
+
+/* MONITORED WEBSITES */
+
+.websites-section {
+    margin-top: 44px;
+    padding-top: 28px;
+    border-top: 1px solid var(--border-md);
+}
+
+.website-card h3 {
+    margin: 0 0 14px;
+    font-size: 18px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.website-card h4 {
+    margin: 20px 0 8px;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0;
+    color: var(--text-secondary);
+}
+
+.website-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.website-summary p {
+    margin: 0;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    background: var(--content-bg);
+    border: 1px solid var(--content-border);
+    box-shadow: var(--content-shadow);
+}
+
+
+/* WEBSITE CARD HEADER */
+
+.website-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px 20px;
+}
+
+.website-identity {
+    flex: 1 1 220px;
+    min-width: 0;
+}
+
+.website-card .website-identity h3 {
+    margin: 0 0 2px;
+}
+
+/* The website's path and when it was last scanned, on one line under its name */
+.website-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 6px;
+    margin: 0;
+    font-size: 13.5px;
+    color: var(--text-tertiary);
+}
+
+.website-meta .last-scan {
+    margin: 0;
+    font-size: inherit;
+}
+
+.website-name {
+    font-family: var(--font-display);
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.change-record .website-name {
+    margin: 0 0 10px;
+    font-size: 18px;
+}
+
+.website-url {
+    font-size: 13.5px;
+    font-weight: 400;
+    color: var(--text-tertiary);
+}
+
+.website-url:hover {
+    color: var(--link);
+}
+
+.website-card .delete-website-button {
+    gap: 6px;
+}
+
+/* Explains that an inactive website only has its critical pages scanned, and why it is inactive */
+.website-notice {
+    margin: 14px 0 0;
+    padding: 10px 14px;
+    font-size: 13.5px;
+    color: var(--text-secondary);
+    background: var(--accent-light);
+    border: 1px solid var(--border-md);
+    border-radius: var(--radius-md);
+}
+
+/* The app deactivated the website itself, e.g. it is too large to scan */
+.website-notice-warning {
+    color: var(--danger-text);
+    background: var(--danger-bg);
+    border-color: var(--danger-border);
+}

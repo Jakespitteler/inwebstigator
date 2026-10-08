@@ -1,0 +1,318 @@
+{# One critical page's changes in a scan: its text, links and documents that changed. #}
+{# Needs `record` (the page's changes), `scan_key`, `website_index`, `scan_index` and `page_index`. #}
+
+{% set text_count = record.changed | length + record.added | length + record.removed | length %}
+{% set link_count = record.links_added | length + record.links_removed | length %}
+{% set document_count = record.documents_added | length + record.documents_removed | length %}
+
+<section
+    class="change-record page-change-record"
+    data-collapsible
+    data-card-key="update:{{ scan_key }}:{{ record.url }}"
+    data-card-name="{{ record.url }}"
+>
+
+    <div class="change-record-header card-header">
+        <div class="change-record-identity">
+            <p class="page-url">
+                <a href="{{ record.url }}" target="_blank" rel="noopener noreferrer">
+                    {{ record.url }}
+                </a>
+            </p>
+
+            <!-- What changed, so a collapsed record still says whether it is worth opening -->
+            <p class="change-summary">
+                {% if record.failure_reason %}
+                    <span class="scan-problem">Unreachable</span>
+                {% endif %}
+                {% if text_count %}
+                    <span>{{ text_count }} text change{{ "s" if text_count != 1 }}</span>
+                {% endif %}
+                {% if link_count %}
+                    <span>{{ link_count }} link{{ "s" if link_count != 1 }}</span>
+                {% endif %}
+                {% if document_count %}
+                    <span>{{ document_count }} document{{ "s" if document_count != 1 }}</span>
+                {% endif %}
+            </p>
+        </div>
+
+        <button
+            type="button"
+            class="card-toggle"
+            aria-expanded="false"
+            aria-controls="update-details-{{ website_index }}-{{ scan_index }}-{{ page_index }}"
+            aria-label="Show details for {{ record.url }}"
+        >
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </button>
+    </div>
+
+    <!-- The full changes are hidden until the record is expanded -->
+    <div class="card-body" id="update-details-{{ website_index }}-{{ scan_index }}-{{ page_index }}" hidden>
+
+        {% if record.failure_reason %}
+            <p class="website-notice website-notice-warning">
+                Could not be reached: {{ record.failure_reason }}
+                ({{ record.failure_count }} scans in a row).
+                Its last good copy is kept to compare with once it is back.
+            </p>
+        {% endif %}
+
+        <!-- Changed content -->
+        {% for change in record.changed %}
+
+            <div class="change-section">
+
+                {% if change.old_section != change.new_section %}
+
+                    <h2>Section changed</h2>
+
+                    <table class="comparison-table">
+
+                        <thead>
+                            <tr>
+                                <th>Before</th>
+                                <th>After</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            <tr>
+                                <td>
+                                    {{ change.old_section }}
+                                </td>
+
+                                <td>
+                                    {{ change.new_section }}
+                                </td>
+                            </tr>
+                        </tbody>
+
+                    </table>
+
+                {% endif %}
+
+                {% if change.old != change.new %}
+
+                    <h2>Content changed</h2>
+
+                    <table class="comparison-table">
+
+                        <thead>
+                            <tr>
+                                <th>Before</th>
+                                <th>After</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            <tr>
+                                <td>
+                                    {{ change.old_html | safe }}
+                                </td>
+
+                                <td>
+                                    {{ change.new_html | safe }}
+                                </td>
+                            </tr>
+                        </tbody>
+
+                    </table>
+
+                {% endif %}
+
+            </div>
+
+        {% endfor %}
+
+
+        <!-- Added / removed text -->
+        {% if record.added or record.removed %}
+
+            <div class="change-section">
+
+                <h2>Text</h2>
+
+                <ul class="change-list">
+
+                    {% for item in record.added %}
+
+                        <li class="change-item change-item-added">
+
+                            <div class="change-item-body">
+
+                                {% if item.section %}
+                                    <span class="change-item-section">
+                                        {{ item.section }}
+                                    </span>
+                                {% endif %}
+
+                                <span class="change-item-text">
+                                    {{ item.text if item.text is defined else item }}
+                                </span>
+
+                            </div>
+
+                            <span class="change-badge added-label">
+                                Added
+                            </span>
+
+                        </li>
+
+                    {% endfor %}
+
+                    {% for item in record.removed %}
+
+                        <li class="change-item change-item-removed">
+
+                            <div class="change-item-body">
+
+                                {% if item.section %}
+                                    <span class="change-item-section">
+                                        {{ item.section }}
+                                    </span>
+                                {% endif %}
+
+                                <span class="change-item-text">
+                                    {{ item.text if item.text is defined else item }}
+                                </span>
+
+                            </div>
+
+                            <span class="change-badge removed-label">
+                                Removed
+                            </span>
+
+                        </li>
+
+                    {% endfor %}
+
+                </ul>
+
+            </div>
+
+        {% endif %}
+
+
+        <!-- Added / removed links -->
+        {% if record.links_added or record.links_removed %}
+
+            <div class="change-section">
+
+                <h2>Links</h2>
+
+                <ul class="change-list">
+
+                    {% for link in record.links_added %}
+
+                        <li class="change-item change-item-added">
+
+                            <a
+                                class="change-item-text"
+                                href="{{ link }}"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                {{ link }}
+                            </a>
+
+                            <span class="change-badge added-label">
+                                Added
+                            </span>
+
+                        </li>
+
+                    {% endfor %}
+
+                    {% for link in record.links_removed %}
+
+                        <li class="change-item change-item-removed">
+
+                            <a
+                                class="change-item-text"
+                                href="{{ link }}"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                {{ link }}
+                            </a>
+
+                            <span class="change-badge removed-label">
+                                Removed
+                            </span>
+
+                        </li>
+
+                    {% endfor %}
+
+                </ul>
+
+            </div>
+
+        {% endif %}
+
+
+        <!-- Added / removed documents -->
+        {% if record.documents_added or record.documents_removed %}
+
+            <div class="change-section">
+
+                <h2>Documents</h2>
+
+                <ul class="change-list">
+
+                    {% for document in record.documents_added %}
+
+                        <li class="change-item change-item-added">
+
+                            <a
+                                class="change-item-text"
+                                href="{{ document }}"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                {{ (document | string).split('/')[-1] }}
+                            </a>
+
+                            <span class="change-badge added-label">
+                                Added
+                            </span>
+
+                        </li>
+
+                    {% endfor %}
+
+                    {% for document in record.documents_removed %}
+
+                        <li class="change-item change-item-removed">
+
+                            <a
+                                class="change-item-text"
+                                href="{{ document }}"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                {{ (document | string).split('/')[-1] }}
+                            </a>
+
+                            <span class="change-badge removed-label">
+                                Removed
+                            </span>
+
+                        </li>
+
+                    {% endfor %}
+
+                </ul>
+
+            </div>
+
+        {% endif %}
+
+    </div>
+
+</section>

@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from contextlib import nullcontext
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 import pytest
 from bs4 import BeautifulSoup
@@ -267,6 +268,33 @@ def test_favicon_is_the_apps_icon(api_client: TestClient) -> None:
 
     assert response.status_code == 200, response.text
     assert response.content == resource_path("app", "frontend", "static", "favicon.ico").read_bytes()
+
+
+def _dashboard_static_paths(api_client: TestClient) -> list[str]:
+    """Returns the path of each of its own stylesheets and scripts the dashboard loads, e.g. "/static/js/scans.js"."""
+    page = BeautifulSoup(api_client.get("/").text, "html.parser")
+    urls: list[str] = [
+        str(tag.get("href") or tag.get("src")) for tag in page.select('link[rel="stylesheet"], script[src]')
+    ]
+    return [urlsplit(url).path for url in urls if "/static/" in url]
+
+
+def test_every_stylesheet_and_script_the_dashboard_loads_is_served(api_client: TestClient) -> None:
+    """Tests each style and script file the dashboard asks for is found, as a missing one quietly breaks the page."""
+    for path in _dashboard_static_paths(api_client):
+        assert api_client.get(path).status_code == 200, path
+
+
+def test_the_dashboard_loads_every_stylesheet_and_script(api_client: TestClient) -> None:
+    """Tests no style or script file is left out of the dashboard, e.g. a new one that was never linked to."""
+    static_folder = resource_path("app", "frontend", "static")
+    static_files: list[str] = [
+        f"/static/{path.relative_to(static_folder).as_posix()}"
+        for path in static_folder.rglob("*")
+        if path.suffix in {".css", ".js"}
+    ]
+
+    assert sorted(_dashboard_static_paths(api_client)) == sorted(static_files)
 
 
 def test_dashboard_shows_next_scheduled_check(api_client: TestClient, mocker: MockerFixture) -> None:

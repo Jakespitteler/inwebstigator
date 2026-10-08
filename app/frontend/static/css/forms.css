@@ -1,0 +1,97 @@
+/* Form fields. */
+
+
+/* FORM FIELDS */
+
+.add-critical-page-form label,
+.add-recipient-form label,
+.scan-setting-row label,
+.form-group label {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+
+.form-group label span {
+    color: var(--text-tertiary);
+    font-weight: 400;
+}
+
+.add-critical-page-form input,
+.add-recipient-form input,
+.scan-setting-row input[type="number"],
+#website-url,
+.critical-page-input,
+.recipient-email-input,
+.guide-settings input {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--control-border);
+    border-radius: var(--radius-md);
+    background: var(--control-bg);
+    font-family: var(--font);
+    font-size: 14px;
+    color: var(--text-primary);
+    box-shadow: 0 1px 0 var(--glass-specular), 0 2px 8px rgba(0, 0, 0, 0.06);
+    transition: border-color 0.14s, background 0.20s, box-shadow 0.14s;
+}
+
+[data-theme="dark"] .add-critical-page-form input,
+[data-theme="dark"] .add-recipient-form input,
+[data-theme="dark"] .scan-setting-row input[type="number"],
+[data-theme="dark"] #website-url,
+[data-theme="dark"] .critical-page-input,
+[data-theme="dark"] .recipient-email-input,
+[data-theme="dark"] .guide-settings input {
+    box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.28);
+}
+
+input::placeholder {
+    color: var(--text-tertiary);
+    opacity: 0.75;
+}
+
+.add-critical-page-form input:focus,
+.add-recipient-form input:focus,
+.scan-setting-row input[type="number"]:focus,
+#website-url:focus,
+.critical-page-input:focus,
+.recipient-email-input:focus,
+.guide-settings input:focus {
+    outline: none;
+    border-color: var(--focus-border);
+    background: var(--control-bg-hover);
+    box-shadow: 0 0 0 3px var(--focus-ring), 0 4px 16px rgba(83, 74, 183, 0.14);
+}
+
+.critical-page-input,
+.recipient-email-input {
+    display: block;
+    margin-bottom: 10px;
+}
+
+.scan-setting-row input[type="checkbox"] {
+    margin-right: 6px;
+    accent-color: var(--accent);
+}
+
+.scan-setting-help {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--text-tertiary);
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.scan-setting-row {
+    margin-bottom: 16px;
+}
+
+.add-critical-page-form,
+.add-recipient-form {
+    margin-top: 20px;
+}

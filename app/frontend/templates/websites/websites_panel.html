@@ -1,0 +1,61 @@
+{# The Websites tab: the add website wizard and a card for each monitored website. #}
+
+<section id="websites-panel" class="tab-content" role="tabpanel"
+    aria-labelledby="websites-tab" tabindex="0">
+<!-- MONITORED WEBSITES -->
+<section class="websites-section">
+
+    <div class="websites-header">
+        <h2 class="section-title">Monitored Websites</h2>
+
+        {% if websites %}
+            <div class="websites-header-actions">
+                <!-- Scans every website, emailing each recipient one report of all the changes, as a scheduled run does -->
+                <button
+                    type="button"
+                    id="run-all-scans-button"
+                    class="run-all-scans-button"
+                >Run All Scans</button>
+
+                <button
+                    type="button"
+                    id="add-website-toggle"
+                    class="add-website-toggle"
+                    aria-expanded="false"
+                    aria-controls="add-website-form"
+                >+ Add website</button>
+            </div>
+        {% endif %}
+    </div>
+
+    <p id="run-all-scans-message" class="run-all-scans-message" aria-live="polite"></p>
+
+    <!-- Shown while any scan runs: closing the window only hides it to the tray, so scans carry on -->
+    <p id="background-scan-note" class="background-scan-note" hidden>
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/>
+            <path d="M12 11v6M12 7.5v.5" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <span>
+            You can close this window and the scan will keep running in the background.
+            Inwebstigator stays in the system tray, near the clock. To stop it completely,
+            right-click the tray icon and choose <strong>Quit</strong>.
+        </span>
+    </p>
+
+    {% include "websites/add_website_wizard.html" %}
+
+    {% if websites %}
+
+        {% for website in websites %}
+
+            {% include "websites/website_card.html" %}
+
+        {% endfor %}
+
+    {% endif %}
+
+</section>
+
+</section>

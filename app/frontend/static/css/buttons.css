@@ -1,0 +1,163 @@
+/* Buttons: primary, secondary and destructive. */
+
+
+/* BUTTONS */
+
+.add-critical-page-form button,
+.add-recipient-form button,
+.scan-settings-form button,
+.run-scan-button,
+.run-all-scans-button,
+.add-website-toggle,
+.submit-button,
+.guide-next,
+.guide-back,
+.add-website-retry,
+.add-website-dismiss,
+.add-website-refresh,
+#add-critical-page-input,
+#add-recipient-email-input,
+.cancel-scan-button,
+.delete-website-button,
+.delete-critical-page-button,
+.delete-recipient-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 9px 18px;
+    border-radius: var(--radius-md);
+    font-family: var(--font);
+    font-size: 13.5px;
+    font-weight: 500;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.add-critical-page-form button:active,
+.add-recipient-form button:active,
+.scan-settings-form button:active,
+.run-scan-button:active,
+.run-all-scans-button:active,
+.add-website-toggle:active,
+.submit-button:active,
+.guide-next:active,
+.guide-back:active,
+.add-website-retry:active,
+.add-website-dismiss:active,
+.add-website-refresh:active,
+#add-critical-page-input:active,
+#add-recipient-email-input:active,
+.cancel-scan-button:active,
+.delete-website-button:active,
+.delete-critical-page-button:active,
+.delete-recipient-button:active {
+    transform: scale(0.97);
+}
+
+button:focus-visible,
+summary:focus-visible,
+a:focus-visible {
+    outline: 2px solid var(--focus-border);
+    outline-offset: 2px;
+}
+
+button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Primary */
+.add-critical-page-form button,
+.add-recipient-form button,
+.scan-settings-form button[type="submit"],
+.run-scan-button,
+.add-website-toggle,
+.submit-button,
+.guide-next {
+    color: #fff;
+    background: linear-gradient(145deg, rgba(104, 96, 208, 0.92) 0%, rgba(74, 66, 176, 0.88) 100%);
+    border: 1px solid rgba(180, 160, 255, 0.45);
+    box-shadow:
+        0 4px 24px rgba(83, 74, 183, 0.45),
+        0 1px 3px rgba(0, 0, 0, 0.18),
+        inset 0 1px 0 rgba(255, 255, 255, 0.45),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.12);
+}
+
+.add-critical-page-form button:hover,
+.add-recipient-form button:hover,
+.scan-settings-form button[type="submit"]:hover,
+.run-scan-button:hover:not(:disabled),
+.add-website-toggle:hover,
+.submit-button:hover,
+.guide-next:hover:not(:disabled) {
+    background: linear-gradient(145deg, rgba(120, 112, 224, 0.94) 0%, rgba(90, 82, 192, 0.90) 100%);
+    transform: translateY(-2px);
+    box-shadow:
+        0 10px 36px rgba(83, 74, 183, 0.55),
+        0 3px 8px rgba(0, 0, 0, 0.16),
+        inset 0 1px 0 rgba(255, 255, 255, 0.50);
+}
+
+.add-critical-page-form button,
+.add-recipient-form button {
+    margin-top: 12px;
+}
+
+/* Secondary */
+#add-critical-page-input,
+#add-recipient-email-input,
+.guide-back,
+.run-all-scans-button,
+.add-website-retry,
+.add-website-dismiss,
+.add-website-refresh,
+.add-website-toggle[aria-expanded="true"] {
+    color: var(--text-primary);
+    background: var(--control-bg);
+    border: 1px solid var(--control-border);
+    box-shadow: var(--control-shadow);
+}
+
+#add-critical-page-input:hover,
+#add-recipient-email-input:hover,
+.guide-back:hover:not(:disabled),
+.add-website-retry:hover,
+.add-website-dismiss:hover,
+.add-website-refresh:hover,
+.run-all-scans-button:hover,
+.add-website-toggle[aria-expanded="true"]:hover {
+    background: var(--control-bg-hover);
+    transform: translateY(-1px);
+}
+
+.run-scan-button {
+    flex-shrink: 0;
+}
+
+.run-scan-button:disabled {
+    cursor: wait;
+}
+
+/* Destructive */
+.cancel-scan-button,
+.delete-website-button,
+.delete-critical-page-button,
+.delete-recipient-button {
+    flex-shrink: 0;
+    padding: 7px 12px;
+    font-size: 12.5px;
+    color: var(--danger-text);
+    background: var(--danger-bg);
+    border: 1px solid var(--danger-border);
+}
+
+.cancel-scan-button:hover,
+.delete-website-button:hover,
+.delete-critical-page-button:hover,
+.delete-recipient-button:hover {
+    color: #fff;
+    background: var(--danger-solid);
+    border-color: var(--danger-solid);
+}

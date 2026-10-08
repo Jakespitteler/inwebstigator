@@ -202,6 +202,17 @@ The app logs to `%LOCALAPPDATA%\inwebstigator\logs\inwebstigator.log`, as well
 as the terminal, keeping the last few files (`LOG_FILE_MAX_BYTES`,
 `LOG_FILE_BACKUP_COUNT`), so a tester can send it to the team.
 
+### The dashboard's files
+
+The dashboard is one page, `app/frontend/templates/index.html`, built from
+smaller templates: `updates/` for the Updates tab, `websites/` for the Websites
+tab, plus the header and the delete confirmation dialog. Its styles are in
+`app/frontend/static/css/` and its scripts in `app/frontend/static/js/`, one
+file per part of the page. `index.html` loads them in order, which matters: a
+later stylesheet can override an earlier one (`responsive.css` is last), and
+the scripts share one scope, so each only uses what the scripts before it
+define. A test checks every file in those folders is loaded and found.
+
 ### run tests
 
 ```bash
