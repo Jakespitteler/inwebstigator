@@ -1731,3 +1731,43 @@ button:disabled {
     opacity: 0.45;
     cursor: not-allowed;
 }
+
+/* Saved email suggestions are outside cards so rounded card edges cannot clip them. */
+.email-suggestions {
+    position: fixed;
+    z-index: 1000;
+    box-sizing: border-box;
+    overflow-y: auto;
+    background: linear-gradient(var(--surface-opaque), var(--surface-opaque)), var(--bg-solid);
+    color: var(--text-primary);
+    border: 1px solid var(--control-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--card-shadow-hover);
+    padding: 4px;
+    font-family: var(--font);
+    font-size: 14px;
+}
+
+.email-suggestions[hidden] {
+    display: none;
+}
+
+.email-suggestion-option,
+.email-suggestions-empty {
+    padding: 10px 12px;
+    border-radius: 6px;
+    overflow-wrap: anywhere;
+}
+
+.email-suggestion-option {
+    cursor: pointer;
+}
+
+.email-suggestion-option:hover,
+.email-suggestion-option[aria-selected="true"] {
+    background: var(--accent-light);
+}
+
+.email-suggestions-empty {
+    color: var(--text-secondary);
+}

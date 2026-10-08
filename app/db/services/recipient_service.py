@@ -2,6 +2,7 @@ import logging
 import uuid
 from collections.abc import Sequence
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
@@ -40,6 +41,11 @@ class RecipientService(CRUDService[RecipientRead, RecipientCreate, RecipientUpda
             limit=limit,
         )
         return [RecipientRead.model_validate(recipient_record) for recipient_record in recipient_records]
+
+    def get_email_addresses(self) -> list[str]:
+        """List all saved addresses for suggestions, including recipients not linked to a website."""
+        addresses = self._db.scalars(select(DBRecipient.email)).all()
+        return sorted(addresses, key=str.casefold)
 
     def get(self, id: uuid.UUID) -> RecipientRead:
         """Retrieves a single recipient record by its unique primary key identifier.

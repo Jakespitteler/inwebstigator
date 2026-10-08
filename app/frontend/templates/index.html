@@ -47,6 +47,12 @@
 
 <body>
 
+    <datalist id="saved-recipient-emails">
+        {% for email in saved_recipient_emails %}
+        <option value="{{ email }}"></option>
+        {% endfor %}
+    </datalist>
+
     <main class="dashboard-container">
 
         <div class="dashboard-header">
@@ -693,6 +699,9 @@
                                 <input
                                     type="email"
                                     class="recipient-email-input"
+                                    data-saved-email-input
+                                    autocomplete="off"
+                                    aria-label="Notification email"
                                     placeholder="name@example.com"
                                 >
                             </div>
@@ -1042,6 +1051,9 @@
                             <input
                                 type="email"
                                 class="new-recipient-email"
+                                data-saved-email-input
+                                autocomplete="off"
+                                aria-label="Add notification email"
                                 placeholder="name@example.com"
                                 required
                             >
@@ -1610,6 +1622,9 @@
                         document.createElement("input");
 
                     input.type = "email";
+                    input.setAttribute("data-saved-email-input", "");
+                    input.autocomplete = "off";
+                    input.setAttribute("aria-label", "Notification email");
                     input.className =
                         "recipient-email-input";
                     input.placeholder =
@@ -2479,6 +2494,7 @@
 
     </script>
 
+    <script src="{{ url_for('static', path='email-suggestions.js') }}?v=1"></script>
 </body>
 
 </html>

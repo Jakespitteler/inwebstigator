@@ -176,6 +176,7 @@ def get_dashboard(session: SessionDep, request: Request):
             "next_check": next_scheduled_check(),
             "websites": websites,
             "website_names": website_names,
+            "saved_recipient_emails": RecipientService(session).get_email_addresses(),
             "default_delay": config.web_crawler_default_delay,
             "max_delay": config.web_crawler_max_delay,
             "default_concurrent": config.web_crawler_default_concurrent,
