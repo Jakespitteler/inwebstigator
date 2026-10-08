@@ -4,12 +4,11 @@ from collections.abc import Sequence
 
 from pydantic import HttpUrl
 from sqlalchemy import Delete, Select, delete, select
-from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
 from app.db import repository
 from app.db.schema import DBInternalLink
-from app.db.services.crud_protocol import CRUDService
+from app.db.services.base_crud_service import BaseCRUDService
 from app.models.internal_link_models import (
     InternalLinkCreate,
     InternalLinkRead,
@@ -21,44 +20,11 @@ logger: logging.Logger = logging.getLogger(__name__)
 URLS_PER_DELETE: int = 500
 
 
-class InternalLinkService(CRUDService[InternalLinkRead, InternalLinkCreate, InternalLinkUpdate]):
-    def __init__(self, session: Session):
-        """Initialises the InternalLinkService with an active database session.
+class InternalLinkService(BaseCRUDService[DBInternalLink, InternalLinkRead, InternalLinkCreate, InternalLinkUpdate]):
+    """Reads and writes the pages found on each website, in bulk where a website has many."""
 
-        Args:
-            session: The SQLAlchemy database session object used for executing operations.
-        """
-        self._db = session
-
-    def get_all(self, skip: int = 0, limit: int = 100) -> Sequence[InternalLinkRead]:
-        """Retrieves a paginated list of internal link records from the database.
-
-        Args:
-            skip: The number of initial records to skip for pagination. Defaults to 0.
-            limit: The maximum number of records to return. Defaults to 100.
-
-        Returns:
-            A sequence of InternalLinkRead models representing the retrieved records.
-        """
-        internal_link_records: Sequence[DBInternalLink] = repository.get_list(
-            self._db, table=DBInternalLink, skip=skip, limit=limit
-        )
-        return [InternalLinkRead.model_validate(internal_link_record) for internal_link_record in internal_link_records]
-
-    def get(self, id: uuid.UUID) -> InternalLinkRead:
-        """Retrieves a single internal link record by its unique primary key identifier.
-
-        Args:
-            id: The UUID identifier of the target internal link record.
-
-        Returns:
-            The matching InternalLinkRead data model instance.
-
-        Raises:
-            NotFoundError: If no internal link record matches the provided UUID.
-        """
-        internal_link_record: DBInternalLink = repository.get(self._db, table=DBInternalLink, id=id)
-        return InternalLinkRead.model_validate(internal_link_record)
+    table = DBInternalLink
+    read_model = InternalLinkRead
 
     def get_by_url(self, url: HttpUrl) -> InternalLinkRead:
         """Retrieves a single internal link record by its URL attribute.
@@ -82,22 +48,6 @@ class InternalLinkService(CRUDService[InternalLinkRead, InternalLinkCreate, Inte
             raise NotFoundError(attributes={"url": url})
 
         return InternalLinkRead.model_validate(internal_link_records[0])
-
-    def create(self, model_create: InternalLinkCreate) -> InternalLinkRead:
-        """Creates and persists a single new internal link record in the database.
-
-        Args:
-            model_create: The InternalLinkCreate payload containing initial attributes.
-
-        Returns:
-            The created InternalLinkRead data model instance reflecting the saved state.
-
-        Raises:
-            IntegrityError: If the record violates database constraints or already exists.
-        """
-        internal_link_record: DBInternalLink = DBInternalLink(**model_create.model_dump())
-        repository.add(self._db, record=internal_link_record)
-        return InternalLinkRead.model_validate(internal_link_record)
 
     def get_urls_for_website(self, website_id: uuid.UUID) -> list[str]:
         """Retrieves the URL of every internal link saved for a website.
@@ -129,38 +79,6 @@ class InternalLinkService(CRUDService[InternalLinkRead, InternalLinkCreate, Inte
         repository.bulk_insert(
             self._db, table=DBInternalLink, rows=[{"url": url, "website_id": website_id} for url in urls]
         )
-
-    def update(self, id: uuid.UUID, model_update: InternalLinkUpdate) -> InternalLinkRead:
-        """Updates attributes of an existing internal link record by its primary key.
-
-        Args:
-            id: The UUID identifier of the internal link record to update.
-            model_update: The InternalLinkUpdate schema containing fields to update.
-
-        Returns:
-            The updated InternalLinkRead data model instance.
-
-        Raises:
-            NotFoundError: If no internal link record matches the provided UUID.
-            IntegrityError: If updated attribute values violate database constraints.
-        """
-        internal_link_record: DBInternalLink = repository.get(self._db, table=DBInternalLink, id=id)
-        internal_link_record = repository.update(
-            self._db, record=internal_link_record, updates=model_update.model_dump(exclude_unset=True)
-        )
-        return InternalLinkRead.model_validate(internal_link_record)
-
-    def delete(self, id: uuid.UUID) -> None:
-        """Deletes an internal link record from the database by its primary key.
-
-        Args:
-            id: The UUID identifier of the internal link record to remove.
-
-        Raises:
-            NotFoundError: If no internal link record matches the provided UUID.
-        """
-        repository.get(self._db, table=DBInternalLink, id=id)
-        repository.delete(self._db, table=DBInternalLink, id=id)
 
     def delete_batch(self, urls: Sequence[HttpUrl], website_id: uuid.UUID) -> None:
         """Deletes a website's internal link records matching a sequence of URLs.

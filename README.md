@@ -84,96 +84,86 @@
 
 ## Email notifications
 
-Each daily run is a pipeline, one job per stage:
+Each scan of a website runs in three stages:
 
 ```
-scraper      finds the pages and files on the site
-diff finder  compares that against the previous run, produces Changes
-notifier     packages those Changes into an email and sends it
+crawler           finds the pages on the website, and loads each critical page
+change detection  compares them with the last scan, and lists the changes
+reports           records the scan, then emails its report to the website's recipients
 ```
 
-`app/email_sender/notifier.py` is the last stage only. It is handed a list of
-`Change` objects and does not scrape, does not work out what changed, and does
-not read or write a database. What it sends:
+| stage | code |
+| --- | --- |
+| crawler | `app/backend/crawler/` |
+| change detection | `app/backend/scanning/change_detection.py`, with `app/backend/diff_checker/` comparing the text of each critical page |
+| reports | `app/backend/scanning/website_scan.py` records the scan, `app/backend/scanning/scan_reports.py` emails it, and `app/backend/email_service/` writes and sends the emails |
 
-- changes handed to it → a digest listing them
-- nothing for 7 days → a "no changes detected" note
-- otherwise → nothing
+A website's first scan, when it is added, only saves each page as a starting
+point, so it reports nothing. Links in a page's `<nav>` and `<aside>` are left
+out, like its text, so a change to a menu shared by every page isn't reported
+on every critical page.
 
-Everything in it is a plain function of its arguments. The envelope and the
-one call that touches the network live in `app/email_sender/build_message.py`
-(`build_message()` and `send_email()`), so the wording can be tested without a
-mail server, and a mail server being down can't affect any stage upstream.
+### The emails
 
-The weekly "no changes" note needs to know when we last emailed, which is not
-something any earlier stage knows. So `notify()` takes `last_email_at` as an
-argument rather than looking it up — the notifier stays stateless and the
-caller owns the remembering. Pass `None` and the note simply never fires.
+| email | when it is sent |
+| --- | --- |
+| Website monitoring started | to each recipient when a website is added. It also checks the address: if it bounces, the website isn't added |
+| Email address added to website monitoring | to a recipient added to a website later |
+| Website update(s) | after a scheduled scan (or "Run All Scans") that found changes or ran into a problem. Each recipient gets one email covering all their websites |
+| Manual scan | after "Run Scan Now", if it found changes or ran into a problem |
+| Health check | to each recipient who hasn't been emailed for their `days_between_health_checks` (7 days by default), listing their websites and any that need attention |
 
-### run demo
-
-```bash
-uv run python -m tests.integration.integration_test_email_sender
-```
-
-Simulates three weeks of daily runs, emails are printed rather than sent. It
-also stands in as a worked example of the caller: it keeps `last_email_at`
-between runs, which is the one bit of state the notifier gives up.
-
-Expect 4 emails over 21 days: digests on days 3 and 12, all clears on days 10
-and 19. Day 1 is silent because there is no previous run to compare against,
-so the diff finder reports nothing — otherwise the client gets 200 "new page"
-lines on the first morning.
+The wording (subjects, times) is in `email_service/email_wording.py`, and the
+HTML is in `email_service/templates/`, rendered by `email_service/html_bodies.py`,
+which also copies the CSS onto each tag, as many email apps ignore `<style>`.
 
 ### Email format
 
-Reports go out as multipart email: an HTML part and a plain text part carrying
-the same information. Mail clients that render HTML show the HTML; anything
-else falls back to the text, which is why the text part is never dropped.
+Every email is multipart: the HTML, and a plain-text copy made from it
+(`message_builder.html_to_text`) for email apps that don't show HTML.
 
-For content changes the HTML part shows a **side by side before/after table**,
-with the specific words that changed marked in red on the left and green on
-the right. Only the differing parts are shown, plus two lines of unchanged text
-either side for context, and the whole thing is capped at
-`notifier.DIFF_MAX_ROWS` rows so one rewritten page can't produce an enormous
-email.
+For edited text, the HTML part shows a **side by side Before/After table**,
+with the words taken out marked in red on the left and the words put in marked
+in green on the right.
 
-Side by side needs two columns, and plain text only has about 78 characters to
-work with, so the text part stacks the same edits instead:
+Page text is untrusted, so the templates escape everything (Jinja
+autoescaping).
 
-```
-Watched pages changed (1)
-  * Enrolment deadlines
-    https://example.edu.au/enrolment
-      - Applications close on 15 July 2026.
-      + Applications close on 1 August 2026.
-      - A late fee of $150 applies after the deadline.
-      + A late fee of $220 applies after the deadline.
-```
+Times are shown in `EMAIL_TIME_ZONE` (e.g. `Australia/Perth`), or in the
+computer's own time zone when it is blank, because the client reads them.
 
-The diff is built from `Change.old_text` and `Change.new_text`. Both are
-optional — added and removed pages have nothing to compare, and a change that
-arrives without them still emails fine, just as a plain "this page changed"
-line. **Nothing populates them yet**: the diff finder holds both versions at
-the moment it decides a page changed, so it has to pass them through. Until it
-does, content changes email without a diff.
+Every message carries `Date` and `Message-ID` headers, which Python doesn't
+add itself, and without which spam filters score email badly — a report in the
+junk folder looks exactly like a broken scraper. It also carries
+`Auto-Submitted: auto-generated`, so out-of-office replies don't come back.
 
-Scraped page text is untrusted, so everything is HTML-escaped, and only
-`http`/`https` URLs are turned into clickable links.
+### Sending, retries and bounces
 
-Times are shown in `REPORT_TIMEZONE` (default `Australia/Perth`), because the
-client reads them, not the server. The 06:00 UTC run shows as `14:00 AWST`.
-Display only — all the date arithmetic stays in UTC so a daylight saving jump
-can't shift the weekly heartbeat.
+`SmtpEmailSender` (`email_service/delivery.py`) sends the emails. Port 465 is
+encrypted from the start, and any other port (e.g. 587) is upgraded with
+STARTTLS. The server's certificate is always checked.
 
-Every message carries `Date` and `Message-ID` headers. Neither is added
-automatically, and mail without them scores badly with spam filters — a report
-in the junk folder looks exactly like a broken scraper.
+- A temporary failure (a dropped connection, or a busy server's 4xx reply) is
+  retried, up to `EMAIL_RETRY_MAX_ATTEMPTS` (3) tries.
+- An address refused for good, or an email the server rejects (a 5xx reply),
+  isn't retried, as it would fail the same way every time. An address refused
+  only for now (a 4xx reply, e.g. greylisting) is kept for the next run.
+- A scan report that couldn't be sent is kept, and sent with the next run (see
+  "State" below).
+
+Gmail and most other providers accept an email first and only report a missing
+mailbox afterwards, by sending a delivery failure email back to the sending
+account. So when an address is added, `confirm_address_can_receive_email`
+emails it, then watches the sending account's inbox over IMAP for
+`EMAIL_BOUNCE_WAIT_SECONDS` (30). The inbox server is worked out from
+`SMTP_HOST` (e.g. `smtp.gmail.com` → `imap.gmail.com`) unless `IMAP_HOST` is
+set. If the inbox can't be reached, the email is still sent, but a bounce
+can't be seen.
 
 ### the scheduler
 
 There is no separate scheduler process: it starts and stops with the app
-(`app/scanning/scheduler.py`, run from the FastAPI lifespan), so scans only happen while
+(`app/backend/scanning/scheduler.py`, run from the FastAPI lifespan), so scans only happen while
 Inwebstigator is running. Set `AUTOMATIC_SCANS=false` to turn it off.
 
 It runs every 12 hours (`SCHEDULER_MINIMUM_DAYS_BETWEEN_SCANS`), first a second
@@ -193,12 +183,35 @@ as soon as the app opens. Each run:
 the 12-hour countdown. A run that raises is logged, and the next run happens as
 normal.
 
+### run the app
+
+```bash
+uv sync                          # first time only
+uv run python inwebstigator.py   # the desktop app, as testers get it
+```
+
+The app answers only on `127.0.0.1` and `localhost`. Every request that changes
+something (POST, PATCH, DELETE) must carry the `X-Inwebstigator-Token` header,
+a new random token each time the app starts, which only the dashboard page is
+given (`app/frontend/api/request_guard.py`). This stops a website open in the
+user's normal browser from starting scans, adding websites or emailing their
+recipients. To call the API by hand, e.g. from `/docs`, start the app with
+`API_TOKEN_REQUIRED=false`.
+
+The app logs to `%LOCALAPPDATA%\inwebstigator\logs\inwebstigator.log`, as well
+as the terminal, keeping the last few files (`LOG_FILE_MAX_BYTES`,
+`LOG_FILE_BACKUP_COUNT`), so a tester can send it to the team.
+
 ### run tests
 
 ```bash
 uv sync          # first time only
 uv run pytest
 ```
+
+The tests use a temporary data folder (see `conftest.py`), so they never touch
+the real database or log file, and a fake email sender (`tests/fakes.py`), so
+they never send email.
 
 ### Configuration
 
@@ -211,22 +224,20 @@ cp .env.example .env      # then fill it in
 `app/core/config.py` reads `.env` for the whole project on import, so there is
 nothing to `source`. Anything already exported wins over the file, so you can
 still override a setting for one run
-(`REPORT_TIMEZONE=UTC uv run python -m tests.integration.integration_test_email_sender`).
-`.env` is gitignored — never commit real values.
+(`EMAIL_TIME_ZONE=UTC uv run python inwebstigator.py`). Every field of `Config`
+can be set this way, by its name in capitals. `.env` is gitignored — never
+commit real values.
 
 The addresses and the mail server default to blank rather than to a plausible
 looking placeholder, so a half-filled `.env` fails loudly instead of mailing
-somewhere nobody reads. The demo prints rather than sends, so it still runs
-with no setup at all.
+somewhere nobody reads.
 
-### Sending real test email
+### Setting up the sending account
 
-Nothing leaves the machine until you ask it to: `DRY_RUN` defaults to `true`,
-which prints emails instead of sending them. That default is deliberate — a
-fresh checkout can't mail anyone, and forgetting to configure `.env` fails
-loudly rather than quietly mailing an address nobody reads.
+There is no dry-run mode: adding a website emails its recipients for real, so
+while testing, only add your own addresses.
 
-To send yourself a real sample report with a Gmail account:
+To send from a Gmail account:
 
 1. Turn on 2-Step Verification on the Google account.
 2. Create an **App Password** (Google account → Security → 2-Step
@@ -235,89 +246,72 @@ To send yourself a real sample report with a Gmail account:
 3. Fill in `.env`:
 
    ```bash
-   DRY_RUN=false
    EMAIL=you@gmail.com
    EMAIL_PASSWORD=abcdefghijklmnop     # the app password, spaces optional
    SMTP_HOST=smtp.gmail.com
-   SMTP_PORT=587
-   CLIENT_TO=you@gmail.com             # your own address while testing
+   SMTP_PORT=465
+   EMAIL_TIME_ZONE=Australia/Perth
    ```
 
    `EMAIL` doubles as the From address — we send as the account we
-   authenticate as, and Gmail rewrites a mismatched From anyway.
+   authenticate as, and Gmail rewrites a mismatched From anyway. `IMAP_HOST`
+   can stay blank for Gmail, as it is worked out from `SMTP_HOST`.
 
-4. Send one sample report:
+4. Start the app and add a website with your own address as its recipient.
+   You should get a "Website monitoring started" email.
 
-   ```bash
-   uv run python -m tests.integration.integration_test_email_delivery
-   ```
-
-It checks the settings first and tells you exactly what's missing rather than
-failing inside SMTP. Check the spam folder if nothing arrives — a brand new
-sending address often lands there the first time.
+Check the spam folder if nothing arrives — a brand new sending address often
+lands there the first time.
 
 A UWA account won't work for this: Microsoft turned off basic SMTP auth, so
 use a personal Gmail (or a throwaway one) for testing. Whatever the client
 ends up using is a question for them.
 
-**Put `DRY_RUN` back to `true` when you're done testing**, so nobody runs the
-scheduler and mails a real person by accident.
-
 ### State: what is remembered between runs
 
-The notifier is stateless on purpose — it is handed a list of changes and told
-when we last emailed, and it looks nothing up. That keeps the wording testable
-without a database and stops a mail server outage reaching back up the
-pipeline. The remembering happens in `app/services/notification_service.py`,
-against two tables:
+Every scan of a website is recorded, rather than overwriting the last scan's
+changes, in two tables (`app/db/schema.py`, read and written by
+`app/db/services/scan_run_service.py`):
 
 | table | what it holds |
 | --- | --- |
-| `notification_states` | per website: `last_run_at`, `last_email_at`, `last_action` |
-| `pending_notifications` | reports whose send failed, with an attempt count and a next-attempt time |
+| `scan_runs` | one row per scan of a website: when it ran, how it went (`status`, `message`) and `notified_at`, when its report was emailed |
+| `changes` | one row per thing a scan found: a link, document or internal page added or removed, a block of text added, removed or edited, or a critical page that became unreachable |
 
-`last_run_at` and `last_email_at` are deliberately separate. A run that finds
-nothing still counts as a run — that is what stops a restart firing a second
-report for the same day — but it must not move the email clock, or a site that
-never changes would reset its own weekly window every morning and the all-clear
-would never become due.
+Each website keeps its last 7 scans (`SCANS_KEPT_PER_WEBSITE`), which the
+Updates tab shows newest first. Older scans are deleted after each scan, except
+any whose report has not been emailed yet.
 
-**A failed send no longer loses the day's changes.** `notify()` returns
-`"failed"`, the service parks the changes as serialised `Change` dicts, and the
-next run retries them before doing anything else. Retries back off
-exponentially (`RETRY_BASE_DELAY_SECONDS`, capped at `RETRY_MAX_DELAY_SECONDS`)
-and are given up on loudly after `RETRY_MAX_ATTEMPTS` rather than retrying
-forever in silence. A failed *all-clear* is not parked — it carries no changes
-and next week's note says the same thing.
+Every time is saved in UTC (`UTCDateTime` in `app/db/schema.py`), and code
+makes times with `datetime.now(UTC)`: saving a time without a time zone is an
+error. The dashboard shows times in the computer's own time zone, and emails in
+`EMAIL_TIME_ZONE`. Older versions saved local times, so they are converted to UTC
+once when the app starts (`convert_local_times_to_utc` in `app/db/migrations.py`,
+recorded in SQLite's `user_version`).
+
+**A failed send no longer loses the changes.** A report with `notified_at`
+still empty is waiting to be emailed. Each scheduled run (and "Run All Scans")
+emails every waiting report, one email per recipient, then fills in
+`notified_at` (`app/backend/scanning/scan_reports.py`). If the mail server is
+down, the reports stay waiting and go out with the next run. An address that is
+refused for good, or an email the server rejects (a 5xx reply), is not tried
+again, as it would fail the same way every time. A website with no recipients has its reports marked as
+sent, as there is nobody to send them to.
 
 ### Many sites
 
-The database models many websites, so each one gets its own report stamped with
-its own URL, and its own weekly all-clear window. `notify()` takes `site_name`
-and `recipients` as arguments for the same reason it takes `last_email_at`: the
-notifier has no business looking any of that up. `site_name` is required — the
-two scripts in `tests/integration/` pass their own, and `NotificationService`
-passes the site's URL. `CLIENT_TO` in `.env` is still the fallback recipient.
-
-Per-site recipients are not wired up — every report currently goes to
-`CLIENT_TO`. That needs a client/subscriber table, which is a question for the
-team rather than a code change.
+Each website has its own recipients, critical pages and scan settings
+(`days_between_scans`, request delay and concurrency), and each recipient has
+their own `days_between_health_checks`. A recipient on several websites gets
+one email per run covering all of them, not one per website
+(`app/backend/scanning/notifications.py`).
 
 ### TODOs
 
-These are marked in the code as well:
-
-- **Diff text from the scraper side.** `Change.old_text`/`new_text` drive the
-  side by side comparison but nothing fills them in yet — see "Email format".
-  `DBCriticalPage.text_body` already stores the previous page text, so the data
-  is there; the diff finder holds both versions at the moment it decides a page
-  changed, so it is the one that has to pass them through.
-- **The diff finder itself.** `collect_changes()` in the scheduler is the seam
-  it plugs into, and returns an empty list today. Until it exists every run is
-  quiet, which is also why a fresh database emails nobody.
-- **Safety net for the site being down.** If most checks failed, "every page
-  was deleted" is the wrong thing to email anyone. Needs the scraper to report
-  how many checks passed and failed per run.
-- **Per-site recipients.** See "Many sites" above — needs a team decision.
-- **Tests.** The notifier, the scheduler and the notification service are
-  covered under `tests/unit/`. The scraper and diff finder still need theirs.
+- **Background scan jobs.** "Run Scan Now" and adding a website keep the
+  request open until the scan finishes, which can take several minutes. They
+  could start a job and let the dashboard check on it instead.
+- **Database migrations.** `app/db/migrations.py` adds missing tables,
+  columns and indexes when the app starts, but can't rename or change a
+  column. Alembic would.
+- **robots.txt.** The crawler doesn't read it yet.

@@ -67,7 +67,7 @@ def get_list[DBTable: Base](
     Returns:
         The retrieved records.
     """
-    statement: Select[tuple[DBTable]] = select(table)
+    statement: Select[DBTable] = select(table)
     if attributes:
         statement = statement.filter_by(**attributes)
     statement = statement.offset(skip).limit(limit)
@@ -88,14 +88,13 @@ def add(session: Session, record: Base) -> None:
         record: The record to add.
 
     Raises:
-        IntegrityError: If record violates unique constraints.
+        IntegrityError: If record violates unique constraints. The session's unit of work rolls the transaction back.
     """
     try:
         session.add(record)
         session.flush()
     except SQLIntegrityError as e:
-        logger.error(f"Failed to add record to database, rolling back. {record.__tablename__=}, {record.id=}")
-        session.rollback()
+        logger.error(f"Failed to add record to database. {record.__tablename__=}, {record.id=}")
         raise IntegrityError() from e
 
     session.refresh(record)
@@ -111,15 +110,15 @@ def batch_add[DBTable: Base](session: Session, records: Sequence[DBTable]) -> No
         records: The sequence of records to add.
 
     Raises:
-        IntegrityError: If any record violates unique constraints.
+        IntegrityError: If any record violates unique constraints. The session's unit of work rolls the transaction
+            back.
     """
     try:
         session.add_all(records)
         session.flush()
     except SQLIntegrityError as e:
         tablename = records[0].__tablename__ if records else "unknown"
-        logger.error(f"Failed to bulk add records to database, rolling back. {tablename=}")
-        session.rollback()
+        logger.error(f"Failed to bulk add records to database. {tablename=}")
         raise IntegrityError() from e
 
     for record in records:
@@ -142,15 +141,14 @@ def bulk_insert[DBTable: Base](session: Session, table: type[DBTable], rows: Seq
         rows: The column values of each row to insert.
 
     Raises:
-        IntegrityError: If any row violates unique constraints.
+        IntegrityError: If any row violates unique constraints. The session's unit of work rolls the transaction back.
     """
     if not rows:
         return
     try:
         session.execute(insert(table), list(rows))
     except SQLIntegrityError as e:
-        logger.error(f"Failed to bulk insert rows into database, rolling back. {table.__name__=}")
-        session.rollback()
+        logger.error(f"Failed to bulk insert rows into database. {table.__name__=}")
         raise IntegrityError() from e
 
     logger.info(f"Successfully bulk inserted {len(rows)} rows into database. {table.__name__=}")
@@ -166,18 +164,19 @@ def update[DBTable: Base](session: Session, record: DBTable, updates: dict[str, 
         updates: The new values to apply.
 
     Raises:
-        IntegrityError: If updates violate unique constraints.
+        IntegrityError: If updates violate unique constraints. The session's unit of work rolls the transaction back.
 
     Returns:
         The updated record.
     """
-    [setattr(record, key, value) for key, value in updates.items() if hasattr(record, key)]
+    for key, value in updates.items():
+        if hasattr(record, key):
+            setattr(record, key, value)
 
     try:
         session.flush()
     except SQLIntegrityError as e:
-        logger.error(f"Failed to update record in database, rolling back. {record=}, {updates=}")
-        session.rollback()
+        logger.error(f"Failed to update record in database. {record=}, {updates=}")
         raise IntegrityError() from e
 
     session.refresh(record)
@@ -221,12 +220,13 @@ def batch_delete[DBTable: Base](
     Raises:
         NotFoundError: If `ids` are explicitly passed but any provided ID is missing.
         ValueError: If neither `ids` nor `attributes` are provided.
-        IntegrityError: If deletion violates foreign key constraints.
+        IntegrityError: If deletion violates foreign key constraints. The session's unit of work rolls the
+            transaction back.
     """
     if not ids and not attributes:
         raise ValueError("At least one search parameter ('ids' or 'attributes') must be provided.")
 
-    statement: Select[tuple[DBTable]] = select(table)
+    statement: Select[DBTable] = select(table)
 
     if ids:
         statement = statement.where(table.id.in_(ids))
@@ -259,8 +259,7 @@ def batch_delete[DBTable: Base](
         session.flush()
     except SQLIntegrityError as e:
         tablename = getattr(table, "__tablename__", "unknown")
-        logger.error(f"Failed to bulk delete records from database, rolling back. {tablename=}")
-        session.rollback()
+        logger.error(f"Failed to bulk delete records from database. {tablename=}")
         raise IntegrityError() from e
 
     tablename = records[0].__tablename__

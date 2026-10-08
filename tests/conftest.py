@@ -1,15 +1,9 @@
-import sqlite3
-
-from sqlalchemy.pool import ConnectionPoolEntry
-
-from app.core.config import config
-
-config.automatic_scans = False
-
 import asyncio
+import sqlite3
 import time
 import uuid
 from collections.abc import Callable, Iterator
+from contextlib import nullcontext
 from datetime import datetime
 
 import httpx2
@@ -19,20 +13,32 @@ from pytest_mock import MockerFixture
 from sqlalchemy import UUID as PG_UUID
 from sqlalchemy import Connection, DateTime, Engine, MetaData, StaticPool, String, create_engine, event, text
 from sqlalchemy.orm import Mapped, Session, declarative_base, mapped_column
+from sqlalchemy.pool import ConnectionPoolEntry
 from tenacity import wait_none
 
+from app.backend.crawler.page_fetcher import fetch_content_from_url
 from app.backend.email_service.delivery import EmailSender, get_email_sender
 from app.backend.email_service.message_builder import OutgoingEmail
-from app.backend.links import normalise_url
-from app.backend.page_fetcher import fetch_content_from_url
+from app.backend.scanning.scan_queue import ScanQueue, scan_queue
+from app.core.config import config
+from app.core.urls import normalise_url
 from app.db import repository, schema
-from app.db.session import get_db_session
+from app.db.session import configure_sqlite_connection, get_db_session
+from app.frontend.api.request_guard import API_TOKEN_HEADER
 from app.main import app
 from app.models import critical_page_models, internal_link_models, recipient_models, website_models
-from app.scanning.scan_queue import ScanQueue, scan_queue
 from tests.fakes import FakeEmailSender
 
 type RequestHandler = Callable[[httpx2.Request], httpx2.Response]
+
+BACKEND_MODULES_USING_THE_DATABASE: tuple[str, ...] = (
+    "app.backend.websites.website_setup",
+    "app.backend.websites.recipient_checks",
+    "app.backend.scanning.manual_scan",
+    "app.backend.scanning.website_scan",
+    "app.backend.scanning.scan_reports",
+    "app.backend.scanning.notifications",
+)
 
 
 # ==========================
@@ -74,6 +80,7 @@ def engine() -> Iterator[Engine]:
     # an app-level commit inside a test then commits for real and leaks into later tests.
     # Hand transaction control to SQLAlchemy instead (the fix from SQLAlchemy's SQLite docs).
     event.listen(test_engine, "connect", _disable_driver_transactions)
+    event.listen(test_engine, "connect", configure_sqlite_connection)  # Foreign keys are checked, as in the app
     event.listen(test_engine, "begin", _begin_transaction)
 
     yield test_engine
@@ -104,18 +111,35 @@ def session(engine: Engine) -> Iterator[Session]:
 
 
 @pytest.fixture()
-def api_client(session: Session) -> Iterator[TestClient]:
+def backend_uses_test_session(session: Session, mocker: MockerFixture) -> None:
+    """Makes the backend's own units of work (`db_context`) use the test's database session, without committing it.
+
+    The routes hand most of their work to the backend, which opens its own sessions, so a request made in a test
+    reads and saves the same records as the test itself.
+
+    Args:
+        session: The database session fixture to be used.
+        mocker: Patches each backend module's `db_context`.
     """
-    Creates a FastAPI test client with the database session dependency overridden.
+    for module in BACKEND_MODULES_USING_THE_DATABASE:
+        mocker.patch(f"{module}.db_context", side_effect=lambda: nullcontext(session))
+
+
+@pytest.fixture()
+def api_client(session: Session, backend_uses_test_session: None) -> Iterator[TestClient]:
+    """
+    Creates a FastAPI test client with the database session dependency overridden, and the backend using the same
+    session.
 
     Args:
         session: The database session fixture to be injected.
+        backend_uses_test_session: Makes the backend use the same session.
 
     Yields:
         The configured TestClient instance.
     """
     app.dependency_overrides[get_db_session] = lambda: session
-    with TestClient(app) as client:
+    with TestClient(app, headers={API_TOKEN_HEADER: config.api_token}) as client:
         yield client
         app.dependency_overrides.clear()
 
@@ -132,8 +156,8 @@ def _skip_confirmation(email: OutgoingEmail, email_sender: EmailSender) -> None:
 @pytest.fixture(autouse=True)
 def skip_email_confirmations(monkeypatch: pytest.MonkeyPatch) -> None:
     """Treats every added email address as able to receive email, so tests do not send confirmation emails."""
-    monkeypatch.setattr("app.frontend.api.routers.confirm_address_can_receive_email", _skip_confirmation)
-    monkeypatch.setattr("app.frontend.api.routers.send_confirmation", _skip_confirmation)
+    monkeypatch.setattr("app.backend.websites.recipient_checks.confirm_address_can_receive_email", _skip_confirmation)
+    monkeypatch.setattr("app.backend.websites.recipient_checks.send_confirmation", _skip_confirmation)
 
 
 @pytest.fixture(autouse=True)
@@ -144,8 +168,8 @@ def email_sender(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeEmailSender]:
         The fake sender, holding every email the test sent.
     """
     fake_sender = FakeEmailSender()
-    monkeypatch.setattr("app.scanning.all_websites_scan.get_email_sender", lambda: fake_sender)
-    monkeypatch.setattr("app.scanning.scheduler.get_email_sender", lambda: fake_sender)
+    monkeypatch.setattr("app.backend.scanning.all_websites_scan.get_email_sender", lambda: fake_sender)
+    monkeypatch.setattr("app.backend.scanning.scheduler.get_email_sender", lambda: fake_sender)
     app.dependency_overrides[get_email_sender] = lambda: fake_sender
     yield fake_sender
     app.dependency_overrides.pop(get_email_sender, None)

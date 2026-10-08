@@ -7,6 +7,27 @@
 
     <title>Inwebstigator</title>
 
+    <!-- Every request the dashboard makes carries this token, which pages from other websites cannot read -->
+    <meta name="api-token" content="{{ api_token }}">
+    <script>
+        (function () {
+            var apiToken = document.querySelector('meta[name="api-token"]').content;
+            var sendRequest = window.fetch.bind(window);
+
+            window.fetch = function (resource, options) {
+                var requestOptions = Object.assign({}, options);
+                // Keep a Request's own headers (e.g. its form's Content-Type) unless new ones are given
+                var headers = new Headers(
+                    requestOptions.headers || (resource instanceof Request ? resource.headers : {})
+                );
+
+                headers.set("{{ api_token_header }}", apiToken);
+                requestOptions.headers = headers;
+                return sendRequest(resource, requestOptions);
+            };
+        })();
+    </script>
+
     <!-- Apply the saved theme before the first paint so the page never flashes the wrong one -->
     <script>
         (function () {
@@ -99,7 +120,7 @@
             aria-labelledby="updates-tab" tabindex="0" hidden>
         <div class="section-heading">
 
-            <h2 class="section-title">Changes since last scan</h2>
+            <h2 class="section-title">Last {{ scans_kept_per_website }} scans of each website</h2>
 
             {% if next_check %}
                 <p class="week-range">
@@ -109,19 +130,16 @@
 
         </div>
 
-        <!-- CHANGES SINCE LAST SCAN -->
-        <section id="daily-changes">
+        <!-- SCAN HISTORY -->
+        <section id="scan-history">
 
             {% if website_records %}
 
                 {% for website_record in website_records %}
 
                     {% set website_index = loop.index %}
-                    {% set page_count = website_record.pages | length %}
-                    {% set internal_link_count = website_record.internal_links_added | length
-                        + website_record.internal_links_removed | length %}
 
-                    <!-- One card per website, holding a card for each critical page that changed and its internal links -->
+                    <!-- One card per website, holding a card for each of its most recent scans -->
                     <section
                         class="change-record website-change-record"
                         data-collapsible
@@ -141,18 +159,17 @@
                                     {{ website_record.website_url }}
                                 </a>
 
-                                <!-- What changed, so a collapsed website still says whether it is worth opening -->
+                                <!-- How recent scans went, so a collapsed website still says whether it is worth opening -->
                                 <p class="change-summary">
-                                    {% if website_record.changed_at %}
-                                        <time class="change-time" datetime="{{ website_record.changed_at.isoformat() }}">
-                                            Changed {{ website_record.changed_at | format_timestamp }}
-                                        </time>
-                                    {% endif %}
-                                    {% if internal_link_count %}
-                                        <span>{{ internal_link_count }} internal link{{ "s" if internal_link_count != 1 }}</span>
-                                    {% endif %}
-                                    {% if page_count %}
-                                        <span>{{ page_count }} critical page{{ "s" if page_count != 1 }} changed</span>
+                                    <time class="change-time" datetime="{{ website_record.last_scanned_at.isoformat() }}">
+                                        Last scanned {{ website_record.last_scanned_at | format_timestamp }}
+                                    </time>
+                                    {% set scan_count = website_record.scans | length %}
+                                    {% set scans_with_details = website_record.scans_with_details %}
+                                    {% if scans_with_details %}
+                                        <span>{{ scans_with_details }} of {{ scan_count }} scan{{ "s" if scan_count != 1 }} found changes</span>
+                                    {% else %}
+                                        <span>No changes in {{ "the last " ~ scan_count ~ " scans" if scan_count != 1 else "its only scan" }}</span>
                                     {% endif %}
                                 </p>
                             </div>
@@ -171,391 +188,480 @@
                             </button>
                         </div>
 
-                        <!-- The website's changes are hidden until the website is expanded -->
+                        <!-- The website's scans are hidden until the website is expanded -->
                         <div class="card-body" id="website-updates-{{ website_index }}" hidden>
 
-                            <!-- Pages added to or removed from the website since its previous scan -->
-                            {% if internal_link_count %}
+                        {% for scan in website_record.scans %}
 
-                                <div class="change-section">
+                            {% set scan_index = loop.index %}
+                            {% set scan_key = website_record.website_url ~ "@" ~ scan.scanned_at.isoformat() %}
+                            {% set unreachable_page_count = scan.pages | selectattr("failure_reason") | list | length %}
+                            {% set page_count = scan.pages | length - unreachable_page_count %}
+                            {% set internal_link_count = scan.internal_links_added | length
+                                + scan.internal_links_removed | length %}
 
-                                    <h2>Internal links</h2>
-
-                                    <ul class="change-list">
-
-                                        {% for link in website_record.internal_links_added %}
-
-                                            <li class="change-item change-item-added">
-
-                                                <a
-                                                    class="change-item-text"
-                                                    href="{{ link }}"
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                >
-                                                    {{ link }}
-                                                </a>
-
-                                                <span class="change-badge added-label">
-                                                    Added
-                                                </span>
-
-                                            </li>
-
-                                        {% endfor %}
-
-                                        {% for link in website_record.internal_links_removed %}
-
-                                            <li class="change-item change-item-removed">
-
-                                                <a
-                                                    class="change-item-text"
-                                                    href="{{ link }}"
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                >
-                                                    {{ link }}
-                                                </a>
-
-                                                <span class="change-badge removed-label">
-                                                    Removed
-                                                </span>
-
-                                            </li>
-
-                                        {% endfor %}
-
-                                    </ul>
-
-                                </div>
-
-                            {% endif %}
-
-                            <!-- Each critical page that changed, in its own card -->
-                            {% if website_record.pages %}
-
-                                <div class="change-section">
-
-                                    <h2>Critical pages</h2>
-
-                                {% for record in website_record.pages %}
-
-                                {% set text_count = record.changed | length + record.added | length + record.removed | length %}
-                                {% set link_count = record.links_added | length + record.links_removed | length %}
-                                {% set document_count = record.documents_added | length + record.documents_removed | length %}
-
-                                <section
-                                    class="change-record page-change-record"
+                            <!-- One card per scan. A scan that found nothing has no details to open. -->
+                            <section
+                                class="change-record scan-change-record"
+                                {% if scan.has_details %}
                                     data-collapsible
-                                    data-card-key="update:{{ record.url }}"
-                                    data-card-name="{{ record.url }}"
-                                >
+                                    data-card-key="scan:{{ scan_key }}"
+                                    data-card-name="the scan of {{ scan.scanned_at | format_timestamp }}"
+                                {% endif %}
+                            >
 
-                                    <div class="change-record-header card-header">
-                                        <div class="change-record-identity">
-                                            <p class="page-url">
-                                                <a href="{{ record.url }}" target="_blank" rel="noopener noreferrer">
-                                                    {{ record.url }}
-                                                </a>
-                                            </p>
+                                <!-- Only a scan with details has a card header, as clicking a card header closes the card it belongs to -->
+                                <div class="change-record-header{{ " card-header" if scan.has_details }}">
+                                    <div class="change-record-identity">
+                                        <p class="change-summary">
+                                            <time class="change-time" datetime="{{ scan.scanned_at.isoformat() }}">
+                                                Scanned {{ scan.scanned_at | format_timestamp }}
+                                            </time>
+                                            {% if scan.is_problem %}
+                                                <span class="scan-problem">{{ scan.status_label }}</span>
+                                            {% endif %}
+                                            {% if internal_link_count %}
+                                                <span>{{ internal_link_count }} internal link{{ "s" if internal_link_count != 1 }}</span>
+                                            {% endif %}
+                                            {% if page_count %}
+                                                <span>{{ page_count }} critical page{{ "s" if page_count != 1 }} changed</span>
+                                            {% endif %}
+                                            {% if unreachable_page_count %}
+                                                <span class="scan-problem">{{ unreachable_page_count }} critical page{{ "s" if unreachable_page_count != 1 }} unreachable</span>
+                                            {% endif %}
+                                            {% if not scan.has_details %}
+                                                <span>No changes</span>
+                                            {% endif %}
+                                            {% if scan.is_awaiting_email %}
+                                                <span class="scan-awaiting-email">Email not sent yet</span>
+                                            {% endif %}
+                                        </p>
+                                    </div>
 
-                                            <!-- What changed, so a collapsed record still says whether it is worth opening -->
-                                            <p class="change-summary">
-                                                {% if record.changed_at %}
-                                                    <time class="change-time" datetime="{{ record.changed_at.isoformat() }}">
-                                                        Changed {{ record.changed_at | format_timestamp }}
-                                                    </time>
-                                                {% endif %}
-                                                {% if text_count %}
-                                                    <span>{{ text_count }} text change{{ "s" if text_count != 1 }}</span>
-                                                {% endif %}
-                                                {% if link_count %}
-                                                    <span>{{ link_count }} link{{ "s" if link_count != 1 }}</span>
-                                                {% endif %}
-                                                {% if document_count %}
-                                                    <span>{{ document_count }} document{{ "s" if document_count != 1 }}</span>
-                                                {% endif %}
-                                            </p>
-                                        </div>
-
+                                    {% if scan.has_details %}
                                         <button
                                             type="button"
                                             class="card-toggle"
                                             aria-expanded="false"
-                                            aria-controls="update-details-{{ website_index }}-{{ loop.index }}"
-                                            aria-label="Show details for {{ record.url }}"
+                                            aria-controls="scan-details-{{ website_index }}-{{ scan_index }}"
+                                            aria-label="Show details for the scan of {{ scan.scanned_at | format_timestamp }}"
                                         >
                                             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
                                                 <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor"
                                                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                                             </svg>
                                         </button>
-                                    </div>
+                                    {% endif %}
+                                </div>
 
-                                    <!-- The full changes are hidden until the record is expanded -->
-                                    <div class="card-body" id="update-details-{{ website_index }}-{{ loop.index }}" hidden>
+                                {% if scan.has_details %}
 
-                                        <!-- Changed content -->
-                                        {% for change in record.changed %}
+                                <!-- What the scan found is hidden until the scan is expanded -->
+                                <div class="card-body" id="scan-details-{{ website_index }}-{{ scan_index }}" hidden>
 
-                                            <div class="change-section">
+                                    <!-- What the app did about a scan that did not go normally -->
+                                    {% if scan.message %}
+                                        <p class="website-notice{{ " website-notice-warning" if scan.is_problem }}">
+                                            {{ scan.message }}
+                                        </p>
+                                    {% endif %}
 
-                                                {% if change.old_section != change.new_section %}
+                                    <!-- Pages added to or removed from the website since its previous scan -->
+                                    {% if internal_link_count %}
 
-                                                    <h2>Section changed</h2>
+                                        <div class="change-section">
 
-                                                    <table class="comparison-table">
+                                            <h2>Internal links</h2>
 
-                                                        <thead>
-                                                            <tr>
-                                                                <th>Before</th>
-                                                                <th>After</th>
-                                                            </tr>
-                                                        </thead>
+                                            <ul class="change-list">
 
-                                                        <tbody>
-                                                            <tr>
-                                                                <td>
-                                                                    {{ change.old_section }}
-                                                                </td>
+                                                {% for link in scan.internal_links_added %}
 
-                                                                <td>
-                                                                    {{ change.new_section }}
-                                                                </td>
-                                                            </tr>
-                                                        </tbody>
+                                                    <li class="change-item change-item-added">
 
-                                                    </table>
+                                                        <a
+                                                            class="change-item-text"
+                                                            href="{{ link }}"
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                        >
+                                                            {{ link }}
+                                                        </a>
+
+                                                        <span class="change-badge added-label">
+                                                            Added
+                                                        </span>
+
+                                                    </li>
+
+                                                {% endfor %}
+
+                                                {% for link in scan.internal_links_removed %}
+
+                                                    <li class="change-item change-item-removed">
+
+                                                        <a
+                                                            class="change-item-text"
+                                                            href="{{ link }}"
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                        >
+                                                            {{ link }}
+                                                        </a>
+
+                                                        <span class="change-badge removed-label">
+                                                            Removed
+                                                        </span>
+
+                                                    </li>
+
+                                                {% endfor %}
+
+                                            </ul>
+
+                                        </div>
+
+                                    {% endif %}
+
+                                    <!-- Each critical page that changed, in its own card -->
+                                    {% if scan.pages %}
+
+                                        <div class="change-section">
+
+                                            <h2>Critical pages</h2>
+
+                                        {% for record in scan.pages %}
+
+                                        {% set text_count = record.changed | length + record.added | length + record.removed | length %}
+                                        {% set link_count = record.links_added | length + record.links_removed | length %}
+                                        {% set document_count = record.documents_added | length + record.documents_removed | length %}
+
+                                        <section
+                                            class="change-record page-change-record"
+                                            data-collapsible
+                                            data-card-key="update:{{ scan_key }}:{{ record.url }}"
+                                            data-card-name="{{ record.url }}"
+                                        >
+
+                                            <div class="change-record-header card-header">
+                                                <div class="change-record-identity">
+                                                    <p class="page-url">
+                                                        <a href="{{ record.url }}" target="_blank" rel="noopener noreferrer">
+                                                            {{ record.url }}
+                                                        </a>
+                                                    </p>
+
+                                                    <!-- What changed, so a collapsed record still says whether it is worth opening -->
+                                                    <p class="change-summary">
+                                                        {% if record.failure_reason %}
+                                                            <span class="scan-problem">Unreachable</span>
+                                                        {% endif %}
+                                                        {% if text_count %}
+                                                            <span>{{ text_count }} text change{{ "s" if text_count != 1 }}</span>
+                                                        {% endif %}
+                                                        {% if link_count %}
+                                                            <span>{{ link_count }} link{{ "s" if link_count != 1 }}</span>
+                                                        {% endif %}
+                                                        {% if document_count %}
+                                                            <span>{{ document_count }} document{{ "s" if document_count != 1 }}</span>
+                                                        {% endif %}
+                                                    </p>
+                                                </div>
+
+                                                <button
+                                                    type="button"
+                                                    class="card-toggle"
+                                                    aria-expanded="false"
+                                                    aria-controls="update-details-{{ website_index }}-{{ scan_index }}-{{ loop.index }}"
+                                                    aria-label="Show details for {{ record.url }}"
+                                                >
+                                                    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                                                        <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor"
+                                                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                                    </svg>
+                                                </button>
+                                            </div>
+
+                                            <!-- The full changes are hidden until the record is expanded -->
+                                            <div class="card-body" id="update-details-{{ website_index }}-{{ scan_index }}-{{ loop.index }}" hidden>
+
+                                                {% if record.failure_reason %}
+                                                    <p class="website-notice website-notice-warning">
+                                                        Could not be reached: {{ record.failure_reason }}
+                                                        ({{ record.failure_count }} scans in a row).
+                                                        Its last good copy is kept to compare with once it is back.
+                                                    </p>
+                                                {% endif %}
+
+                                                <!-- Changed content -->
+                                                {% for change in record.changed %}
+
+                                                    <div class="change-section">
+
+                                                        {% if change.old_section != change.new_section %}
+
+                                                            <h2>Section changed</h2>
+
+                                                            <table class="comparison-table">
+
+                                                                <thead>
+                                                                    <tr>
+                                                                        <th>Before</th>
+                                                                        <th>After</th>
+                                                                    </tr>
+                                                                </thead>
+
+                                                                <tbody>
+                                                                    <tr>
+                                                                        <td>
+                                                                            {{ change.old_section }}
+                                                                        </td>
+
+                                                                        <td>
+                                                                            {{ change.new_section }}
+                                                                        </td>
+                                                                    </tr>
+                                                                </tbody>
+
+                                                            </table>
+
+                                                        {% endif %}
+
+                                                        {% if change.old != change.new %}
+
+                                                            <h2>Content changed</h2>
+
+                                                            <table class="comparison-table">
+
+                                                                <thead>
+                                                                    <tr>
+                                                                        <th>Before</th>
+                                                                        <th>After</th>
+                                                                    </tr>
+                                                                </thead>
+
+                                                                <tbody>
+                                                                    <tr>
+                                                                        <td>
+                                                                            {{ change.old_html | safe }}
+                                                                        </td>
+
+                                                                        <td>
+                                                                            {{ change.new_html | safe }}
+                                                                        </td>
+                                                                    </tr>
+                                                                </tbody>
+
+                                                            </table>
+
+                                                        {% endif %}
+
+                                                    </div>
+
+                                                {% endfor %}
+
+
+
+                                                <!-- Added / removed text -->
+                                                {% if record.added or record.removed %}
+
+                                                    <div class="change-section">
+
+                                                        <h2>Text</h2>
+
+                                                        <ul class="change-list">
+
+                                                            {% for item in record.added %}
+
+                                                                <li class="change-item change-item-added">
+
+                                                                    <div class="change-item-body">
+
+                                                                        {% if item.section %}
+                                                                            <span class="change-item-section">
+                                                                                {{ item.section }}
+                                                                            </span>
+                                                                        {% endif %}
+
+                                                                        <span class="change-item-text">
+                                                                            {{ item.text if item.text is defined else item }}
+                                                                        </span>
+
+                                                                    </div>
+
+                                                                    <span class="change-badge added-label">
+                                                                        Added
+                                                                    </span>
+
+                                                                </li>
+
+                                                            {% endfor %}
+
+                                                            {% for item in record.removed %}
+
+                                                                <li class="change-item change-item-removed">
+
+                                                                    <div class="change-item-body">
+
+                                                                        {% if item.section %}
+                                                                            <span class="change-item-section">
+                                                                                {{ item.section }}
+                                                                            </span>
+                                                                        {% endif %}
+
+                                                                        <span class="change-item-text">
+                                                                            {{ item.text if item.text is defined else item }}
+                                                                        </span>
+
+                                                                    </div>
+
+                                                                    <span class="change-badge removed-label">
+                                                                        Removed
+                                                                    </span>
+
+                                                                </li>
+
+                                                            {% endfor %}
+
+                                                        </ul>
+
+                                                    </div>
 
                                                 {% endif %}
 
-                                                {% if change.old != change.new %}
 
-                                                    <h2>Content changed</h2>
+                                                <!-- Added / removed links -->
+                                                {% if record.links_added or record.links_removed %}
 
-                                                    <table class="comparison-table">
+                                                    <div class="change-section">
 
-                                                        <thead>
-                                                            <tr>
-                                                                <th>Before</th>
-                                                                <th>After</th>
-                                                            </tr>
-                                                        </thead>
+                                                        <h2>Links</h2>
 
-                                                        <tbody>
-                                                            <tr>
-                                                                <td>
-                                                                    {{ change.old_html | safe }}
-                                                                </td>
+                                                        <ul class="change-list">
 
-                                                                <td>
-                                                                    {{ change.new_html | safe }}
-                                                                </td>
-                                                            </tr>
-                                                        </tbody>
+                                                            {% for link in record.links_added %}
 
-                                                    </table>
+                                                                <li class="change-item change-item-added">
+
+                                                                    <a
+                                                                        class="change-item-text"
+                                                                        href="{{ link }}"
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                    >
+                                                                        {{ link }}
+                                                                    </a>
+
+                                                                    <span class="change-badge added-label">
+                                                                        Added
+                                                                    </span>
+
+                                                                </li>
+
+                                                            {% endfor %}
+
+                                                            {% for link in record.links_removed %}
+
+                                                                <li class="change-item change-item-removed">
+
+                                                                    <a
+                                                                        class="change-item-text"
+                                                                        href="{{ link }}"
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                    >
+                                                                        {{ link }}
+                                                                    </a>
+
+                                                                    <span class="change-badge removed-label">
+                                                                        Removed
+                                                                    </span>
+
+                                                                </li>
+
+                                                            {% endfor %}
+
+                                                        </ul>
+
+                                                    </div>
+
+                                                {% endif %}
+
+
+                                                <!-- Added / removed documents -->
+                                                {% if record.documents_added or record.documents_removed %}
+
+                                                    <div class="change-section">
+
+                                                        <h2>Documents</h2>
+
+                                                        <ul class="change-list">
+
+                                                            {% for document in record.documents_added %}
+
+                                                                <li class="change-item change-item-added">
+
+                                                                    <a
+                                                                        class="change-item-text"
+                                                                        href="{{ document }}"
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                    >
+                                                                        {{ (document | string).split('/')[-1] }}
+                                                                    </a>
+
+                                                                    <span class="change-badge added-label">
+                                                                        Added
+                                                                    </span>
+
+                                                                </li>
+
+                                                            {% endfor %}
+
+                                                            {% for document in record.documents_removed %}
+
+                                                                <li class="change-item change-item-removed">
+
+                                                                    <a
+                                                                        class="change-item-text"
+                                                                        href="{{ document }}"
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                    >
+                                                                        {{ (document | string).split('/')[-1] }}
+                                                                    </a>
+
+                                                                    <span class="change-badge removed-label">
+                                                                        Removed
+                                                                    </span>
+
+                                                                </li>
+
+                                                            {% endfor %}
+
+                                                        </ul>
+
+                                                    </div>
 
                                                 {% endif %}
 
                                             </div>
+
+                                        </section>
 
                                         {% endfor %}
 
+                                        </div>
 
-
-                                        <!-- Added / removed text -->
-                                        {% if record.added or record.removed %}
-
-                                            <div class="change-section">
-
-                                                <h2>Text</h2>
-
-                                                <ul class="change-list">
-
-                                                    {% for item in record.added %}
-
-                                                        <li class="change-item change-item-added">
-
-                                                            <div class="change-item-body">
-
-                                                                {% if item.section %}
-                                                                    <span class="change-item-section">
-                                                                        {{ item.section }}
-                                                                    </span>
-                                                                {% endif %}
-
-                                                                <span class="change-item-text">
-                                                                    {{ item.text if item.text is defined else item }}
-                                                                </span>
-
-                                                            </div>
-
-                                                            <span class="change-badge added-label">
-                                                                Added
-                                                            </span>
-
-                                                        </li>
-
-                                                    {% endfor %}
-
-                                                    {% for item in record.removed %}
-
-                                                        <li class="change-item change-item-removed">
-
-                                                            <div class="change-item-body">
-
-                                                                {% if item.section %}
-                                                                    <span class="change-item-section">
-                                                                        {{ item.section }}
-                                                                    </span>
-                                                                {% endif %}
-
-                                                                <span class="change-item-text">
-                                                                    {{ item.text if item.text is defined else item }}
-                                                                </span>
-
-                                                            </div>
-
-                                                            <span class="change-badge removed-label">
-                                                                Removed
-                                                            </span>
-
-                                                        </li>
-
-                                                    {% endfor %}
-
-                                                </ul>
-
-                                            </div>
-
-                                        {% endif %}
-
-
-                                        <!-- Added / removed links -->
-                                        {% if record.links_added or record.links_removed %}
-
-                                            <div class="change-section">
-
-                                                <h2>Links</h2>
-
-                                                <ul class="change-list">
-
-                                                    {% for link in record.links_added %}
-
-                                                        <li class="change-item change-item-added">
-
-                                                            <a
-                                                                class="change-item-text"
-                                                                href="{{ link }}"
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                            >
-                                                                {{ link }}
-                                                            </a>
-
-                                                            <span class="change-badge added-label">
-                                                                Added
-                                                            </span>
-
-                                                        </li>
-
-                                                    {% endfor %}
-
-                                                    {% for link in record.links_removed %}
-
-                                                        <li class="change-item change-item-removed">
-
-                                                            <a
-                                                                class="change-item-text"
-                                                                href="{{ link }}"
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                            >
-                                                                {{ link }}
-                                                            </a>
-
-                                                            <span class="change-badge removed-label">
-                                                                Removed
-                                                            </span>
-
-                                                        </li>
-
-                                                    {% endfor %}
-
-                                                </ul>
-
-                                            </div>
-
-                                        {% endif %}
-
-
-                                        <!-- Added / removed documents -->
-                                        {% if record.documents_added or record.documents_removed %}
-
-                                            <div class="change-section">
-
-                                                <h2>Documents</h2>
-
-                                                <ul class="change-list">
-
-                                                    {% for document in record.documents_added %}
-
-                                                        <li class="change-item change-item-added">
-
-                                                            <a
-                                                                class="change-item-text"
-                                                                href="{{ document }}"
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                            >
-                                                                {{ (document | string).split('/')[-1] }}
-                                                            </a>
-
-                                                            <span class="change-badge added-label">
-                                                                Added
-                                                            </span>
-
-                                                        </li>
-
-                                                    {% endfor %}
-
-                                                    {% for document in record.documents_removed %}
-
-                                                        <li class="change-item change-item-removed">
-
-                                                            <a
-                                                                class="change-item-text"
-                                                                href="{{ document }}"
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                            >
-                                                                {{ (document | string).split('/')[-1] }}
-                                                            </a>
-
-                                                            <span class="change-badge removed-label">
-                                                                Removed
-                                                            </span>
-
-                                                        </li>
-
-                                                    {% endfor %}
-
-                                                </ul>
-
-                                            </div>
-
-                                        {% endif %}
-
-                                    </div>
-
-                                </section>
-
-                                {% endfor %}
+                                    {% endif %}
 
                                 </div>
 
-                            {% endif %}
+                                {% endif %}
+
+                            </section>
+
+                        {% endfor %}
 
                         </div>
 
@@ -566,7 +672,7 @@
             {% else %}
 
                 <p class="empty-state">
-                    No changes were detected in the latest scan.
+                    No websites have been scanned yet.
                 </p>
 
             {% endif %}
@@ -1882,7 +1988,7 @@
 
                         const response =
                             await fetch(
-                                "/scanner/initial_critical_page_scan/",
+                                "/scanner/initial_critical_page_scan",
                                 {
                                     method: "POST",
                                     headers: {

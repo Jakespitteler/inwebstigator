@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import HttpUrl
 
-from app.backend.links import website_name
+from app.backend.crawler.links import website_name
 from app.core.config import config
 from app.models.website_models import DeactivationReason, WebsiteRead
 
@@ -63,7 +63,8 @@ def _time_zone_label(moment: datetime) -> str:
 def format_email_time(moment: datetime) -> str:
     """Shows a time in an email, in the configured time zone, e.g. "07 Oct 2026, 10:56 AWST".
 
-    The app saves most times without a time zone, in the computer's own time, so those are read as local time.
+    The app's times are in UTC, so they are converted to the configured time zone, or to the computer's own time
+    zone if none is set. A time without a time zone is read as the computer's own time.
 
     Args:
         moment: The time to show.
@@ -122,7 +123,7 @@ def describe_website_health(website: WebsiteRead, now: datetime) -> WebsiteHealt
 
     Args:
         website: The website, as saved after the latest scan.
-        now: The time the health check is sent, in the same form as the website's saved times.
+        now: The time the health check is sent, with its time zone (e.g. UTC), like the website's saved times.
 
     Returns:
         The website's status and whether it needs attention.

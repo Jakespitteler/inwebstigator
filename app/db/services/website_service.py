@@ -1,18 +1,17 @@
 import logging
 import uuid
 from collections.abc import Sequence
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from pydantic import HttpUrl
-from sqlalchemy.orm import Session
 
-from app.backend.links import remove_repeated_pages
 from app.core.config import config
 from app.core.errors import NotFoundError
+from app.core.urls import remove_repeated_pages
 from app.db import repository
 from app.db.schema import DBWebsite
+from app.db.services.base_crud_service import BaseCRUDService
 from app.db.services.critical_page_service import CriticalPageService
-from app.db.services.crud_protocol import CRUDService
 from app.db.services.internal_link_service import InternalLinkService
 from app.db.services.recipient_service import RecipientService
 from app.models.critical_page_models import CriticalPageCreate
@@ -24,28 +23,11 @@ logger: logging.Logger = logging.getLogger(__name__)
 MAX_DELAY: float = config.web_crawler_max_delay
 
 
-class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
-    def __init__(self, session: Session):
-        """Initialises the WebsiteService with an active database session.
+class WebsiteService(BaseCRUDService[DBWebsite, WebsiteRead, WebsiteCreate, WebsiteUpdate]):
+    """Reads and writes the monitored websites, with their critical pages, recipients and internal links."""
 
-        Args:
-            session: The SQLAlchemy database session object used for executing operations.
-        """
-        self._db: Session = session
-
-    def get_all(self, skip: int = 0, limit: int | None = 100) -> Sequence[WebsiteRead]:
-        """Retrieves a paginated list of the users website records from the database.
-
-        Args:
-            skip: The number of initial records to skip for pagination. Defaults to 0.
-            limit: The maximum number of records to return, or None for every record. Defaults to 100.
-
-        Returns:
-            A sequence of WebsiteRead models representing the retrieved records.
-        """
-
-        website_records: Sequence[DBWebsite] = repository.get_list(self._db, table=DBWebsite, skip=skip, limit=limit)
-        return [WebsiteRead.model_validate(website_record) for website_record in website_records]
+    table = DBWebsite
+    read_model = WebsiteRead
 
     def get(self, id: uuid.UUID) -> WebsiteRead:
         """Retrieves a single website record and its relationships by its unique primary key identifier.
@@ -115,19 +97,25 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
             )
         self._db.expire(website_record, ["critical_pages"])
 
+        self._link_recipients(website_record.id, model_create.recipient_emails)
+        return WebsiteRead.model_validate(website_record)
+
+    def _link_recipients(self, website_id: uuid.UUID, recipient_emails: Sequence[str]) -> None:
+        """Links each email address to a website, adding it as a recipient first if it is new.
+
+        An address given twice, or already linked to the website, is only linked once.
+
+        Args:
+            website_id: The website.
+            recipient_emails: The email addresses to email about the website.
+        """
         recipient_service = RecipientService(self._db)
-        for recipient_email in model_create.recipient_emails:
+        for recipient_email in dict.fromkeys(recipient_emails):
             try:
                 recipient = recipient_service.get_by_email(recipient_email)
             except NotFoundError:
                 recipient = recipient_service.create(RecipientCreate(email=recipient_email))
-
-            recipient_service.link_recipient_and_website(
-                website_id=website_record.id,
-                recipient_id=recipient.id,
-            )
-
-        return WebsiteRead.model_validate(website_record)
+            recipient_service.link_recipient_and_website(website_id=website_id, recipient_id=recipient.id)
 
     def update(self, id: uuid.UUID, model_update: WebsiteUpdate) -> WebsiteRead:
         """Updates attributes of an existing website record and syncs its sub-resources.
@@ -158,12 +146,7 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
 
         recipient_service = RecipientService(self._db)
         if model_update.add_recipient_emails:
-            for recipient_email in model_update.add_recipient_emails:
-                try:
-                    recipient = recipient_service.get_by_email(recipient_email)
-                except NotFoundError:
-                    recipient = recipient_service.create(RecipientCreate(email=recipient_email))
-                recipient_service.link_recipient_and_website(website_id=website_record.id, recipient_id=recipient.id)
+            self._link_recipients(website_record.id, model_update.add_recipient_emails)
 
         if model_update.remove_recipient_emails:
             for recipient_email in model_update.remove_recipient_emails:
@@ -225,7 +208,7 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         Raises:
             NotFoundError: If no website record matches the provided UUID.
         """
-        on_cooldown_until = datetime.now() + timedelta(hours=hours)
+        on_cooldown_until = datetime.now(UTC) + timedelta(hours=hours)
 
         website_record = repository.update(
             self._db,
@@ -253,7 +236,7 @@ class WebsiteService(CRUDService[WebsiteRead, WebsiteCreate, WebsiteUpdate]):
         new_delay: float = min(config.web_crawler_max_delay, website_record.recommended_delay + 0.5)
         new_concurrent: int = max(config.web_crawler_min_concurrent, website_record.recommended_concurrent // 2)
 
-        on_cooldown_until = datetime.now() + timedelta(hours=hours)
+        on_cooldown_until = datetime.now(UTC) + timedelta(hours=hours)
 
         updated_record = repository.update(
             self._db,

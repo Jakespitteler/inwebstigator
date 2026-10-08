@@ -1,13 +1,15 @@
 import uuid
 from collections.abc import Sequence
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import HttpUrl
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import config
 from app.core.errors import NotFoundError
+from app.db.schema import DBRecipient
 from app.db.services.critical_page_service import CriticalPageService
 from app.db.services.internal_link_service import InternalLinkService
 from app.db.services.website_service import WebsiteService
@@ -154,6 +156,7 @@ def test_create_website_watches_each_critical_page_once(session: Session) -> Non
 
 
 def test_get_by_url_selects_requested_website(session: Session, test_website: WebsiteRead) -> None:
+    """Tests each website is found by its own URL, and an unknown URL raises NotFoundError."""
     service = WebsiteService(session)
     second = service.create(WebsiteCreate(url=HttpUrl("https://second.example.com/au")))
     assert service.get_by_url(second.url).id == second.id
@@ -346,11 +349,16 @@ def test_set_cooldown(session: Session, test_website: WebsiteRead) -> None:
         test_website: The test website record.
     """
     hours = 12
+    before = datetime.now(UTC)
     updated_website: WebsiteRead = WebsiteService(session).set_cooldown(id=test_website.id, hours=hours)
 
     assert updated_website.on_cooldown_until is not None
-    # Verify the cooldown is set to a future timestamp
-    assert updated_website.on_cooldown_until > datetime.now()
+    # Verify the cooldown ends the given number of hours from now
+    assert (
+        before + timedelta(hours=hours)
+        <= updated_website.on_cooldown_until
+        <= datetime.now(UTC) + timedelta(hours=hours)
+    )
 
 
 def test_throttle_and_cooldown(session: Session, test_website: WebsiteRead) -> None:
@@ -370,8 +378,8 @@ def test_throttle_and_cooldown(session: Session, test_website: WebsiteRead) -> N
 
     assert updated_website.on_cooldown_until is not None
     assert updated_website.recommended_delay > initial_delay
-    assert updated_website.recommended_concurrent <= initial_concurrent
-    assert updated_website.on_cooldown_until > datetime.now()
+    assert updated_website.recommended_concurrent < initial_concurrent
+    assert updated_website.on_cooldown_until > datetime.now(UTC) + timedelta(hours=hours - 1)
 
 
 def test_throttle_and_cooldown_clamped_to_config_limits(session: Session, test_website: WebsiteRead) -> None:
@@ -423,8 +431,10 @@ def test_handle_traffic_error_throttles_when_not_at_min_speed(session: Session, 
     assert result_message == "Website throttled and placed on cooldown."
 
     fetched_website = service.get(id=website.id)
+    assert fetched_website.recommended_delay > website.recommended_delay
+    assert fetched_website.recommended_concurrent < website.recommended_concurrent
     assert fetched_website.on_cooldown_until is not None
-    assert fetched_website.on_cooldown_until > datetime.now()
+    assert fetched_website.on_cooldown_until > datetime.now(UTC)
 
 
 def test_handle_traffic_error_increments_attempts_at_min_speed(session: Session, test_website: WebsiteRead) -> None:
@@ -502,7 +512,8 @@ def test_handle_connection_error(session: Session, test_website: WebsiteRead) ->
 
     fetched_website = service.get(id=test_website.id)
     assert fetched_website.on_cooldown_until is not None
-    assert fetched_website.on_cooldown_until > datetime.now() + timedelta(hours=1, minutes=59)
+    assert fetched_website.on_cooldown_until > datetime.now(UTC) + timedelta(hours=1, minutes=59)
+    assert fetched_website.on_cooldown_until <= datetime.now(UTC) + timedelta(hours=2)
 
 
 def test_handle_too_large_deactivates_website_and_records_why(session: Session, test_website: WebsiteRead) -> None:
@@ -556,7 +567,7 @@ def test_deactivated_reason_is_only_cleared_by_reactivating(
     assert updated_website.deactivated_reason == expected_reason
 
 
-def test_create_monitors_main_url_once(session: Session):
+def test_create_monitors_main_url_once(session: Session) -> None:
     """Tests the main URL is always a critical page, without duplicates, and is in the returned website."""
     payload = WebsiteCreate(
         url=HttpUrl("https://example.com"), critical_pages=["https://example.com/fees", "https://example.com"]
@@ -569,3 +580,77 @@ def test_create_monitors_main_url_once(session: Session):
         "https://example.com/fees",
     ]
     assert payload.critical_pages == ["https://example.com/fees", "https://example.com/"]  # caller's model untouched
+
+
+def test_create_links_an_email_given_twice_once(session: Session) -> None:
+    """Tests the same email typed twice in the wizard adds one recipient, rather than failing part way through."""
+    website = WebsiteService(session).create(
+        WebsiteCreate(url=HttpUrl("https://example.com"), recipient_emails=["jj@example.com", "jj@example.com"])
+    )
+
+    assert [recipient.email for recipient in website.recipients] == ["jj@example.com"]
+
+
+def test_adding_an_email_already_on_the_website_changes_nothing(session: Session) -> None:
+    """Tests adding an email that is already a recipient of the website does not fail."""
+    service = WebsiteService(session)
+    website = service.create(WebsiteCreate(url=HttpUrl("https://example.com"), recipient_emails=["jj@example.com"]))
+
+    updated = service.update(website.id, WebsiteUpdate(add_recipient_emails=["jj@example.com"]))
+
+    assert [recipient.email for recipient in updated.recipients] == ["jj@example.com"]
+
+
+def test_removing_an_email_unlinks_it_but_keeps_the_recipient(session: Session) -> None:
+    """Tests an email removed from a website is no longer emailed about it, but is still a recipient (e.g. of other
+    websites)."""
+    service = WebsiteService(session)
+    website = service.create(
+        WebsiteCreate(url=HttpUrl("https://example.com"), recipient_emails=["jj@example.com", "kim@example.com"])
+    )
+
+    updated = service.update(website.id, WebsiteUpdate(remove_recipient_emails=["jj@example.com"]))
+
+    assert [recipient.email for recipient in updated.recipients] == ["kim@example.com"]
+    assert session.scalars(select(DBRecipient.email).order_by(DBRecipient.email)).all() == [
+        "jj@example.com",
+        "kim@example.com",
+    ]
+
+
+def test_removing_an_email_that_is_not_a_recipient_raises_not_found(
+    session: Session, test_website: WebsiteRead
+) -> None:
+    """Tests removing an email that is not a recipient raises NotFoundError."""
+    with pytest.raises(NotFoundError):
+        WebsiteService(session).update(test_website.id, WebsiteUpdate(remove_recipient_emails=["nobody@example.com"]))
+
+
+def test_create_reuses_a_recipient_already_on_another_website(session: Session, test_website: WebsiteRead) -> None:
+    """Tests an email that is already a recipient of another website is linked to the new website, rather than added
+    a second time."""
+    existing_email = test_website.recipients[0].email
+
+    website = WebsiteService(session).create(
+        WebsiteCreate(url=HttpUrl("https://other.example.com"), recipient_emails=[existing_email])
+    )
+
+    assert [recipient.id for recipient in website.recipients] == [test_website.recipients[0].id]
+    assert len(session.scalars(select(DBRecipient)).all()) == 1
+
+
+def test_deleting_a_website_keeps_its_recipients(session: Session, test_website: WebsiteRead) -> None:
+    """Tests a deleted website's recipients are kept, as they may be emailed about other websites."""
+    WebsiteService(session).delete(test_website.id)
+
+    assert session.scalars(select(DBRecipient.id)).all() == [test_website.recipients[0].id]
+
+
+def test_reset_failed_attempts_sets_the_count_back_to_zero(session: Session, test_website: WebsiteRead) -> None:
+    """Tests a successful scan resets the count of failed attempts at minimum speed to 0."""
+    service = WebsiteService(session)
+    service.update(test_website.id, WebsiteUpdate(failed_attempts_at_min_speed=2))
+
+    service.reset_failed_attempts(test_website.id)
+
+    assert service.get(test_website.id).failed_attempts_at_min_speed == 0

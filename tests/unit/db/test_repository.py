@@ -2,6 +2,7 @@ import uuid
 from collections.abc import Sequence
 
 import pytest
+from sqlalchemy import Column, ForeignKey, Integer, MetaData, Table, Uuid, insert
 from sqlalchemy.orm import Session
 
 from app.core.errors import IntegrityError, NotFoundError
@@ -201,6 +202,13 @@ def test_bulk_insert(session: Session) -> None:
     assert all(record.id is not None for record in records)
 
 
+def test_bulk_insert_with_no_rows_inserts_nothing(session: Session) -> None:
+    """Tests inserting no rows does nothing, rather than failing or inserting an empty row."""
+    repository.bulk_insert(session, table=DBTestTable, rows=[])
+
+    assert repository.get_list(session, table=DBTestTable, limit=None) == []
+
+
 def test_bulk_insert_raises_integrity_error(session: Session, test_record: DBTestTable) -> None:
     """
     Tests that bulk_insert raises IntegrityError if unique constraints are violated.
@@ -335,6 +343,38 @@ def test_batch_delete_by_ids_and_attributes(session: Session) -> None:
 
     with pytest.raises(NotFoundError):
         repository.get(session, table=DBTestTable, id=record1.id)
+
+    # The record that was not asked for remains
+    assert repository.get(session, table=DBTestTable, id=record2.id).id == record2.id
+
+
+def test_batch_delete_by_a_list_of_attribute_values(session: Session) -> None:
+    """Tests records matching any value in a list of attribute values are deleted, and other records are kept."""
+    records = [DBTestTable(name="Delete A"), DBTestTable(name="Delete B"), DBTestTable(name="Keep C")]
+    repository.batch_add(session, records)
+
+    repository.batch_delete(session, table=DBTestTable, attributes={DBTestTable.name.key: ["Delete A", "Delete B"]})
+
+    remaining = repository.get_list(session, table=DBTestTable, limit=None)
+    assert [record.name for record in remaining] == ["Keep C"]
+
+
+def test_batch_delete_raises_integrity_error_when_a_record_is_still_referenced(
+    session: Session, test_record: DBTestTable
+) -> None:
+    """Tests deleting a record another table still points to (with no cascade) raises the app's IntegrityError, as
+    foreign keys are checked."""
+    child_table = Table(
+        "test_child_table",
+        MetaData(),
+        Column("id", Integer, primary_key=True),
+        Column("parent_id", Uuid(), ForeignKey(DBTestTable.id), nullable=False),
+    )
+    child_table.create(session.connection(), checkfirst=True)
+    session.execute(insert(child_table).values(id=1, parent_id=test_record.id))
+
+    with pytest.raises(IntegrityError):
+        repository.batch_delete(session, table=DBTestTable, ids=[test_record.id])
 
 
 def test_batch_delete_no_params_raises_value_error(session: Session) -> None:

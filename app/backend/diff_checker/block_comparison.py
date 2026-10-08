@@ -3,14 +3,8 @@ from collections.abc import Iterable, Iterator, Sequence
 from difflib import SequenceMatcher
 from typing import NamedTuple
 
-from app.backend.diff_checker.models import (
-    ChangedBlock,
-    ChangedRegion,
-    ContentBlock,
-    ContentDiff,
-    DiffSettings,
-    MatchedText,
-)
+from app.backend.diff_checker.models import ChangedRegion, ContentDiff, DiffSettings, MatchedText
+from app.models.content_block_models import ChangedBlock, ContentBlock
 
 
 class _PlacedBlock(NamedTuple):

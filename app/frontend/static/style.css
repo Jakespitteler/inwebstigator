@@ -935,6 +935,45 @@ a.change-item-text {
     box-shadow: var(--card-shadow);
 }
 
+/* Each scan in a website's history is a flat panel too, with its critical page panels inside it */
+.change-record.scan-change-record {
+    padding: 14px 18px;
+    margin-bottom: 10px;
+    border-color: var(--content-border);
+    border-radius: var(--radius-lg);
+    background: var(--content-bg);
+    box-shadow: var(--content-shadow);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+.change-record.scan-change-record:last-child {
+    margin-bottom: 0;
+}
+
+.change-record.scan-change-record::before {
+    display: none;
+}
+
+.change-record.scan-change-record .page-change-record {
+    background: var(--surface);
+}
+
+.change-summary span.scan-problem {
+    color: var(--danger-text);
+    background: var(--danger-bg);
+    border-color: var(--danger-border);
+}
+
+.change-summary span.scan-awaiting-email {
+    color: var(--link);
+    background: var(--accent-light);
+}
+
+.scan-change-record .website-notice {
+    margin: 0 0 18px;
+}
+
 .main-page-badge {
     flex-shrink: 0;
     padding: 3px 10px;

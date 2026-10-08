@@ -4,7 +4,8 @@ from collections.abc import Callable, Iterator
 from bs4 import BeautifulSoup, Comment, Tag
 from bs4.element import NavigableString, PageElement, PreformattedString
 
-from app.backend.diff_checker.models import ContentBlock, HTMLBlockType, PageContent
+from app.backend.diff_checker.models import PageContent
+from app.models.content_block_models import ContentBlock, HTMLBlockType
 
 HEADING_TAGS: frozenset[str] = frozenset({"h1", "h2", "h3", "h4", "h5", "h6"})
 IGNORED_SECTION_TAGS: frozenset[str] = frozenset({"nav", "aside"})
@@ -118,7 +119,12 @@ def clean_html(soup: BeautifulSoup) -> BeautifulSoup:
         comment.extract()
 
     for text_node in soup.find_all(string=True):
-        if "<" in text_node and ">" in text_node and re.search(r"<\s*/?\s*[a-zA-Z][^>]*>", text_node):
+        # A tag name is only letters, digits and dashes, so text such as `<records@example.gov.au>` is kept.
+        if (
+            "<" in text_node
+            and ">" in text_node
+            and re.search(r"<\s*/?\s*[a-zA-Z][a-zA-Z0-9-]*(\s[^>]*)?/?>", text_node)
+        ):
             text_node.extract()
 
     return soup
@@ -269,6 +275,26 @@ def extract_sequential_blocks(container: Tag, ignore_parents: frozenset[str]) ->
         current_heading = section_titles[-1] if section_titles else current_heading
 
     return headings, blocks
+
+
+def main_content_html(html: str) -> str:
+    """Returns the HTML of the part of a page whose changes are watched: its `<main>` (or `<body>`), without its
+    navigation and side panels (`<nav>`, `<aside>`).
+
+    Links are taken from the same part of the page as the text, so a change to a menu shared by every page is not
+    reported as a change on every critical page.
+
+    Args:
+        html: The page's HTML.
+
+    Returns:
+        The HTML of the page's main content.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    main_container: Tag | BeautifulSoup = soup.find("main") or soup.find("body") or soup
+    for ignored_section in main_container.find_all(list(IGNORED_SECTION_TAGS)):
+        ignored_section.decompose()
+    return str(main_container)
 
 
 def parse_html(html: str) -> PageContent:

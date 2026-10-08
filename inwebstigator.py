@@ -34,7 +34,7 @@ ROOT: Path = resource_path()
 os.chdir(ROOT)
 sys.path.insert(0, str(ROOT))
 
-import app.main
+import app.main  # noqa: E402 - the app's folder has to be on the import path first
 
 DEFAULT_HOST: str = config.server_host
 PREFERRED_PORT: int = config.server_preferred_port
@@ -112,8 +112,9 @@ ERROR_HTML: str = (
 <main>
   <h1>Inwebstigator couldn't start</h1>
   <p>
-    The local server stopped before it was ready. The terminal window shows
-    the error. Close this window, fix the problem, then run desktop.py again.
+    The local server stopped before it was ready. The error is in the log file
+    in the Inwebstigator folder in AppData\\Local (logs\\inwebstigator.log).
+    Close this window, then open Inwebstigator again.
   </p>
 </main>
 """

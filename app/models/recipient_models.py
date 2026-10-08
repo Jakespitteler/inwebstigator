@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import AwareDatetime, BaseModel, ConfigDict, EmailStr
 
 from app.core.config import config
 
@@ -24,5 +24,5 @@ class RecipientRead(BaseModel):
 
 class RecipientUpdate(BaseModel):
     email: EmailStr | None = None
-    last_email_at: datetime | None = None
+    last_email_at: AwareDatetime | None = None  # Can be set through the API, so a time without a zone is refused
     days_between_health_checks: float | None = None

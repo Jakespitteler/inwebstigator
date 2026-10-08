@@ -1,7 +1,8 @@
 import re
 import uuid
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import HttpUrl
 from sqlalchemy import (
@@ -11,6 +12,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     Select,
     String,
@@ -80,12 +82,56 @@ class TextList(TypeDecorator[list[str]]):
         return None if value is None else [_as_text(item) for item in value]
 
 
+class UTCDateTime(TypeDecorator[datetime]):
+    """A date and time column that is saved in UTC and read back as a UTC time, with its time zone.
+
+    SQLite has no type for a time with a time zone, so `DateTime(timezone=True)` drops the time zone when saving
+    and reads back a time without one. This column turns every time into UTC before saving it, and marks every time
+    it reads as UTC, so the app only ever works with UTC times that know their time zone.
+    """
+
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(self, value: datetime | None, dialect: Dialect) -> datetime | None:
+        """Turns a time into UTC, without its time zone, before it is saved.
+
+        Args:
+            value: The time to save, which must have a time zone, e.g. `datetime.now(UTC)`.
+            dialect: The database being saved to.
+
+        Returns:
+            The time in UTC, or None if there is no time.
+
+        Raises:
+            ValueError: If the time has no time zone, as it is not known which time zone it is in.
+        """
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            raise ValueError(f"{value} has no time zone, so it cannot be saved as UTC. Use e.g. datetime.now(UTC).")
+        return value.astimezone(UTC).replace(tzinfo=None)
+
+    def process_result_value(self, value: datetime | None, dialect: Dialect) -> datetime | None:
+        """Marks a time read from the database as UTC, which every saved time is.
+
+        Args:
+            value: The time as read, without a time zone.
+            dialect: The database being read from.
+
+        Returns:
+            The time in UTC, or None if there is no time.
+        """
+        return None if value is None else value.replace(tzinfo=UTC)
+
+
 class Base(DeclarativeBase):
     id: Mapped[uuid.UUID] = mapped_column(PG_UUID(), primary_key=True, default=uuid.uuid4)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
+    # CURRENT_TIMESTAMP is SQLite's current time in UTC
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), server_default=text("CURRENT_TIMESTAMP"))
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UTCDateTime(),
         server_default=text("CURRENT_TIMESTAMP"),
         onupdate=text("CURRENT_TIMESTAMP"),
     )
@@ -108,7 +154,7 @@ class DBRecipient(Base):
     __tablename__ = "recipients"
 
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
-    last_email_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_email_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     days_between_health_checks: Mapped[float] = mapped_column(
         Float, nullable=False, default=config.scheduler_default_days_between_health_checks
     )
@@ -116,8 +162,10 @@ class DBRecipient(Base):
 
 class DBInternalLink(Base):
     __tablename__ = "internal_links"
+    # A page is unique within its website, but can belong to two websites (e.g. example.com and example.com/research)
+    __table_args__ = (Index("uq_internal_links_url_website", "url", "website_id", unique=True),)
 
-    url: Mapped[str] = mapped_column(URLText, unique=True, nullable=False, index=True)
+    url: Mapped[str] = mapped_column(URLText, nullable=False, index=True)
     website_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("websites.id", ondelete="CASCADE"), nullable=False)
     website: Mapped["DBWebsite"] = relationship(back_populates="internal_links")
 
@@ -135,17 +183,53 @@ class DBCriticalPage(Base):
     website_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("websites.id", ondelete="CASCADE"), nullable=False)
     website: Mapped["DBWebsite"] = relationship(back_populates="critical_pages")
 
-    recent_links_added: Mapped[list[str]] = mapped_column(TextList, nullable=True)
-    recent_links_removed: Mapped[list[str]] = mapped_column(TextList, nullable=True)
-    recent_documents_added: Mapped[list[str]] = mapped_column(TextList, nullable=True)
-    recent_documents_removed: Mapped[list[str]] = mapped_column(TextList, nullable=True)
-    recent_text_added: Mapped[list[str]] = mapped_column(JSON, nullable=True)
-    recent_text_removed: Mapped[list[str]] = mapped_column(JSON, nullable=True)
-    recent_text_changed: Mapped[list[str]] = mapped_column(JSON, nullable=True)
-
     consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     last_failure_reason: Mapped[str | None] = mapped_column(String, nullable=True)
-    last_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class DBChange(Base):
+    """One thing a scan found, e.g. a new link on a critical page or an edited paragraph.
+
+    Which of the optional columns are set depends on the kind of change (see `ChangeCreate`).
+    """
+
+    __tablename__ = "changes"
+
+    scan_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("scan_runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    scan_run: Mapped["DBScanRun"] = relationship(back_populates="changes")
+    position: Mapped[int] = mapped_column(Integer, nullable=False)  # Keeps the changes in the order they were found
+    kind: Mapped[str] = mapped_column(String, nullable=False)  # A ChangeKind
+
+    page_url: Mapped[str | None] = mapped_column(URLText, nullable=True)
+    url: Mapped[str | None] = mapped_column(URLText, nullable=True)
+    old_block: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    new_block: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    similarity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    failure_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class DBScanRun(Base):
+    """One scan of one website: when it ran, how it went, what it found and whether its report has been emailed."""
+
+    __tablename__ = "scan_runs"
+
+    website_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("websites.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    website: Mapped["DBWebsite"] = relationship(back_populates="scan_runs")
+    scanned_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)  # A ScanStatus
+    message: Mapped[str | None] = mapped_column(String, nullable=True)
+    notified_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+
+    changes: Mapped[list[DBChange]] = relationship(
+        back_populates="scan_run",
+        cascade="all, delete-orphan",
+        order_by=DBChange.position,
+    )
 
 
 class DBWebsite(Base):
@@ -162,12 +246,12 @@ class DBWebsite(Base):
     days_between_scans: Mapped[float] = mapped_column(
         Float, nullable=False, default=config.scheduler_default_days_between_scans
     )
-    last_scan_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_scan_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     deactivated_reason: Mapped[str | None] = mapped_column(String, nullable=True)  # A DeactivationReason
     failed_attempts_at_min_speed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    on_cooldown_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    on_cooldown_until: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
     internal_links: Mapped[list[DBInternalLink]] = relationship(
         back_populates="website",
@@ -178,9 +262,10 @@ class DBWebsite(Base):
         cascade="all, delete-orphan",
     )
     recipients: Mapped[list[DBRecipient]] = relationship(secondary=website_recipient_association)
-    recent_added_internal_links: Mapped[list[str]] = mapped_column(TextList, nullable=True)
-    recent_removed_internal_links: Mapped[list[str]] = mapped_column(TextList, nullable=True)
-    internal_links_last_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    scan_runs: Mapped[list[DBScanRun]] = relationship(
+        back_populates="website",
+        cascade="all, delete-orphan",
+    )
 
     @property
     def internal_link_count(self) -> int:

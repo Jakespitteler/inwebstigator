@@ -5,8 +5,8 @@ from typing import Annotated, Any, Self
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, EmailStr, Field, HttpUrl, TypeAdapter, model_validator
 
-from app.backend.links import add_missing_scheme, resolve_critical_page_url
 from app.core.config import config
+from app.core.urls import add_missing_scheme, resolve_critical_page_url
 from app.models.critical_page_models import CriticalPageRead, CriticalPageUpdate
 from app.models.recipient_models import RecipientRead
 
@@ -81,12 +81,11 @@ class WebsiteRead(BaseModel):
     critical_pages: list[CriticalPageRead]
     internal_link_count: int
 
-    recent_added_internal_links: list[HttpUrl] | None = None
-    recent_removed_internal_links: list[HttpUrl] | None = None
-    internal_links_last_changed_at: datetime | None = None
-
 
 class WebsiteUpdate(BaseModel):
+    # Values set after the update is made (e.g. by the change detection) are checked too, so a bad link cannot be saved
+    model_config = ConfigDict(validate_assignment=True)
+
     url: HttpUrl | None = None
 
     recommended_delay: float | None = None
@@ -107,7 +106,6 @@ class WebsiteUpdate(BaseModel):
     initial_internal_links: list[HttpUrl] | None = None
     recent_added_internal_links: list[HttpUrl] | None = None
     recent_removed_internal_links: list[HttpUrl] | None = None
-    internal_links_last_changed_at: datetime | None = None
 
     @property
     def changed_page_ids(self) -> set[uuid.UUID]:
@@ -118,3 +116,26 @@ class WebsiteUpdate(BaseModel):
     def has_changes(self) -> bool:
         """Whether a scan found changes worth reporting, as opposed to only saving baselines."""
         return bool(self.changed_page_ids or self.recent_added_internal_links or self.recent_removed_internal_links)
+
+
+class WebsiteSettingsUpdate(BaseModel):
+    """The website settings the dashboard can change.
+
+    The rest of `WebsiteUpdate` is only for the scanner to save what it found, so it is not accepted from requests.
+    """
+
+    recommended_delay: float | None = None
+    recommended_concurrent: int | None = None
+    days_between_scans: float | None = Field(default=None, ge=MINIMUM_DAYS_BETWEEN_SCANS)
+    active: bool | None = None
+
+    add_recipient_emails: list[EmailStr] | None = None
+    remove_recipient_emails: list[EmailStr] | None = None
+
+    def as_website_update(self) -> WebsiteUpdate:
+        """Turns the settings into an update of the website, changing only the settings that were given.
+
+        Returns:
+            The update.
+        """
+        return WebsiteUpdate(**self.model_dump(exclude_unset=True))

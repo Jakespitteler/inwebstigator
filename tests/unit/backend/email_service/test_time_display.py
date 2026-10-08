@@ -43,3 +43,37 @@ def test_a_time_zone_with_only_a_long_name_is_shown_as_an_offset(monkeypatch: py
     monkeypatch.setattr("app.backend.email_service.email_wording._email_time_zone", LongNamedZone)
 
     assert format_email_time(datetime(2026, 10, 7, 1, 30, tzinfo=UTC)) == "07 Oct 2026, 09:30 UTC+08:00"
+
+
+def test_a_blank_time_zone_shows_times_in_the_computers_own_time_zone(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests a blank EMAIL_TIME_ZONE shows the app's UTC times in the computer's own time zone."""
+    monkeypatch.setattr(config, "email_time_zone", "")
+    moment = datetime(2026, 10, 7, 2, 56, tzinfo=UTC)
+    local_moment: datetime = moment.astimezone()
+
+    assert format_email_time(moment).startswith(f"{local_moment:%d %b %Y, %H:%M} ")
+
+
+@pytest.mark.parametrize(
+    ("time_zone", "expected"),
+    [
+        ("America/Sao_Paulo", "06 Oct 2026, 23:56 UTC-03:00"),
+        ("Asia/Kolkata", "07 Oct 2026, 08:26 IST"),
+    ],
+)
+def test_a_time_zone_named_only_by_its_offset_is_shown_as_a_utc_offset(
+    monkeypatch: pytest.MonkeyPatch, time_zone: str, expected: str
+) -> None:
+    """Tests a time zone whose short name is only a number (e.g. "-03") is shown as "UTC-03:00", behind UTC as well as
+    ahead, while a real short name such as "IST" is kept."""
+    monkeypatch.setattr(config, "email_time_zone", time_zone)
+
+    assert format_email_time(datetime(2026, 10, 7, 2, 56, tzinfo=UTC)) == expected
+
+
+def test_a_time_zone_written_like_a_file_path_falls_back_to_the_computers_own(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests a time zone that is not a valid name at all (e.g. "../Perth") does not stop emails being written."""
+    monkeypatch.setattr(config, "email_time_zone", "../Perth")
+    moment = datetime(2026, 10, 7, 2, 56, tzinfo=UTC)
+
+    assert format_email_time(moment).startswith(f"{moment.astimezone():%d %b %Y, %H:%M}")

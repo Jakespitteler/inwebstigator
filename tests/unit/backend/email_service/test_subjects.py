@@ -45,3 +45,18 @@ def test_health_check_subject_when_a_website_needs_attention() -> None:
     ]
 
     assert health_check_subject(healths) == "Health check: 1 of 2 websites needs attention"
+
+
+@pytest.mark.parametrize(
+    ("needs_attention", "subject"),
+    [
+        ([False], "Health check: monitoring is running for 1 website"),
+        ([True], "Health check: 1 of 1 website needs attention"),
+        ([True, False, True], "Health check: 2 of 3 websites need attention"),
+    ],
+)
+def test_health_check_subject_counts_websites_with_the_right_words(needs_attention: list[bool], subject: str) -> None:
+    """Tests the subject says "website" for one and "websites" for more, and "need" when more than one needs it."""
+    healths = [WebsiteHealth(HttpUrl("https://a.example/"), "", attention) for attention in needs_attention]
+
+    assert health_check_subject(healths) == subject

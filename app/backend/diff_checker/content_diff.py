@@ -1,10 +1,11 @@
 import re
 from collections.abc import Sequence
 
+from app.backend.crawler.links import find_added_links, find_removed_links
 from app.backend.diff_checker.block_comparison import find_changed_regions, match_text_found_on_both_pages, pair_edits
-from app.backend.diff_checker.models import ContentBlock, ContentDiff, DiffSettings, LinkDiff, MatchedText, PageContent
+from app.backend.diff_checker.models import ContentDiff, DiffSettings, LinkDiff, MatchedText, PageContent
 from app.backend.diff_checker.page_parser import normalize_text
-from app.backend.links import find_added_links, find_removed_links
+from app.models.content_block_models import ContentBlock
 
 
 def compare_page_content(

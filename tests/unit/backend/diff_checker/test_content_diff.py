@@ -3,8 +3,9 @@ from collections import Counter
 from collections.abc import Iterable
 
 from app.backend.diff_checker.content_diff import compare_page_content, find_link_difference
-from app.backend.diff_checker.models import ChangedBlock, ContentBlock, DiffSettings, HTMLBlockType, PageContent
+from app.backend.diff_checker.models import DiffSettings, PageContent
 from app.backend.diff_checker.page_parser import parse_html
+from app.models.content_block_models import ChangedBlock, ContentBlock, HTMLBlockType
 
 
 def create_block(text: str, heading: str = "H1", block_type: HTMLBlockType = HTMLBlockType.PARAGRAPH) -> ContentBlock:
@@ -415,7 +416,7 @@ def test_compare_custom_similarity_threshold():
     """Tests that overriding the default threshold correctly categories blocks."""
     str1 = "apple pie recipe"
     str2 = "apple tart recipe"
-    # Similarity ratio is around ~0.87
+    # Similarity ratio is about 0.79
 
     old = PageContent(blocks=[create_block(str1)])
     new = PageContent(blocks=[create_block(str2)])
@@ -439,3 +440,82 @@ def test_find_link_difference() -> None:
     added, removed = find_link_difference(previous, current)
     assert added == ["/page3"]
     assert removed == ["/page1"]
+
+
+def test_compare_similarity_exactly_at_the_threshold_is_an_edit() -> None:
+    """Tests two blocks exactly as similar as the threshold count as an edit, as the threshold is the minimum."""
+    old = PageContent(blocks=[create_block("Fee is $50")])
+    new = PageContent(blocks=[create_block("Fee is $60")])  # Similarity ratio is exactly 0.9
+
+    added, removed, changed = compare_page_content(old, new, DiffSettings(similarity_threshold=0.9))
+
+    assert (added, removed) == ([], [])
+    assert [(change.similarity, change.is_move) for change in changed] == [(0.9, False)]
+
+
+def test_compare_only_looks_for_edits_among_nearby_blocks_past_the_comparison_cap() -> None:
+    """
+    Tests a new block in a changed region with more old blocks than the cap is only compared with the old blocks
+    nearest its own position, so two edited blocks that also swapped places are reported as removed and added.
+    """
+    old = PageContent(
+        blocks=[create_block("The office opens at 9am on weekdays."), create_block("Parking is free for all visitors.")]
+    )
+    new = PageContent(
+        blocks=[
+            create_block("Parking is free for registered visitors."),
+            create_block("The office opens at 8am on weekdays."),
+        ]
+    )
+
+    capped_added, capped_removed, capped_changed = compare_page_content(
+        old, new, DiffSettings(max_comparisons_per_block=1)
+    )
+    _, _, uncapped_changed = compare_page_content(old, new, DiffSettings(max_comparisons_per_block=2))
+
+    assert capped_changed == []
+    assert texts(capped_removed) == texts(old.blocks)
+    assert texts(capped_added) == texts(new.blocks)
+    assert len(uncapped_changed) == 2
+
+
+def test_compare_lists_moves_after_edits() -> None:
+    """Tests moved text is listed after the edited text, even when the move is higher up the page."""
+    added, removed, changed = compare_html(
+        "<main><h2>Saturday</h2><p>Closed</p><h2>Sunday</h2><p>Open 10am to 2pm</p>"
+        "<h2>Fees</h2><p>Entry is $5 per person.</p></main>",
+        "<main><h2>Saturday</h2><p>Open 10am to 2pm</p><h2>Sunday</h2><p>Closed</p>"
+        "<h2>Fees</h2><p>Entry is $6 per person.</p></main>",
+    )
+
+    assert (added, removed) == ([], [])
+    assert [(change.new_block.text, change.is_move) for change in changed] == [
+        ("Entry is $6 per person.", False),
+        ("Open 10am to 2pm", True),
+        ("Closed", True),
+    ]
+
+
+def test_compare_text_from_a_removed_section_is_not_a_move() -> None:
+    """
+    Tests text whose section heading was removed, now sitting in another section, is not reported as moved,
+    as the removed heading's own block reports the change.
+    """
+    added, removed, changed = compare_html(
+        "<main><h2>Saturday</h2><p>Closed</p><h2>Sunday</h2><p>Open 10am to 2pm</p></main>",
+        "<main><h2>Sunday</h2><p>Closed</p><p>Open 10am to 2pm</p></main>",
+    )
+
+    assert [(block.block_type, block.text) for block in removed] == [(HTMLBlockType.HEADING_2, "Saturday")]
+    assert (added, changed) == ([], [])
+
+
+def test_compare_edited_table_cell_is_reported_as_a_changed_row() -> None:
+    """Tests an edit to one cell of a table is reported as an edit of that row, with the other rows unchanged."""
+    added, removed, changed = compare_html(
+        "<main><table><tr><th>Licence</th><th>Fee</th></tr><tr><td>Car</td><td>$50</td></tr></table></main>",
+        "<main><table><tr><th>Licence</th><th>Fee</th></tr><tr><td>Car</td><td>$55</td></tr></table></main>",
+    )
+
+    assert (added, removed) == ([], [])
+    assert text_pairs(changed) == [("Car | $50", "Car | $55")]

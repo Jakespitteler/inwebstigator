@@ -7,26 +7,14 @@ from typing import NamedTuple
 
 from bs4 import BeautifulSoup, Tag
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
+from pydantic import HttpUrl
 
 from app.backend.diff_checker.word_diff import diff_words
 from app.backend.email_service.email_wording import WebsiteHealth, format_email_time
-from app.backend.links import remove_repeated_pages
-from app.core.config import config
 from app.core.paths import resource_path
-from app.models.critical_page_models import CriticalPageRead
-from app.models.website_models import WebsiteCreate, WebsiteRead
-
-
-class ScanStatus(StrEnum):
-    """How a website's scan went, which decides the title and colours of its report."""
-
-    SUCCESS = "success"
-    TRAFFIC_ERROR = "traffic_error"
-    CONNECTION_ERROR = "connection_error"
-    SCAN_ERROR = "scan_error"
-    SKIPPED_DEACTIVATED = "skipped_deactivated"
-    SKIPPED_COOLDOWN = "skipped_cooldown"
-    TOO_LARGE = "too_large"
+from app.core.urls import remove_repeated_pages
+from app.models.scan_run_models import PageChanges, ScanRunRead, ScanStatus
+from app.models.website_models import WebsiteCreate
 
 
 class Severity(StrEnum):
@@ -56,6 +44,7 @@ STATUS_STYLES: dict[ScanStatus, StatusStyle] = {
     ScanStatus.SKIPPED_DEACTIVATED: StatusStyle("Scan Skipped (Deactivated)", Severity.WARNING),
     ScanStatus.SKIPPED_COOLDOWN: StatusStyle("Scan Skipped (Cooldown Active)", Severity.WARNING),
     ScanStatus.TOO_LARGE: StatusStyle("Scan Refused (Website Too Large)", Severity.WARNING),
+    ScanStatus.PAGES_MISSING: StatusStyle("Most Pages Missing", Severity.WARNING),
 }
 
 
@@ -93,80 +82,30 @@ def _render(template_name: str, **values: object) -> str:
     return inline_styles(html)
 
 
-def _page_has_changes(page: CriticalPageRead) -> bool:
-    """Checks whether a critical page has any changes to report.
+def generate_scan_report_html(website_url: HttpUrl | str, scan_run: ScanRunRead) -> str:
+    """Generates the inline-styled HTML report card for one scan of a website, for any scan status.
 
     Args:
-        page: The critical page.
-
-    Returns:
-        True if any of its links, documents or text changed.
-    """
-    return any(
-        (
-            page.recent_links_added,
-            page.recent_links_removed,
-            page.recent_documents_added,
-            page.recent_documents_removed,
-            page.recent_text_added,
-            page.recent_text_removed,
-            page.recent_text_changed,
-        )
-    )
-
-
-def _unreachable_pages(website: WebsiteRead) -> list[CriticalPageRead]:
-    """Finds the critical pages that keep failing, which are listed as unreachable rather than with old changes.
-
-    Args:
-        website: The website.
-
-    Returns:
-        The critical pages that have failed enough checks in a row to be reported.
-    """
-    return [
-        page
-        for page in website.critical_pages
-        if page.consecutive_failures >= config.critical_page_alert_after_failures
-    ]
-
-
-def generate_scan_report_html(
-    website: WebsiteRead,
-    status: ScanStatus = ScanStatus.SUCCESS,
-    message: str | None = None,
-) -> str:
-    """Generates the inline-styled HTML report card for one website's scan, for any scan status.
-
-    Args:
-        website: The website, with only the changes found by this scan.
-        status: How the scan went. Defaults to a normal scan.
-        message: What happened, shown in the alert box when the scan did not go normally.
+        website_url: The website that was scanned.
+        scan_run: The scan, with only the changes it found.
 
     Returns:
         The report card as HTML.
     """
-    unreachable_pages: list[CriticalPageRead] = _unreachable_pages(website)
-    changed_pages: list[CriticalPageRead] = [
-        page for page in website.critical_pages if page not in unreachable_pages and _page_has_changes(page)
-    ]
-    style: StatusStyle = STATUS_STYLES[status]
+    pages: list[PageChanges] = scan_run.pages
+    style: StatusStyle = STATUS_STYLES[scan_run.status]
     return _render(
         "scan_report.html",
         severity=style.severity,
-        website=website,
+        website_url=website_url,
+        scan_run=scan_run,
         style=style,
-        is_success=status is ScanStatus.SUCCESS,
-        message=message or "No further details available.",
-        checked_at=format_email_time(datetime.now(UTC)),
-        has_changes=bool(
-            website.recent_added_internal_links
-            or website.recent_removed_internal_links
-            or unreachable_pages
-            or changed_pages
-        ),
-        unreachable_pages=unreachable_pages,
-        changed_pages=changed_pages,
+        is_success=scan_run.status is ScanStatus.SUCCESS,
+        message=scan_run.message or "No further details available.",
+        checked_at=format_email_time(scan_run.scanned_at),
+        has_changes=bool(scan_run.changes),
+        unreachable_pages=[page for page in pages if page.is_unreachable],
+        changed_pages=[page for page in pages if not page.is_unreachable],
         diff_words=diff_words,
     )
 

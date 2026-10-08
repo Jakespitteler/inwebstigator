@@ -1,16 +1,19 @@
+import pytest
 from bs4 import BeautifulSoup, Tag
 
 from app.backend.diff_checker.content_diff import compare_page_content
-from app.backend.diff_checker.models import HTMLBlockType, PageContent
+from app.backend.diff_checker.models import PageContent
 from app.backend.diff_checker.page_parser import (
     clean_html,
     extract_last_updated,
     extract_sequential_blocks,
+    main_content_html,
     normalize_text,
     parse_html,
     parse_standard_text,
     parse_table_row,
 )
+from app.models.content_block_models import HTMLBlockType
 
 
 def test_normalize_text_basic() -> None:
@@ -56,11 +59,13 @@ def test_clean_html_removes_comments() -> None:
 
 
 def test_clean_html_removes_text_with_html_tags() -> None:
-    html_content: str = "<div><span><br></span><p>Valid text</p></div>"
+    """Tests a text node holding raw HTML (escaped markup leaked by a CMS) is removed, and real text is kept."""
+    html_content: str = "<div><p>&lt;b&gt;Escaped markup&lt;/b&gt;</p><p>Valid text</p></div>"
     soup: BeautifulSoup = BeautifulSoup(html_content, "html.parser")
     cleaned: BeautifulSoup = clean_html(soup)
 
-    assert cleaned.find("p") is not None
+    assert "Escaped markup" not in cleaned.get_text()
+    assert [paragraph.get_text() for paragraph in cleaned.find_all("p")] == ["", "Valid text"]
 
 
 def test_extract_last_updated_found() -> None:
@@ -234,3 +239,147 @@ def test_navigation_and_form_choices_are_not_read() -> None:
     html = "<main><nav>Home About</nav><select><option>Perth</option></select><div>Content</div></main>"
 
     assert blocks_of(html) == [(HTMLBlockType.TEXT, "Content")]
+
+
+def link_targets(html: str) -> list[str]:
+    """Lists where each link in a piece of HTML goes, in page order."""
+    return [str(link["href"]) for link in BeautifulSoup(html, "html.parser").select("a[href]")]
+
+
+@pytest.mark.parametrize(
+    "hidden_html",
+    [
+        "<script>var fee = 50;</script>",
+        "<style>p { color: red; }</style>",
+        "<noscript>Please turn on JavaScript</noscript>",
+        "<template><p>Hidden fee</p></template>",
+        "<svg><text>Chart label</text></svg>",
+    ],
+)
+def test_scripts_styles_templates_and_drawings_are_not_read(hidden_html: str) -> None:
+    """Tests text in tags that are never shown as page text is left out of the page's blocks."""
+    assert blocks_of(f"<main>{hidden_html}<div>Content</div></main>") == [(HTMLBlockType.TEXT, "Content")]
+
+
+@pytest.mark.parametrize(
+    "ignored_html",
+    [
+        "<aside>Related pages</aside>",
+        "<div><nav>Section menu</nav></div>",
+        "<textarea>Type your question here</textarea>",
+        "<datalist><option>Perth</option></datalist>",
+        "<select><optgroup label='WA'><option>Perth</option></optgroup></select>",
+    ],
+)
+def test_side_panels_nested_menus_and_form_controls_are_not_read(ignored_html: str) -> None:
+    """Tests side panels, menus nested deeper in the page and form controls are left out of the page's blocks."""
+    assert blocks_of(f"<main>{ignored_html}<p>Content</p></main>") == [(HTMLBlockType.PARAGRAPH, "Content")]
+
+
+def test_a_doctype_is_not_read_as_text() -> None:
+    """Tests the doctype of a page with no <main> or <body>, where the whole page is read, is not read as text."""
+    assert blocks_of("<!DOCTYPE html><div>Fee is $50.</div>") == [(HTMLBlockType.TEXT, "Fee is $50.")]
+
+
+def test_only_the_main_content_is_read() -> None:
+    """Tests text outside <main>, such as a site banner or footer, is not read when the page has a <main>."""
+    html = (
+        "<body><header><p>Site banner</p></header><main><p>Fee is $50.</p></main>"
+        "<footer><p>Copyright 2026</p></footer></body>"
+    )
+
+    assert blocks_of(html) == [(HTMLBlockType.PARAGRAPH, "Fee is $50.")]
+
+
+def test_the_body_is_read_when_there_is_no_main() -> None:
+    """Tests the <body> is read when a page has no <main>, so the page's <head> is not read as text."""
+    html = "<html><head><title>Licence fees</title></head><body><p>Fee is $50.</p></body></html>"
+
+    assert blocks_of(html) == [(HTMLBlockType.PARAGRAPH, "Fee is $50.")]
+
+
+def test_tables_are_read_row_by_row_with_cells_joined_by_pipes() -> None:
+    """Tests a table's caption is one block and each row is one block, with its cells joined by pipes."""
+    html = (
+        "<main><table><caption>Licence fees</caption>"
+        "<thead><tr><th>Licence</th><th>Fee</th></tr></thead>"
+        "<tbody><tr><td>Car</td><td>$50</td></tr></tbody></table></main>"
+    )
+
+    assert blocks_of(html) == [
+        (HTMLBlockType.TABLE_CAPTION, "Licence fees"),
+        (HTMLBlockType.TABLE_ROW, "Licence | Fee"),
+        (HTMLBlockType.TABLE_ROW, "Car | $50"),
+    ]
+
+
+def test_each_heading_starts_a_section_whatever_its_level() -> None:
+    """Tests each block's section is the nearest heading above it, whether that heading is bigger or smaller."""
+    content = parse_html(
+        "<main><h1>Licences</h1><h2>Fees</h2><p>$50</p><h3>Late fees</h3><p>$10</p><h2>Hours</h2><p>9 to 5</p></main>"
+    )
+
+    assert content.headings == ["Licences", "Fees", "Late fees", "Hours"]
+    assert [
+        (block.parent_heading, block.text) for block in content.blocks if block.block_type is HTMLBlockType.PARAGRAPH
+    ] == [
+        ("Fees", "$50"),
+        ("Late fees", "$10"),
+        ("Hours", "9 to 5"),
+    ]
+
+
+def test_an_empty_heading_does_not_start_a_section() -> None:
+    """Tests a heading with no text is not recorded, so the text below it stays in the section above."""
+    content = parse_html("<main><h2>Hours</h2><h3> </h3><p>Open 9am to 5pm</p></main>")
+
+    assert content.headings == ["Hours"]
+    assert [(block.parent_heading, block.text) for block in content.blocks] == [
+        ("No heading", "Hours"),
+        ("Hours", "Open 9am to 5pm"),
+    ]
+
+
+def test_the_last_updated_date_is_read_whatever_the_heading_case() -> None:
+    """Tests the date next to a "Last updated:" heading is read with its spacing tidied, whatever the case."""
+    content = parse_html("<main><h4>LAST UPDATED:</h4><p> 7 October\n  2026 </p><p>Fee is $50.</p></main>")
+
+    assert content.last_updated == "7 October 2026"
+
+
+def test_a_last_updated_heading_with_nothing_after_it_gives_no_date() -> None:
+    """Tests a "Last updated:" heading with no element after it gives no date, rather than failing."""
+    soup: BeautifulSoup = BeautifulSoup("<div><p>Fee is $50.</p><h2>Last Updated:</h2></div>", "html.parser")
+    container: Tag = soup.find("div")  # type: ignore
+
+    assert extract_last_updated(container) is None
+
+
+def test_main_content_html_leaves_out_menus_and_side_panels() -> None:
+    """Tests the links taken from the main content leave out menus and side panels, inside and outside <main>."""
+    html = (
+        "<body><nav><a href='/menu'>Menu</a></nav>"
+        "<main><p><a href='/fees'>Fees</a></p><aside><a href='/related'>Related</a></aside>"
+        "<div><nav><a href='/section-menu'>Section menu</a></nav></div></main></body>"
+    )
+
+    assert link_targets(main_content_html(html)) == ["/fees"]
+
+
+def test_main_content_html_uses_the_body_when_there_is_no_main() -> None:
+    """Tests a page with no <main> uses its <body> as the main content, still without menus and side panels."""
+    html = (
+        "<html><body><nav><a href='/menu'>Menu</a></nav><p><a href='/fees'>Fees</a></p>"
+        "<aside><a href='/related'>Related</a></aside></body></html>"
+    )
+
+    assert link_targets(main_content_html(html)) == ["/fees"]
+
+
+def test_text_with_an_email_address_in_angle_brackets_is_read() -> None:
+    """Tests a sentence with an email address in angle brackets is read, as it is page text and not raw HTML."""
+    html = "<main><p>Send forms to Records &lt;records@example.gov.au&gt; by Friday.</p></main>"
+
+    assert blocks_of(html) == [
+        (HTMLBlockType.PARAGRAPH, "Send forms to Records <records@example.gov.au> by Friday."),
+    ]

@@ -1,8 +1,10 @@
 import asyncio
+import re
 import uuid
 from collections.abc import Iterator
 from contextlib import nullcontext
-from datetime import datetime
+from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 from bs4 import BeautifulSoup
@@ -10,20 +12,25 @@ from fastapi.testclient import TestClient
 from httpx2 import ASGITransport, AsyncClient, MockTransport, Response
 from pydantic import BaseModel, HttpUrl
 from pytest_mock import MockerFixture
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from app.backend.crawler.links import website_name
 from app.backend.email_service.message_builder import OutgoingEmail
-from app.backend.links import website_name
+from app.backend.scanning.scan_queue import ScanQueue, scan_queue
 from app.core.config import config
-from app.core.errors import ScanAlreadyQueuedError, ScanCancelledError, WebsiteTooLargeError
-from app.db.schema import Base, DBCriticalPage, DBRecipient, DBWebsite
+from app.core.errors import ScanAlreadyQueuedError, ScanCancelledError, UndeliverableEmailError, WebsiteTooLargeError
+from app.core.paths import resource_path
+from app.db.schema import Base, DBChange, DBCriticalPage, DBRecipient, DBScanRun, DBWebsite
+from app.db.services.scan_run_service import ScanRunService
 from app.db.session import get_db_session
 from app.frontend.api import routers
+from app.frontend.api.request_guard import API_TOKEN_HEADER
 from app.main import app
 from app.models import critical_page_models, recipient_models, website_models
-from app.scanning.scan_queue import ScanQueue, scan_queue
+from app.models.scan_run_models import ChangeCreate, ChangeKind, ScanRunCreate, ScanRunRead, ScanStatus
 from tests.fakes import FakeEmailSender
+from tests.unit.backend.email_service.builders import make_scan_run
 
 
 class TestCRUDRouters:
@@ -38,22 +45,28 @@ class TestCRUDRouters:
     model_create: BaseModel
     model_update: BaseModel
     fixture_name: str
+    expected_create_status: int = 201
+
+    def create_payload(self, request: pytest.FixtureRequest) -> dict[str, Any]:
+        """Returns the body of the request that creates a record. A subclass can fill in IDs from its fixtures."""
+        return self.model_create.model_dump(mode="json")
 
     @pytest.fixture
     def api_record(self, request: pytest.FixtureRequest) -> Base:
         """Dynamically fetches the database record fixture required by the subclass."""
         return request.getfixturevalue(self.fixture_name)
 
-    def test_get_all_records(self, api_client: TestClient) -> None:
+    def test_get_all_records(self, api_client: TestClient, api_record: Base) -> None:
         """
-        Tests retrieving a list of records from an api router.
+        Tests retrieving a list of records from an api router includes an existing record.
 
         Args:
             api_client: The FastAPI test client.
-            router_test_config: The router configuration.
+            api_record: An existing record.
         """
         response: Response = api_client.get(url=self.prefix)
         assert response.status_code == 200, response.text
+        assert str(api_record.id) in [record["id"] for record in response.json()]
 
     def test_get_record(self, api_client: TestClient, api_record: Base) -> None:
         """
@@ -66,6 +79,7 @@ class TestCRUDRouters:
         """
         response: Response = api_client.get(url=f"{self.prefix}/{api_record.id}")
         assert response.status_code == 200, response.text
+        assert response.json()["id"] == str(api_record.id)
 
     def test_get_record_not_found(self, api_client: TestClient) -> None:
         """
@@ -78,34 +92,32 @@ class TestCRUDRouters:
         response: Response = api_client.get(url=f"{self.prefix}/{uuid.uuid4()}")
         assert response.status_code == 404, response.text
 
-    def test_create_record(self, api_client: TestClient) -> None:
+    def test_create_record(self, api_client: TestClient, request: pytest.FixtureRequest) -> None:
         """
         Tests creating a new record.
 
         Args:
             api_client: The FastAPI test client.
-            router_test_config: The router configuration.
+            request: Gives the subclass access to its fixtures.
         """
-        response: Response = api_client.post(
-            url=self.prefix,
-            json=self.model_create.model_dump(mode="json"),
-        )
-        assert response.status_code == 201, response.text
+        response: Response = api_client.post(url=self.prefix, json=self.create_payload(request))
+        assert response.status_code == self.expected_create_status, response.text
+        if response.status_code == 201:  # The new record is saved, so it can be read back
+            assert api_client.get(url=f"{self.prefix}/{response.json()['id']}").status_code == 200
 
     def test_update_record(self, api_client: TestClient, api_record: Base) -> None:
         """
-        Tests updating an existing record's details.
+        Tests updating an existing record's details saves the new details.
 
         Args:
             api_client: The FastAPI test client.
             router_test_config: The router configuration.
             test_api_record: An existing record.
         """
-        response: Response = api_client.patch(
-            url=f"{self.prefix}/{api_record.id}",
-            json=self.model_update.model_dump(mode="json", exclude_unset=True),
-        )
+        changes: dict[str, Any] = self.model_update.model_dump(mode="json", exclude_unset=True)
+        response: Response = api_client.patch(url=f"{self.prefix}/{api_record.id}", json=changes)
         assert response.status_code == 200, response.text
+        assert response.json() | changes == response.json()
 
     def test_update_record_not_found(self, api_client: TestClient) -> None:
         """
@@ -165,8 +177,20 @@ class TestWebsiteRouter(TestCRUDRouters):
     __test__ = True
     prefix = routers.WEBSITE_ROUTER.prefix
     model_create = website_models.WebsiteCreate(url=HttpUrl("https://www.test_website.com"))
-    model_update = website_models.WebsiteUpdate(url=HttpUrl("https://www.updated_website.com"))
+    model_update = website_models.WebsiteSettingsUpdate(days_between_scans=2)
     fixture_name = "test_website"
+    # Websites are only added through /scanner/initial_scan, which checks the website and saves its baseline
+    expected_create_status = 405
+
+    def test_update_only_accepts_settings(self, api_client: TestClient, api_record: Base) -> None:
+        """Tests fields the scanner saves (e.g. its failure count) cannot be changed through the API."""
+        response: Response = api_client.patch(
+            url=f"{self.prefix}/{api_record.id}", json={"failed_attempts_at_min_speed": 99, "days_between_scans": 3}
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["failed_attempts_at_min_speed"] == 0
+        assert response.json()["days_between_scans"] == 3
 
 
 class TestCriticalPageRouter(TestCRUDRouters):
@@ -176,10 +200,23 @@ class TestCriticalPageRouter(TestCRUDRouters):
         url=HttpUrl("https://www.test_website.com/test_critical_page"),
         website_id=uuid.uuid4(),
     )
-    model_update = critical_page_models.CriticalPageUpdate(
-        links=[HttpUrl("https://www.test_website.com/updated_critical_page")]
-    )
+    model_update = critical_page_models.CriticalPageSettingsUpdate(ignore_rules=[re.compile(r"Last updated .*")])
     fixture_name = "test_critical_page"
+    # Critical pages are only added through /scanner/initial_critical_page_scan, which checks the page is on the
+    # website and loads, and saves its baseline
+    expected_create_status = 405
+
+    def create_payload(self, request: pytest.FixtureRequest) -> dict[str, Any]:
+        """Creates the critical page on a website that exists, as foreign keys are checked."""
+        website: website_models.WebsiteRead = request.getfixturevalue("test_website")
+        return self.model_create.model_copy(update={"website_id": website.id}).model_dump(mode="json")
+
+    def test_update_only_accepts_settings(self, api_client: TestClient, api_record: Base) -> None:
+        """Tests the page's saved copy, which the scanner compares against, cannot be changed through the API."""
+        response: Response = api_client.patch(url=f"{self.prefix}/{api_record.id}", json={"text_body": "<p>Fake</p>"})
+
+        assert response.status_code == 200, response.text
+        assert response.json()["text_body"] is None
 
 
 # ==========================
@@ -210,8 +247,8 @@ def test_dashboard_shows_each_websites_own_scan_time(api_client: TestClient, ses
     """Tests every website card shows when that website was last scanned, not the latest scan overall."""
     session.add_all(
         [
-            DBWebsite(url="https://older.example.com", last_scan_at=datetime(2026, 9, 28, 9, 5)),
-            DBWebsite(url="https://newer.example.com", last_scan_at=datetime(2026, 10, 1, 14, 30)),
+            DBWebsite(url="https://older.example.com", last_scan_at=datetime(2026, 9, 28, 9, 5).astimezone()),
+            DBWebsite(url="https://newer.example.com", last_scan_at=datetime(2026, 10, 1, 14, 30).astimezone()),
             DBWebsite(url="https://never-scanned.example.com"),
         ]
     )
@@ -224,9 +261,19 @@ def test_dashboard_shows_each_websites_own_scan_time(api_client: TestClient, ses
     }
 
 
+def test_favicon_is_the_apps_icon(api_client: TestClient) -> None:
+    """Tests the browser is given the app's own icon for the window and tab."""
+    response = api_client.get("/favicon.ico")
+
+    assert response.status_code == 200, response.text
+    assert response.content == resource_path("app", "frontend", "static", "favicon.ico").read_bytes()
+
+
 def test_dashboard_shows_next_scheduled_check(api_client: TestClient, mocker: MockerFixture) -> None:
     """Tests the dashboard shows when the scheduler next checks which websites are due a scan."""
-    mocker.patch("app.frontend.api.routers.next_scheduled_check", return_value=datetime(2026, 10, 5, 21, 30))
+    mocker.patch(
+        "app.frontend.api.routers.next_scheduled_check", return_value=datetime(2026, 10, 5, 21, 30).astimezone()
+    )
 
     assert _next_check_text(api_client) == "Next scheduled check: 05 Oct 2026, 21:30"
 
@@ -238,38 +285,107 @@ def test_dashboard_hides_next_check_when_scans_are_not_scheduled(api_client: Tes
     assert _next_check_text(api_client) is None
 
 
-def _changed_page(url: str, changed_at: datetime) -> DBCriticalPage:
-    """Creates a critical page with a recent change that was found at the given time."""
-    return DBCriticalPage(url=url, recent_links_added=[f"{url}/new-link"], last_changed_at=changed_at)
+def _scan(
+    url: str, scanned_at: datetime, new_link: str | None = None, status: ScanStatus = ScanStatus.SUCCESS
+) -> DBScanRun:
+    """Creates a scan of a website, which found a new link on its main page if one is given."""
+    changes = [DBChange(position=0, kind=ChangeKind.LINK_ADDED, page_url=url, url=new_link)] if new_link else []
+    return DBScanRun(scanned_at=scanned_at, status=status, changes=changes)
 
 
 def test_updates_are_listed_most_recent_change_first(api_client: TestClient, session: Session) -> None:
-    """Tests websites, and each website's critical pages, are listed most recent change first with when it was found."""
+    """Tests websites are listed most recent change first, and each website's scans newest first, with when each
+    ran and what it found."""
     session.add_all(
         [
             DBWebsite(
                 url="https://older.example.com",
-                critical_pages=[_changed_page("https://older.example.com", datetime(2026, 10, 1, 9, 0))],
+                scan_runs=[
+                    _scan(
+                        "https://older.example.com/",
+                        datetime(2026, 10, 1, 9, 0).astimezone(),
+                        "https://older.example.com/a",
+                    ),
+                    _scan("https://older.example.com/", datetime(2026, 10, 5, 9, 0).astimezone()),  # Found nothing
+                ],
             ),
             DBWebsite(
                 url="https://newer.example.com",
-                critical_pages=[
-                    _changed_page("https://newer.example.com", datetime(2026, 10, 2, 9, 0)),
-                    _changed_page("https://newer.example.com/news", datetime(2026, 10, 4, 9, 0)),
+                scan_runs=[
+                    _scan(
+                        "https://newer.example.com/",
+                        datetime(2026, 10, 2, 9, 0).astimezone(),
+                        "https://newer.example.com/b",
+                    ),
+                    _scan(
+                        "https://newer.example.com/",
+                        datetime(2026, 10, 4, 9, 0).astimezone(),
+                        "https://newer.example.com/c",
+                    ),
                 ],
             ),
+            DBWebsite(url="https://never-scanned.example.com"),
         ]
     )
     session.flush()
 
     dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
     website_names = [name.get_text(strip=True) for name in dashboard.select(".website-change-record .website-name")]
-    page_urls = [url.get_text(strip=True) for url in dashboard.select(".page-change-record .page-url")]
-    change_times = [" ".join(time.get_text().split()) for time in dashboard.select(".page-change-record .change-time")]
+    scan_times = [" ".join(time.get_text().split()) for time in dashboard.select(".scan-change-record .change-time")]
+    new_links = [link.get_text(strip=True) for link in dashboard.select(".page-change-record .change-item-added")]
 
     assert website_names == ["newer.example.com", "older.example.com"]
-    assert page_urls == ["https://newer.example.com/news", "https://newer.example.com/", "https://older.example.com/"]
-    assert change_times == ["Changed 04 Oct 2026, 09:00", "Changed 02 Oct 2026, 09:00", "Changed 01 Oct 2026, 09:00"]
+    assert scan_times == [
+        "Scanned 04 Oct 2026, 09:00",
+        "Scanned 02 Oct 2026, 09:00",
+        "Scanned 05 Oct 2026, 09:00",
+        "Scanned 01 Oct 2026, 09:00",
+    ]
+    assert new_links == [
+        "https://newer.example.com/cAdded",
+        "https://newer.example.com/bAdded",
+        "https://older.example.com/aAdded",
+    ]
+
+
+def test_updates_show_only_the_latest_scans_and_which_are_waiting_to_be_emailed(
+    api_client: TestClient, session: Session, mocker: MockerFixture
+) -> None:
+    """Tests each website shows only its most recent scans, says how a failed scan went, and marks a report whose
+    email has not been sent yet."""
+    mocker.patch.object(config, "scans_kept_per_website", 2)
+    url = "https://example.com/"
+    session.add(
+        DBWebsite(
+            url=url,
+            scan_runs=[
+                _scan(url, datetime(2026, 10, 1, 9, 0).astimezone(), "https://example.com/too-old-to-show"),
+                DBScanRun(
+                    scanned_at=datetime(2026, 10, 2, 9, 0).astimezone(),
+                    status=ScanStatus.CONNECTION_ERROR,
+                    message="Website placed on cooldown.",
+                ),
+                _scan(url, datetime(2026, 10, 3, 9, 0).astimezone(), "https://example.com/emailed"),
+            ],
+        )
+    )
+    session.flush()
+    session.execute(
+        update(DBScanRun)
+        .where(DBScanRun.scanned_at > datetime(2026, 10, 2, 12, 0).astimezone())
+        .values(notified_at=datetime(2026, 10, 3, 9, 1).astimezone())
+    )
+
+    updates_panel = BeautifulSoup(api_client.get("/").text, "html.parser").select_one("#updates-panel")
+    assert updates_panel is not None
+    scans = [" ".join(scan.get_text().split()) for scan in updates_panel.select(".scan-change-record")]
+
+    assert "Last 2 scans of each website" in updates_panel.get_text()
+    assert len(scans) == 2
+    assert "https://example.com/emailed" in scans[0] and "Email not sent yet" not in scans[0]
+    assert "Could not connect" in scans[1] and "Website placed on cooldown." in scans[1]
+    assert "Email not sent yet" in scans[1]
+    assert "too-old-to-show" not in updates_panel.get_text()
 
 
 def test_run_all_scans_every_website_and_restarts_the_countdown(
@@ -290,9 +406,8 @@ def test_manual_scan_records_scan_time(
     api_client: TestClient, session: Session, test_website: website_models.WebsiteRead, mocker: MockerFixture
 ) -> None:
     """Tests "Run Scan Now" records when the website was scanned, so the dashboard and scheduler see it."""
-    mocker.patch("app.frontend.api.routers.scan_website", return_value=None)
-    mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
-    before = datetime.now()
+    mocker.patch("app.backend.scanning.manual_scan.scan_website", return_value=make_scan_run())
+    before = datetime.now(UTC)
 
     response = api_client.post("/scanner/run", data={"url": str(test_website.url)})
 
@@ -302,8 +417,57 @@ def test_manual_scan_records_scan_time(
     last_scan_at = website.last_scan_at
     assert last_scan_at is not None and last_scan_at >= before
     assert _last_scan_by_website(api_client)[website_name(str(test_website.url))] == (
-        f"Last scanned: {last_scan_at:%d %b %Y, %H:%M}"
+        f"Last scanned: {last_scan_at.astimezone():%d %b %Y, %H:%M}"
     )
+
+
+def _scan_finding_a_new_page(session: Session, website: website_models.WebsiteRead) -> ScanRunRead:
+    """Adds a scan to the website's history that found a new page, as "Run Scan Now" would."""
+    return ScanRunService(session).create(
+        ScanRunCreate(
+            website_id=website.id,
+            scanned_at=datetime.now(UTC),
+            changes=[ChangeCreate(kind=ChangeKind.INTERNAL_LINK_ADDED, url=HttpUrl(f"{website.url}new-page"))],
+        )
+    )
+
+
+def test_manual_scan_emails_its_report_and_records_it_as_sent(
+    api_client: TestClient,
+    session: Session,
+    test_website: website_models.WebsiteRead,
+    mocker: MockerFixture,
+    email_sender: FakeEmailSender,
+) -> None:
+    """Tests "Run Scan Now" emails the scan's report to the website's recipients, and records it as sent so the next
+    scheduled run does not send it again."""
+    scan_run: ScanRunRead = _scan_finding_a_new_page(session, test_website)
+    mocker.patch("app.backend.scanning.manual_scan.scan_website", return_value=scan_run)
+
+    response = api_client.post("/scanner/run", data={"url": str(test_website.url)})
+
+    assert response.status_code == 200, response.text
+    assert [email.to for email in email_sender.sent] == [recipient.email for recipient in test_website.recipients]
+    assert f"{test_website.url}new-page" in email_sender.sent[0].html_body
+    assert ScanRunService(session).get_awaiting_email() == []
+
+
+def test_manual_scan_keeps_its_report_when_the_email_fails(
+    api_client: TestClient,
+    session: Session,
+    test_website: website_models.WebsiteRead,
+    mocker: MockerFixture,
+    email_sender: FakeEmailSender,
+) -> None:
+    """Tests a "Run Scan Now" report that could not be emailed is kept, so the next scheduled run sends it."""
+    scan_run: ScanRunRead = _scan_finding_a_new_page(session, test_website)
+    mocker.patch("app.backend.scanning.manual_scan.scan_website", return_value=scan_run)
+    mocker.patch.object(email_sender, "send", side_effect=ConnectionError("No internet"))
+
+    with pytest.raises(ConnectionError):
+        api_client.post("/scanner/run", data={"url": str(test_website.url)})
+
+    assert [waiting.id for waiting in ScanRunService(session).get_awaiting_email()] == [scan_run.id]
 
 
 def test_manual_scan_of_a_website_already_queued_is_refused(
@@ -311,7 +475,7 @@ def test_manual_scan_of_a_website_already_queued_is_refused(
 ) -> None:
     """Tests "Run Scan Now" for a website already queued or being scanned is refused rather than queued twice."""
     mocker.patch.object(scan_queue, "_scans", {str(test_website.url): mocker.Mock()})
-    mock_get_website_updates = mocker.patch("app.scanning.website_scan.get_website_updates")
+    mock_get_website_updates = mocker.patch("app.backend.scanning.website_scan.get_website_updates")
 
     response = api_client.post("/scanner/run", data={"url": str(test_website.url)})
 
@@ -374,9 +538,10 @@ def test_cancelling_the_first_scan_does_not_add_the_website(
     api_client: TestClient, session: Session, mocker: MockerFixture
 ) -> None:
     """Tests cancelling a new website's first scan cancels adding it, so no website is left without a baseline."""
-    mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
-    mocker.patch("app.frontend.api.routers._check_pages_exist")  # The website is not loaded online
-    mocker.patch("app.frontend.api.routers.scan_website", side_effect=ScanCancelledError("https://example.com"))
+    mocker.patch("app.backend.websites.website_setup.check_pages_exist")  # The website is not loaded online
+    mocker.patch(
+        "app.backend.websites.website_setup.scan_website", side_effect=ScanCancelledError("https://example.com")
+    )
 
     response = api_client.post("/scanner/initial_scan", json={"url": "https://example.com"})
 
@@ -389,9 +554,10 @@ def test_adding_a_website_already_being_scanned_does_not_add_a_duplicate(
 ) -> None:
     """Tests adding a website while the same website is already being added or scanned is refused, without
     leaving a duplicate website behind that has no baseline."""
-    mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
-    mocker.patch("app.frontend.api.routers._check_pages_exist")  # The website is not loaded online
-    mocker.patch("app.frontend.api.routers.scan_website", side_effect=ScanAlreadyQueuedError("https://example.com"))
+    mocker.patch("app.backend.websites.website_setup.check_pages_exist")  # The website is not loaded online
+    mocker.patch(
+        "app.backend.websites.website_setup.scan_website", side_effect=ScanAlreadyQueuedError("https://example.com")
+    )
 
     response = api_client.post("/scanner/initial_scan", json={"url": "https://example.com"})
 
@@ -404,9 +570,8 @@ def test_adding_a_website_counts_as_emailing_its_recipients(
 ) -> None:
     """Tests a new website's recipients are recorded as emailed (they were sent the email saying what is
     monitored), so their health checks count from then."""
-    mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
-    mocker.patch("app.frontend.api.routers._check_pages_exist")  # The website is not loaded online
-    mocker.patch("app.frontend.api.routers.scan_website", return_value=None)
+    mocker.patch("app.backend.websites.website_setup.check_pages_exist")  # The website is not loaded online
+    mocker.patch("app.backend.websites.website_setup.scan_website", return_value=None)
 
     response = api_client.post(
         "/scanner/initial_scan", json={"url": "https://example.com", "recipient_emails": ["someone@example.com"]}
@@ -424,11 +589,10 @@ def test_adding_a_website_sends_each_recipient_one_email(
     address, and no second email once the first scan has finished."""
     session.add(DBRecipient(email="known@example.com"))
     session.flush()
-    mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
-    mocker.patch("app.frontend.api.routers._check_pages_exist")  # The website is not loaded online
-    mocker.patch("app.frontend.api.routers.scan_website", return_value=None)
-    mock_confirm = mocker.patch("app.frontend.api.routers.confirm_address_can_receive_email")
-    mock_send = mocker.patch("app.frontend.api.routers.send_confirmation")
+    mocker.patch("app.backend.websites.website_setup.check_pages_exist")  # The website is not loaded online
+    mocker.patch("app.backend.websites.website_setup.scan_website", return_value=None)
+    mock_confirm = mocker.patch("app.backend.websites.recipient_checks.confirm_address_can_receive_email")
+    mock_send = mocker.patch("app.backend.websites.recipient_checks.send_confirmation")
 
     response = api_client.post(
         "/scanner/initial_scan",
@@ -455,11 +619,10 @@ def test_adding_a_website_too_large_to_scan_deactivates_it(
     def mock_client() -> AsyncClient:
         return AsyncClient(transport=MockTransport(lambda request: Response(200, text="<p>Home page.</p>")))
 
-    mocker.patch("app.scanning.website_scan.db_context", side_effect=lambda: nullcontext(session))
-    mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
-    mocker.patch("app.frontend.api.routers.AsyncClient", side_effect=mock_client)
+    mocker.patch("app.backend.scanning.website_scan.db_context", side_effect=lambda: nullcontext(session))
+    mocker.patch("app.backend.websites.website_setup.new_http_client", side_effect=mock_client)
     mocker.patch(
-        "app.backend.change_detection.crawl_site", side_effect=WebsiteTooLargeError(main_url, max_pages=50_000)
+        "app.backend.scanning.change_detection.crawl_site", side_effect=WebsiteTooLargeError(main_url, max_pages=50_000)
     )
 
     response = api_client.post(
@@ -547,7 +710,7 @@ def test_scan_settings_explain_what_inactive_means(api_client: TestClient, test_
 
 @pytest.fixture
 def first_scan_in_progress(
-    mocker: MockerFixture, session: Session, empty_scan_queue: ScanQueue
+    mocker: MockerFixture, session: Session, empty_scan_queue: ScanQueue, backend_uses_test_session: None
 ) -> Iterator[asyncio.Event]:
     """Makes a new website's first scan run until it is cancelled, and runs the app against the test database.
 
@@ -560,10 +723,8 @@ def first_scan_in_progress(
         crawl_started.set()
         await asyncio.Event().wait()
 
-    mocker.patch("app.frontend.api.routers._check_pages_exist")  # The website is not loaded online
-    mocker.patch("app.scanning.website_scan.get_website_updates", side_effect=crawl_until_cancelled)
-    mocker.patch("app.scanning.website_scan.db_context", side_effect=lambda: nullcontext(session))
-    mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
+    mocker.patch("app.backend.websites.website_setup.check_pages_exist")  # The website is not loaded online
+    mocker.patch("app.backend.scanning.website_scan.get_website_updates", side_effect=crawl_until_cancelled)
     app.dependency_overrides[get_db_session] = lambda: session
     yield crawl_started
     app.dependency_overrides.clear()
@@ -577,7 +738,9 @@ async def test_stopping_a_new_websites_first_scan_leaves_no_website(
     """Tests the first scan of a website being added can be stopped from the wizard's "Cancel Scan" button or by
     deleting the website, either way leaving no website behind and no scan running."""
     url = "https://example.com"
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test", headers={API_TOKEN_HEADER: config.api_token}
+    ) as client:
         adding = asyncio.create_task(client.post("/scanner/initial_scan", json={"url": url}))
         await first_scan_in_progress.wait()
 
@@ -603,7 +766,9 @@ async def test_another_website_can_be_added_while_one_is_being_scanned(
 ) -> None:
     """Tests a second website can be added while the first is still having its first scan: it waits its turn
     rather than being refused, and each can be cancelled on its own."""
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test", headers={API_TOKEN_HEADER: config.api_token}
+    ) as client:
         adding_first = asyncio.create_task(client.post("/scanner/initial_scan", json={"url": "https://first.com"}))
         await first_scan_in_progress.wait()
         adding_second = asyncio.create_task(client.post("/scanner/initial_scan", json={"url": "https://second.com"}))
@@ -660,7 +825,7 @@ def test_adding_a_critical_page_already_watched_is_refused(
 ) -> None:
     """Tests a critical page that is already watched is refused, including when it is written differently (a
     trailing slash, no "www." or capitals in the domain), so the same page is not watched (and reported) twice."""
-    mock_check_pages_exist = mocker.patch("app.frontend.api.routers._check_pages_exist")
+    mock_check_pages_exist = mocker.patch("app.backend.websites.website_setup.check_pages_exist")
 
     response = api_client.post(
         "/scanner/initial_critical_page_scan",
@@ -685,8 +850,8 @@ def test_adding_a_known_email_is_emailed_without_waiting_for_a_bounce(
     """
     session.add(DBRecipient(email="known@example.com"))
     session.flush()
-    mock_confirm = mocker.patch("app.frontend.api.routers.confirm_address_can_receive_email")
-    mock_send = mocker.patch("app.frontend.api.routers.send_confirmation")
+    mock_confirm = mocker.patch("app.backend.websites.recipient_checks.confirm_address_can_receive_email")
+    mock_send = mocker.patch("app.backend.websites.recipient_checks.send_confirmation")
 
     response = api_client.patch(
         f"/websites/{test_website.id}", json={"add_recipient_emails": ["known@example.com", "new@example.com"]}
@@ -716,7 +881,131 @@ def test_a_critical_pages_ignore_rules_can_be_set(
 def test_an_invalid_ignore_rule_is_refused(
     api_client: TestClient, test_critical_page: critical_page_models.CriticalPageRead
 ) -> None:
+    """Tests an ignore rule that is not a valid regular expression is refused with a 422 saying why."""
     response = api_client.patch(f"/critical_pages/{test_critical_page.id}", json={"ignore_rules": ["Fee is ($50"]})
 
     assert response.status_code == 422
     assert "valid regular expression" in response.text
+
+
+# ==========================
+#  Adding websites: what is refused
+# ==========================
+
+
+def test_adding_a_website_that_cannot_be_loaded_is_refused(
+    api_client: TestClient, session: Session, mocker: MockerFixture
+) -> None:
+    """Tests a website whose page cannot be loaded is not added, and the wizard is told why."""
+
+    def missing_page_client() -> AsyncClient:
+        return AsyncClient(transport=MockTransport(lambda request: Response(404, text="Not Found")))
+
+    mocker.patch("app.backend.websites.website_setup.new_http_client", side_effect=missing_page_client)
+
+    response = api_client.post("/scanner/initial_scan", json={"url": "https://example.com/missing"})
+
+    assert response.status_code == 422, response.text
+    assert "https://example.com/missing could not be loaded" in response.json()["detail"]
+    assert session.scalars(select(DBWebsite)).all() == []
+
+
+def test_adding_an_address_that_cannot_receive_email_is_refused(
+    api_client: TestClient, session: Session, mocker: MockerFixture
+) -> None:
+    """Tests a website is not added when one of its recipients' addresses bounces, and the wizard is told which."""
+    mocker.patch("app.backend.websites.website_setup.check_pages_exist")  # The website is not loaded online
+    mocker.patch(
+        "app.backend.websites.recipient_checks.confirm_address_can_receive_email",
+        side_effect=UndeliverableEmailError("bounces@example.com"),
+    )
+
+    response = api_client.post(
+        "/scanner/initial_scan", json={"url": "https://example.com", "recipient_emails": ["bounces@example.com"]}
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"] == "We can't send an email to bounces@example.com. Check the address is correct."
+    assert session.scalars(select(DBWebsite)).all() == []
+
+
+@pytest.mark.parametrize("url", ["https://www.test_website.com/", "test_website.com", "https://TEST_WEBSITE.com"])
+def test_adding_a_website_already_watched_is_refused(
+    api_client: TestClient, test_website: website_models.WebsiteRead, mocker: MockerFixture, url: str
+) -> None:
+    """Tests the same website cannot be added twice, even written differently, so it is not scanned and emailed
+    twice."""
+    mock_check_pages_exist = mocker.patch("app.backend.websites.website_setup.check_pages_exist")
+
+    response = api_client.post("/scanner/initial_scan", json={"url": url})
+
+    assert response.status_code == 409, response.text
+    assert "is already being watched" in response.json()["detail"]
+    mock_check_pages_exist.assert_not_called()
+
+
+def test_a_different_part_of_a_watched_website_can_be_added(
+    api_client: TestClient, session: Session, test_website: website_models.WebsiteRead, mocker: MockerFixture
+) -> None:
+    """Tests a section of a website that is already watched (e.g. example.com/research) can be added on its own."""
+    mocker.patch("app.backend.websites.website_setup.check_pages_exist")  # The website is not loaded online
+    mocker.patch("app.backend.websites.website_setup.scan_website", return_value=make_scan_run())
+
+    response = api_client.post("/scanner/initial_scan", json={"url": f"{test_website.url}research"})
+
+    assert response.status_code == 200, response.text
+    assert len(session.scalars(select(DBWebsite)).all()) == 2
+
+
+def test_manual_scan_of_a_website_that_is_not_monitored_is_refused(api_client: TestClient, session: Session) -> None:
+    """Tests "Run Scan Now" does not add a website it is given that is not monitored, as websites are only added
+    through the wizard, which checks them."""
+    response = api_client.post("/scanner/run", data={"url": "https://not-monitored.example.com"})
+
+    assert response.status_code == 404, response.text
+    assert session.scalars(select(DBWebsite)).all() == []
+
+
+def test_manual_scan_emails_the_extra_address_even_when_the_website_has_no_recipients(
+    api_client: TestClient, session: Session, mocker: MockerFixture, email_sender: FakeEmailSender
+) -> None:
+    """Tests "Run Scan Now" returns the report and emails the address it was given, even for a website with no
+    recipients of its own."""
+    session.add(DBWebsite(url="https://dashboard-only.example.com/"))
+    session.flush()
+    website = session.scalars(select(DBWebsite)).one()
+    scan_run = _scan_finding_a_new_page(session, website_models.WebsiteRead.model_validate(website))
+    mocker.patch("app.backend.scanning.manual_scan.scan_website", return_value=scan_run)
+
+    response = api_client.post("/scanner/run", data={"url": website.url, "recipient_email": "someone@example.com"})
+
+    assert response.status_code == 200, response.text
+    assert "new-page" in response.json()
+    assert [email.to for email in email_sender.sent] == ["someone@example.com"]
+
+
+def test_adding_a_website_with_the_same_email_twice_adds_it_once(
+    api_client: TestClient, session: Session, mocker: MockerFixture
+) -> None:
+    """Tests typing the same email twice in the wizard adds the website with one recipient, rather than failing with
+    a half-added website."""
+    mocker.patch("app.backend.websites.website_setup.check_pages_exist")  # The website is not loaded online
+    mocker.patch("app.backend.websites.website_setup.scan_website", return_value=make_scan_run())
+
+    response = api_client.post(
+        "/scanner/initial_scan",
+        json={"url": "https://example.com", "recipient_emails": ["jj@example.com", "jj@example.com"]},
+    )
+
+    assert response.status_code == 200, response.text
+    website = session.scalars(select(DBWebsite)).one()
+    assert [recipient.email for recipient in website.recipients] == ["jj@example.com"]
+
+
+def test_a_recipient_time_without_a_time_zone_is_refused(
+    api_client: TestClient, test_recipient: recipient_models.RecipientRead
+) -> None:
+    """Tests a time without a time zone is refused with a 422, as it cannot be saved as UTC."""
+    response = api_client.patch(f"/recipients/{test_recipient.id}", json={"last_email_at": "2026-10-08T10:00:00"})
+
+    assert response.status_code == 422, response.text

@@ -1,46 +1,25 @@
 import logging
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
+from datetime import datetime
 
 from pydantic import EmailStr
 from sqlalchemy import Exists, Select, select
-from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
 from app.db import repository
 from app.db.schema import DBRecipient, website_recipient_association
-from app.db.services.crud_protocol import CRUDService
+from app.db.services.base_crud_service import BaseCRUDService
 from app.models.recipient_models import RecipientCreate, RecipientRead, RecipientUpdate
 
 logger: logging.Logger = logging.getLogger(__name__)
 
 
-class RecipientService(CRUDService[RecipientRead, RecipientCreate, RecipientUpdate]):
-    def __init__(self, session: Session):
-        """Initialises the RecipientService with an active database session.
+class RecipientService(BaseCRUDService[DBRecipient, RecipientRead, RecipientCreate, RecipientUpdate]):
+    """Reads and writes the people emailed about websites, and which websites each one is emailed about."""
 
-        Args:
-            session: The SQLAlchemy database session object used for executing operations.
-        """
-        self._db = session
-
-    def get_all(self, skip: int = 0, limit: int = 100) -> Sequence[RecipientRead]:
-        """Retrieves a paginated list of recipient records from the database.
-
-        Args:
-            skip: The number of initial records to skip for pagination. Defaults to 0.
-            limit: The maximum number of records to return. Defaults to 100.
-
-        Returns:
-            A sequence of RecipientRead models representing the retrieved records.
-        """
-        recipient_records: Sequence[DBRecipient] = repository.get_list(
-            self._db,
-            table=DBRecipient,
-            skip=skip,
-            limit=limit,
-        )
-        return [RecipientRead.model_validate(recipient_record) for recipient_record in recipient_records]
+    table = DBRecipient
+    read_model = RecipientRead
 
     def get_all_with_websites(self) -> Sequence[RecipientRead]:
         """Retrieves every recipient that is still linked to at least one website.
@@ -59,21 +38,6 @@ class RecipientService(CRUDService[RecipientRead, RecipientCreate, RecipientUpda
         statement: Select[DBRecipient] = select(DBRecipient).where(is_linked_to_a_website)
         recipient_records: Sequence[DBRecipient] = self._db.scalars(statement).all()
         return [RecipientRead.model_validate(recipient_record) for recipient_record in recipient_records]
-
-    def get(self, id: uuid.UUID) -> RecipientRead:
-        """Retrieves a single recipient record by its unique primary key identifier.
-
-        Args:
-            id: The UUID identifier of the target recipient record.
-
-        Returns:
-            The matching RecipientRead data model instance.
-
-        Raises:
-            NotFoundError: If no recipient record matches the provided UUID.
-        """
-        recipient_record: DBRecipient = repository.get(self._db, table=DBRecipient, id=id)
-        return RecipientRead.model_validate(recipient_record)
 
     def get_by_email(self, email: EmailStr) -> RecipientRead:
         """Retrieves a single recipient record and its relationships by its associated email attribute.
@@ -99,69 +63,65 @@ class RecipientService(CRUDService[RecipientRead, RecipientCreate, RecipientUpda
 
         return RecipientRead.model_validate(recipient_records[0])
 
-    def create(self, model_create: RecipientCreate) -> RecipientRead:
-        """Creates and persists a new recipient record in the database.
+    def record_emailed(self, emails: Iterable[str], emailed_at: datetime) -> None:
+        """Records that some recipients were just emailed, so their health checks count from then.
 
         Args:
-            model_create: The RecipientCreate payload containing initial attributes.
+            emails: The email addresses that were emailed, each already a recipient.
+            emailed_at: When they were emailed.
+
+        Raises:
+            NotFoundError: If an email address is not a recipient.
+        """
+        for email in dict.fromkeys(emails):
+            recipient: RecipientRead = self.get_by_email(email)
+            self.update(id=recipient.id, model_update=RecipientUpdate(last_email_at=emailed_at))
+
+    def _is_linked(self, website_id: uuid.UUID, recipient_id: uuid.UUID) -> bool:
+        """Checks whether a recipient is already linked to a website.
+
+        Args:
+            website_id: The website.
+            recipient_id: The recipient.
 
         Returns:
-            The created RecipientRead data model instance reflecting the saved state.
-
-        Raises:
-            IntegrityError: If the record violates database constraints or already exists.
+            True if the recipient is already emailed about the website.
         """
-        recipient_record: DBRecipient = DBRecipient(**model_create.model_dump())
-        repository.add(self._db, record=recipient_record)
+        link_exists: Exists = (
+            select(website_recipient_association.c.recipient_id)
+            .where(
+                website_recipient_association.c.website_id == website_id,
+                website_recipient_association.c.recipient_id == recipient_id,
+            )
+            .exists()
+        )
+        return bool(self._db.scalar(select(link_exists)))
 
-        return RecipientRead.model_validate(recipient_record)
+    def link_recipient_and_website(self, website_id: uuid.UUID, recipient_id: uuid.UUID) -> None:
+        """Links a recipient to a website, so they are emailed about it. Linking them again does nothing.
 
-    def update(self, id: uuid.UUID, model_update: RecipientUpdate) -> RecipientRead:
-        """Updates attributes of an existing recipient record by its primary key.
+        The change is saved when the session's unit of work commits.
 
         Args:
-            id: The UUID identifier of the recipient record to update.
-            model_update: The RecipientUpdate schema containing fields to update.
-
-        Returns:
-            The updated RecipientRead data model instance.
-
-        Raises:
-            NotFoundError: If no recipient record matches the provided UUID.
-            IntegrityError: If updated attribute values violate database constraints.
+            website_id: The website.
+            recipient_id: The recipient.
         """
-
-        recipient_record: DBRecipient = repository.update(
-            self._db,
-            record=repository.get(self._db, table=DBRecipient, id=id),
-            updates=model_update.model_dump(exclude_unset=True),
-        )
-        return RecipientRead.model_validate(recipient_record)
-
-    def delete(self, id: uuid.UUID) -> None:
-        """Deletes a recipient record from the database by its primary key.
-
-        Args:
-            id: The UUID identifier of the recipient record to remove.
-
-        Raises:
-            NotFoundError: If no recipient record matches the provided UUID.
-        """
-        repository.get(self._db, table=DBRecipient, id=id)  # Check if the record exists
-        repository.delete(self._db, table=DBRecipient, id=id)
-
-    def link_recipient_and_website(self, website_id: uuid.UUID, recipient_id: uuid.UUID):
-        statement = website_recipient_association.insert().values(
-            website_id=website_id,
-            recipient_id=recipient_id,
-        )
+        if self._is_linked(website_id, recipient_id):
+            return
+        statement = website_recipient_association.insert().values(website_id=website_id, recipient_id=recipient_id)
         self._db.execute(statement)
-        self._db.commit()
 
-    def unlink_recipient_and_website(self, website_id: uuid.UUID, recipient_id: uuid.UUID):
+    def unlink_recipient_and_website(self, website_id: uuid.UUID, recipient_id: uuid.UUID) -> None:
+        """Unlinks a recipient from a website, so they are no longer emailed about it.
+
+        The change is saved when the session's unit of work commits.
+
+        Args:
+            website_id: The website.
+            recipient_id: The recipient.
+        """
         statement = website_recipient_association.delete().where(
             website_recipient_association.c.website_id == website_id,
             website_recipient_association.c.recipient_id == recipient_id,
         )
         self._db.execute(statement)
-        self._db.commit()

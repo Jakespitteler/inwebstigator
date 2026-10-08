@@ -173,3 +173,52 @@ def test_open_inbox_returns_nothing_when_the_login_fails(monkeypatch: pytest.Mon
     monkeypatch.setattr("app.backend.email_service.delivery.imaplib.IMAP4_SSL", RefusingIMAP)
 
     assert delivery._open_inbox(INBOX_SETTINGS) is None  # pyright: ignore[reportPrivateUsage]
+
+
+def test_confirm_address_still_sends_when_the_inbox_server_does_not_answer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests an inbox server that cannot be reached (e.g. no internet to it, or a wrong IMAP_HOST) does not stop the
+    email being sent, as the bounce check is only a bonus."""
+
+    def refuse_connection(*args: object, **kwargs: object) -> None:
+        raise ConnectionRefusedError("Connection refused")
+
+    monkeypatch.setattr("app.backend.email_service.delivery.imaplib.IMAP4_SSL", refuse_connection)
+    sender = FakeEmailSender()
+
+    confirm_address_can_receive_email(confirmation_to("real@example.com"), sender, INBOX_SETTINGS)
+
+    assert [email.to for email in sender.sent] == ["real@example.com"]
+
+
+def test_open_inbox_logs_in_to_the_configured_server_as_the_sending_account(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests the inbox opened is the configured server and port, logged in with the sending account's password."""
+    opened: list[tuple[str, int, float]] = []
+    logins: list[tuple[str, str]] = []
+
+    class RecordingIMAP:
+        """Records where the inbox is opened and who logs in."""
+
+        def __init__(self, host: str, port: int, ssl_context: ssl.SSLContext, timeout: float) -> None:
+            opened.append((host, port, timeout))
+
+        def login(self, user: str, password: str) -> None:
+            logins.append((user, password))
+
+    monkeypatch.setattr("app.backend.email_service.delivery.imaplib.IMAP4_SSL", RecordingIMAP)
+
+    delivery._open_inbox(INBOX_SETTINGS)  # pyright: ignore[reportPrivateUsage]
+
+    assert opened == [("imap.example.com", 993, 30)]
+    assert logins == [("sender@example.com", "app-password")]
+
+
+def test_confirm_address_watches_the_inbox_only_for_the_configured_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests the inbox is watched for EMAIL_BOUNCE_WAIT_SECONDS, checking every EMAIL_BOUNCE_POLL_SECONDS, and a bounce
+    that arrives after that is not seen."""
+    waits: list[float] = []
+    monkeypatch.setattr("app.backend.email_service.delivery.time.sleep", waits.append)
+    use_inbox(monkeypatch, FakeInbox([0, 0, 0, 1]))
+
+    confirm_address_can_receive_email(confirmation_to("slow@example.com"), FakeEmailSender(), INBOX_SETTINGS)
+
+    assert waits == [3, 3]

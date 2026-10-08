@@ -2,6 +2,7 @@ import imaplib
 import logging
 import smtplib
 import ssl
+import threading
 import time
 from contextlib import suppress
 from email.message import EmailMessage
@@ -66,6 +67,40 @@ def is_temporary_failure(error: BaseException) -> bool:
     if isinstance(error, smtplib.SMTPResponseException):
         return error.smtp_code < FIRST_PERMANENT_REPLY_CODE
     return isinstance(error, RETRYABLE_ERRORS)
+
+
+def is_undeliverable(error: BaseException) -> bool:
+    """Checks whether an email failed in a way that will happen every time it is sent, however long it is left.
+
+    Only an address refused for good (a 5xx reply), or an email the server rejects (any other 5xx reply, e.g. marked
+    as spam or too large), counts. An address refused only for now (a 4xx reply, e.g. a server that turns away a new
+    sender at first) can work later, as can a wrong password or sender address (a setting the user can fix), no
+    internet or a mail server that is down, so those can still be sent later.
+
+    Args:
+        error: Why the send failed, after any retries.
+
+    Returns:
+        True if the email should not be tried again later.
+    """
+    if isinstance(error, smtplib.SMTPAuthenticationError | smtplib.SMTPSenderRefused):
+        return False
+    if isinstance(error, smtplib.SMTPRecipientsRefused):
+        return _is_refused_for_good(error)
+    return isinstance(error, smtplib.SMTPResponseException) and error.smtp_code >= FIRST_PERMANENT_REPLY_CODE
+
+
+def _is_refused_for_good(error: smtplib.SMTPRecipientsRefused) -> bool:
+    """Checks whether the mail server refused an address for good (a 5xx reply, e.g. "No such user"), rather than only
+    for now (a 4xx reply, e.g. "Try again later").
+
+    Args:
+        error: The refusal, with the server's reply for each refused address.
+
+    Returns:
+        True if any address was refused for good.
+    """
+    return any(code >= FIRST_PERMANENT_REPLY_CODE for code, _ in error.recipients.values())
 
 
 def _retrying(settings: RetrySettings) -> Retrying:
@@ -142,13 +177,15 @@ class SmtpEmailSender:
     """Sends emails through the configured SMTP server.
 
     Outside a `with` block, each email opens and closes its own connection. Inside one, the first email opens a
-    connection that the rest reuse, so a run that emails many recipients logs in once.
+    connection that the rest reuse, so a run that emails many recipients logs in once. Emails sent from several
+    threads at once take turns, so two are never written to the same connection at the same time.
     """
 
     def __init__(self, settings: SmtpSettings) -> None:
         self._settings: SmtpSettings = settings
         self._connection: smtplib.SMTP | None = None
         self._keep_connection_open: bool = False
+        self._connection_lock: threading.Lock = threading.Lock()
 
     def __enter__(self) -> Self:
         self._keep_connection_open = True
@@ -182,16 +219,19 @@ class SmtpEmailSender:
     def _send_once(self, message: EmailMessage) -> None:
         """Makes one try at sending a message, dropping the connection if it fails so the next try reconnects.
 
+        Only one thread uses the connection at a time, as an SMTP connection cannot send two emails at once.
+
         Args:
             message: The built message.
         """
-        try:
-            self._open_connection().send_message(message)
-        except BaseException:
-            self._close_connection()
-            raise
-        if not self._keep_connection_open:
-            self._close_connection()
+        with self._connection_lock:
+            try:
+                self._open_connection().send_message(message)
+            except BaseException:
+                self._close_connection()
+                raise
+            if not self._keep_connection_open:
+                self._close_connection()
 
     def _open_connection(self) -> smtplib.SMTP:
         """Gets the open connection, connecting first if there isn't one.

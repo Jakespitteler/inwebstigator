@@ -1,7 +1,7 @@
 # Inwebstigator: Getting Started
 
 Inwebstigator watches websites for you. It checks the websites you choose
-every day and emails you when something changes.
+regularly (daily by default) and emails you when something changes.
 
 This is an early test version. If anything is confusing or doesn't work,
 please let the team know.
@@ -18,35 +18,38 @@ please let the team know.
 3. Windows may warn that it **"protected your PC"**, because the program is
    new. Click **More info**, then **Run anyway**.
 
-The login page opens after a moment. If it doesn't, go to
-**127.0.0.1:8000/login** in your web browser.
+The Inwebstigator window opens after a moment. There is no account to create
+or log in to.
 
-### 2. Create your account
+### 2. Add a website
 
-1. Click **Sign Up**.
-2. Enter your email address and choose a password. **Reports are sent to this
-   email address.**
-3. Log in with your new email and password.
+The first time you open Inwebstigator, the **Add a website** form is already
+showing. After that, click **+ Add website** at the top of the Websites tab.
+The form has four steps:
 
-> Please use a new password that you don't use anywhere else. This test
-> version doesn't store passwords securely yet.
+1. **Website:** enter the website's address, e.g. `www.example.edu.au`. Its
+   main page is always watched. Under **Critical Pages**, add any other pages
+   you want watched in more detail (text changes, documents etc.).
+2. **Emails:** add the email addresses that should get this website's reports.
+3. **Scan settings:** how often the website is checked (**Days between scans**,
+   1 means daily), and how fast it is read. These are already set to sensible
+   values.
+4. **Review and add:** check the details and click **Add Website**.
 
-### 3. Add a website
+When you click **Add Website**, Inwebstigator checks the website and its
+critical pages can be loaded, and sends each email address a **Website
+monitoring started** email. If a page can't be loaded or an email can't be
+delivered, the website isn't added and you're told which one to check.
 
-1. On the dashboard, go to **Add Website**.
-2. Enter the website's address, e.g. `https://www.example.edu.au/`.
-3. Under **Critical Pages**, enter the pages you want monitored in more detail (text changes, documents etc.). Use **+ Add
-   another critical page** for each extra page.
-4. Click **Add Website**.
+### 3. The first scan
 
+Adding a website scans it straight away. This can take several minutes for a
+large website. You can add another website while it runs, and **Cancel Scan**
+cancels adding the website.
 
-### 4. Run the first check
-
-Under your website in **Monitored Websites**, open **Scan Settings** and click
-**Run Scan Now**. It can take several minutes for a large site, and the page refreshes when it's done.
-
-**The first scan lists everything on your critical pages as "Added"**, and
-you'll get an email saying so. This is the initial run. In all subsequent reports it only shows what actually changed.
+**The first scan saves each page as a starting point.** It doesn't report
+anything as changed, and after that you're only told about what actually
+changes.
 
 Setup is finished.
 
@@ -54,103 +57,123 @@ Setup is finished.
 
 ## Everyday use
 
-**Keep Inwebstigator open and stay logged in.** In this test version, the
-daily checks only happen while the program is open, you're logged in, and the
-computer is on. You can minimise the window. If it was closed, it catches up
-in the background shortly after you next open it.
+**Keep Inwebstigator running.** Scans only happen while Inwebstigator is
+running and the computer is on. Closing the window doesn't stop it: it keeps
+running in the system tray (the icons by the clock, sometimes behind the
+**^** arrow). Click the tray icon and choose **Open** to show the window
+again, or **Quit** to stop Inwebstigator completely. If it was stopped,
+it catches up on any missed scans shortly after you next open it.
 
-**After restarting the computer,** open **Inwebstigator.exe** again and log in.
+**After restarting the computer,** open **Inwebstigator.exe** again.
 
 **Emails you'll receive** (they come from the Inwebstigator email account, not
 from a person):
 
-- **Website Update:** something changed. The email shows what's changed. It's also sent
-  if a website couldn't be reached.
-- **No changes have been found since the last notification:** a weekly note
-  confirming Inwebstigator is still working, sent when nothing has changed.
+- **Website monitoring started:** a website was added and you'll get its
+  reports.
+- **Email address added to website monitoring:** your address was added to a
+  website that was already being watched.
+- **Website update:** something changed. The email shows what's changed. It's
+  also sent if a website couldn't be scanned properly, e.g. it couldn't be
+  reached. If the email can't be sent at the time, it is sent with the next
+  scan.
+- **Manual scan:** the report from a **Run Scan Now**, sent if it found
+  anything.
+- **Health check:** sent about once a week, so you know Inwebstigator is still
+  running. It lists your websites and says if any of them need attention.
 
-The emails should go to your regular inbox but if they don't arrive, check your **Spam/Junk** folder and mark them as "Not spam".
+The emails should go to your regular inbox but if they don't arrive, check
+your **Spam/Junk** folder and mark them as "Not spam".
 
 ---
 
 ## The dashboard
 
-### Daily Changes
+The window has two tabs: **Websites** and **Updates**.
 
-This section shows the most recent changes found on your critical pages, grouped by page.
+### Updates
+
+This tab shows the last 7 scans of each website, newest first. Click a scan to
+see what it found. A scan that found nothing says **No changes**, and a scan
+whose email hasn't been sent yet says **Email not sent yet**.
+
+**Internal links** are pages that were added to or removed from the website.
+**Critical pages** shows the changes found on each of your critical pages:
 
 | What you'll see | What it means |
 | --- | --- |
 | **Content changed**, with *Before* and *After* side by side | Wording was edited. Words taken out are in **red** on the left, and words put in are in **green** on the right. |
-| Text marked **Added** | New writing appeared on the page. |
-| Text marked **Removed** | Writing was taken off the page. |
-| **Links**, marked Added or Removed | A link on the page was added or taken away. |
+| **Text**, marked Added or Removed | Writing appeared on, or was taken off, the page. |
+| **Links**, marked Added or Removed | A link on the page was added or taken away. Links in the website's menus aren't included, as they are the same on every page. |
 | **Documents**, marked Added or Removed | A document such as a PDF was added or taken away. A replaced document usually shows as the old one removed and the new one added. |
 | **Section changed** | Some writing moved to a different heading, or a heading was renamed. |
+| **Unreachable** | The page couldn't be loaded on two scans in a row. |
 
-Click any link or document to open it. The changes stay on the dashboard until
-newer changes replace them, and every change is also emailed to you.
+Click any link or document to open it.
 
-### Monitored Websites
+### Websites
 
-Each website has its own box, where you can:
+Each website has its own box. Click it to open or close it. In the box you can:
 
+- **Run Scan Now** to check the website straight away instead of waiting for
+  its next scan. For an inactive website the button says **Scan Critical
+  Pages Now**, as only its critical pages are checked.
 - open the website or any of its critical pages by clicking the address.
-- see how many critical pages are being watched, and how many pages
-  Inwebstigator found on the whole site (**internal pages**).
-- **add a critical page** using the Add Critical Page box, or **Delete** one.
-- **Delete Website** to stop watching it. This also removes its saved history.
+- see how many pages Inwebstigator found on the whole website
+  (**Internal pages**).
+- **Add Critical Page**, or **Delete** one. The website's main page is always
+  watched and can't be deleted.
+- **Add Email** to send this website's reports to another address, or
+  **Delete** one.
+- **Delete Website** to stop watching it. This also removes its saved
+  history, so you'll be asked to type the website's name to confirm.
+
+**Run All Scans** at the top scans every website straight away.
 
 ### Scan Settings
 
-These are already set to sensible values, so you don't need to change them.
-Click **Save Settings** after changing anything.
+Each website has its own settings, under **Scan Settings** in its box. They
+are already set to sensible values, so you don't need to change them. Click
+**Save Settings** after changing anything. Changes apply from the next scan,
+with no need to restart Inwebstigator.
 
 | Setting | What it does |
 | --- | --- |
-| **Active** | Untick to stop crawling the whole website for new and removed pages. Its critical pages are still checked for changes. |
-| **Days between scans** | How often your websites are checked. The default is 1 (daily). |
-| **Days between no-change notifications** | How often you get the "no changes" email when nothing changes. The default is 7 (weekly). |
-| **Request delay** / **Concurrent requests** | How fast Inwebstigator reads a website. Best left as they are unless the team suggests a change. |
-
-The two "Days between" settings apply to all your websites. **After changing
-them, or after adding a new website, close Inwebstigator and open it again**
-so the daily schedule picks up the change.
-
-**Run Scan Now** checks the website straight away, instead of waiting for the
-next daily check. For an inactive website the button says **Scan Critical Pages
-Now**, as only its critical pages are checked.
+| **Crawler Active** | Untick to stop crawling the whole website for new and removed pages. Its critical pages are still checked for changes. |
+| **Request delay** / **Concurrent requests** | How fast Inwebstigator reads the website. Best left as they are unless the team suggests a change. If a website asks Inwebstigator to slow down, these are lowered automatically. |
+| **Days between scans** | How often the website is checked. The default is 1 (daily). |
 
 A website with more pages than Inwebstigator will scan (50,000) is made inactive
 automatically, and its box says it is too large to scan. Its critical pages are
 still checked.
 
-### Log Out
-
-This is at the top right. Remember that daily checks need you to be logged in,
-so please log back in afterwards.
-
 ---
 
 ## If something goes wrong
 
+Inwebstigator keeps a log of what it does and any errors in
+`%LOCALAPPDATA%\inwebstigator\logs\inwebstigator.log`. To open it, press
+**Windows key + R**, paste that address and press **Enter**. The team may ask
+you to send them this file.
+
 | Problem | What to do |
 | --- | --- |
-| Inwebstigator shows an error or closes when opened | Contact the team. It's most likely an email setting on our side. |
-| **Run Scan Now** says "Unable to complete scan" | Contact the team. |
-| "Incorrect email or password" | If you've forgotten your password, contact the team. |
-| "Unable to create account" | That email may already have an account. Try logging in instead. |
-| "Unable to add website" | Check the address starts with `https://`, and that the website isn't already on your list. |
-| Everything was listed as "Added" | This is normal for a website's first scan. |
-| No emails for over a week | Check Spam/Junk, and make sure Inwebstigator is open and you're logged in. |
-| Slow to open | It's catching up on a missed check. Give it a few minutes. |
+| Inwebstigator shows an error or closes when opened | Contact the team and send them the log file. It's most likely an email setting on our side. |
+| "Inwebstigator is already running" | It's open in the system tray. Click the tray icon and choose **Open**. |
+| "We can't send an email to …" | Check the email address is spelt correctly. |
+| A website can't be added | Check the address is correct and that the website isn't already on your list. |
+| A scan says **Could not connect** or **Rate limited** | The website was down or asked Inwebstigator to slow down. It's tried again on the next scan. |
+| A scan says **Most pages missing** | Most of the website's pages couldn't be found, which is usually a problem with the website rather than real changes. If it keeps happening for 3 scans, the pages are treated as really removed. |
+| No emails for over a week | Check Spam/Junk, and make sure Inwebstigator is running (look for its icon in the system tray). |
+| Slow to open | It's catching up on a missed scan. Give it a few minutes. |
 
-For anything else, send the team a screenshot of what you're seeing.
+For anything else, send the team a screenshot of what you're seeing and the
+log file.
 
 ---
 
 ## Good to know about this test version
 
-- Daily checks only happen while Inwebstigator is open and you're logged in.
-- Only one person can be logged in at a time.
-- Passwords aren't stored securely yet.
+- Scans only happen while Inwebstigator is running and the computer is on.
+- Websites are scanned one at a time, so when several are due it can take a
+  while for all of them to finish.

@@ -8,7 +8,7 @@ from time import perf_counter
 import httpx2
 from plot_crawl_runs import plot_runs
 
-from app.backend.site_crawler import crawl_site
+from app.backend.crawler.site_crawler import crawl_site
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s - %(message)s")
 logger: logging.Logger = logging.getLogger(__name__)

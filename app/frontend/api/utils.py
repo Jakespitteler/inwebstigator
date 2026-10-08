@@ -1,18 +1,32 @@
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Protocol
 
 from markupsafe import Markup, escape
 from pydantic import HttpUrl
 
 from app.backend.diff_checker.word_diff import DiffWord, WordChange, WordDiff, diff_words
+from app.models.content_block_models import ChangedBlock, ContentBlock
+from app.models.scan_run_models import PageChanges, ScanRunRead, ScanStatus
+
+SCAN_STATUS_LABELS: dict[ScanStatus, str] = {
+    ScanStatus.SUCCESS: "Scanned",
+    ScanStatus.TRAFFIC_ERROR: "Rate limited",
+    ScanStatus.CONNECTION_ERROR: "Could not connect",
+    ScanStatus.SCAN_ERROR: "Scan failed",
+    ScanStatus.SKIPPED_DEACTIVATED: "Skipped, website switched off",
+    ScanStatus.SKIPPED_COOLDOWN: "Skipped, on cooldown",
+    ScanStatus.TOO_LARGE: "Too large to crawl",
+    ScanStatus.PAGES_MISSING: "Most pages missing",
+}
 
 
 def format_timestamp(moment: datetime) -> str:
-    """Displays a date and time the same way across the dashboard, e.g. "05 Oct 2026, 09:00"."""
+    """Displays a date and time the same way across the dashboard, in the computer's own time zone, e.g.
+    "05 Oct 2026, 09:00". The app's times are in UTC, so they are converted first."""
     # %H rather than %-I, which is not supported on Windows where the desktop app runs
-    return moment.strftime("%d %b %Y, %H:%M")
+    return moment.astimezone().strftime("%d %b %Y, %H:%M")
 
 
 def scan_time(value: datetime | None) -> str:
@@ -41,9 +55,23 @@ class ContentBlockRecord:
 
 
 @dataclass
-class DailyRecord:
+class PageChangeRecord:
+    """What one scan found on one critical page, ready to show on the updates page.
+
+    Attributes:
+        url: The critical page.
+        changed: Blocks of text that were edited or moved, with the changed words highlighted.
+        added: Blocks of text that are new on the page.
+        removed: Blocks of text that are no longer on the page.
+        links_added: Links that are new on the page.
+        links_removed: Links that are no longer on the page.
+        documents_added: Documents that are new on the page.
+        documents_removed: Documents that are no longer on the page.
+        failure_reason: Why the page could not be reached, or None if it was checked.
+        failure_count: How many checks of the page have failed in a row.
+    """
+
     url: HttpUrl
-    website_url: HttpUrl
     changed: list[TextChangeRecord] = field(default_factory=list[TextChangeRecord])
     added: list[ContentBlockRecord] = field(default_factory=list[ContentBlockRecord])
     removed: list[ContentBlockRecord] = field(default_factory=list[ContentBlockRecord])
@@ -51,39 +79,74 @@ class DailyRecord:
     links_removed: list[HttpUrl] = field(default_factory=list[HttpUrl])
     documents_added: list[HttpUrl] = field(default_factory=list[HttpUrl])
     documents_removed: list[HttpUrl] = field(default_factory=list[HttpUrl])
-    changed_at: datetime | None = None
+    failure_reason: str | None = None
+    failure_count: int = 0
 
 
 @dataclass
-class WebsiteDailyRecord:
-    """A website's changes from its latest scan: each critical page that changed and its new or removed pages.
+class ScanRecord:
+    """One scan of a website, ready to show in the website's history on the updates page.
 
     Attributes:
-        website_url (HttpUrl): The URL of the website the critical pages belong to.
-        pages (list[DailyRecord]): The changes found on each of the website's critical pages.
-        internal_links_added (list[HttpUrl]): Pages found on the website that were not there in the previous scan.
-        internal_links_removed (list[HttpUrl]): Pages from the previous scan that are no longer on the website.
-        internal_links_changed_at (datetime | None): When the added and removed internal links were found.
+        scanned_at: When the scan finished.
+        status: How the scan went.
+        message: What the app did about a scan that did not go normally, e.g. putting the website on cooldown.
+        is_awaiting_email: Whether the scan's report has not been emailed yet, e.g. because the mail server was down.
+        internal_links_added: Pages found on the website that were not there at the scan before.
+        internal_links_removed: Pages from the scan before that are no longer on the website.
+        pages: What the scan found on each critical page.
+    """
+
+    scanned_at: datetime
+    status: ScanStatus
+    message: str | None = None
+    is_awaiting_email: bool = False
+    internal_links_added: list[HttpUrl] = field(default_factory=list[HttpUrl])
+    internal_links_removed: list[HttpUrl] = field(default_factory=list[HttpUrl])
+    pages: list[PageChangeRecord] = field(default_factory=list[PageChangeRecord])
+
+    @property
+    def status_label(self) -> str:
+        """A few words saying how the scan went, e.g. "Could not connect"."""
+        return SCAN_STATUS_LABELS[self.status]
+
+    @property
+    def is_problem(self) -> bool:
+        """Whether the scan did not go normally, e.g. the website could not be reached."""
+        return self.status is not ScanStatus.SUCCESS
+
+    @property
+    def has_details(self) -> bool:
+        """Whether the scan found anything, or has a message, worth opening its card for."""
+        return bool(self.message or self.internal_links_added or self.internal_links_removed or self.pages)
+
+
+@dataclass
+class WebsiteHistoryRecord:
+    """A website's most recent scans, newest first, and what each one found.
+
+    Attributes:
+        website_url: The URL of the website.
+        scans: The website's most recent scans, newest first.
     """
 
     website_url: HttpUrl
-    pages: list[DailyRecord]
-    internal_links_added: list[HttpUrl] = field(default_factory=list[HttpUrl])
-    internal_links_removed: list[HttpUrl] = field(default_factory=list[HttpUrl])
-    internal_links_changed_at: datetime | None = None
+    scans: list[ScanRecord]
+
+    @property
+    def last_scanned_at(self) -> datetime | None:
+        """When the website's most recent scan finished, or None if it has not been scanned."""
+        return self.scans[0].scanned_at if self.scans else None
+
+    @property
+    def scans_with_details(self) -> int:
+        """How many of the scans found changes or ran into a problem."""
+        return sum(scan.has_details for scan in self.scans)
 
     @property
     def changed_at(self) -> datetime | None:
-        """When the most recent of the website's changes was found, or None if no time was recorded for any."""
-        # An old time is kept after its internal link changes are cleared, so it only counts while they are shown
-        has_internal_link_changes: bool = bool(self.internal_links_added or self.internal_links_removed)
-        internal_links_time: datetime | None = self.internal_links_changed_at if has_internal_link_changes else None
-        found_times: list[datetime] = [
-            found_time
-            for found_time in (internal_links_time, *(page.changed_at for page in self.pages))
-            if found_time is not None
-        ]
-        return max(found_times, default=None)
+        """When the most recent scan that found changes or ran into a problem finished, or None if none did."""
+        return next((scan.scanned_at for scan in self.scans if scan.has_details), None)
 
 
 class ChangeRecord(Protocol):
@@ -96,7 +159,7 @@ class ChangeRecord(Protocol):
 def newest_first[RecordT: ChangeRecord](records: Iterable[RecordT]) -> list[RecordT]:
     """Orders change records so the most recently found changes come first.
 
-    Changes found before the app recorded when changes were found have no time, so they go last.
+    Records with no changes have no time, so they go last.
 
     Args:
         records (Iterable[RecordT]): The website or critical page records to order.
@@ -104,7 +167,7 @@ def newest_first[RecordT: ChangeRecord](records: Iterable[RecordT]) -> list[Reco
     Returns:
         list[RecordT]: The records, most recent change first.
     """
-    return sorted(records, key=lambda record: record.changed_at or datetime.min, reverse=True)
+    return sorted(records, key=lambda record: record.changed_at or datetime.min.replace(tzinfo=UTC), reverse=True)
 
 
 def _word_html(word: DiffWord) -> Markup:
@@ -136,3 +199,92 @@ def build_word_diff(old_text: str, new_text: str) -> tuple[Markup, Markup]:
         Markup(" ").join(_word_html(word) for word in word_diff.old_words),
         Markup(" ").join(_word_html(word) for word in word_diff.new_words),
     )
+
+
+def _content_block_record(block: ContentBlock) -> ContentBlockRecord:
+    """Gets a block of added or removed text ready to show on the updates page.
+
+    Args:
+        block: The block of text.
+
+    Returns:
+        The block's section, text and type.
+    """
+    return ContentBlockRecord(section=block.parent_heading, text=block.text, block_type=block.block_type.value)
+
+
+def _text_change_record(change: ChangedBlock) -> TextChangeRecord:
+    """Gets an edited or moved block of text ready to show on the updates page, with the changed words highlighted.
+
+    Args:
+        change: The block before and after the edit.
+
+    Returns:
+        The block's sections and text before and after.
+    """
+    old_html, new_html = build_word_diff(change.old_block.text, change.new_block.text)
+    return TextChangeRecord(
+        old_section=change.old_block.parent_heading,
+        new_section=change.new_block.parent_heading,
+        old=change.old_block.text,
+        new=change.new_block.text,
+        old_html=old_html,
+        new_html=new_html,
+        similarity=change.similarity,
+    )
+
+
+def _page_change_record(page: PageChanges) -> PageChangeRecord:
+    """Gets what a scan found on one critical page ready to show on the updates page.
+
+    Args:
+        page: What the scan found on the page.
+
+    Returns:
+        The page's changes.
+    """
+    return PageChangeRecord(
+        url=page.url,
+        changed=[_text_change_record(change) for change in page.text_changed],
+        added=[_content_block_record(block) for block in page.text_added],
+        removed=[_content_block_record(block) for block in page.text_removed],
+        links_added=page.links_added,
+        links_removed=page.links_removed,
+        documents_added=page.documents_added,
+        documents_removed=page.documents_removed,
+        failure_reason=page.failure_reason,
+        failure_count=page.failure_count,
+    )
+
+
+def scan_record(scan_run: ScanRunRead) -> ScanRecord:
+    """Gets one scan ready to show in its website's history on the updates page.
+
+    Args:
+        scan_run: The scan, with what it found.
+
+    Returns:
+        The scan's record.
+    """
+    return ScanRecord(
+        scanned_at=scan_run.scanned_at,
+        status=scan_run.status,
+        message=scan_run.message,
+        is_awaiting_email=scan_run.is_awaiting_email,
+        internal_links_added=scan_run.internal_links_added,
+        internal_links_removed=scan_run.internal_links_removed,
+        pages=[_page_change_record(page) for page in scan_run.pages],
+    )
+
+
+def website_history_record(website_url: HttpUrl, scan_runs: Sequence[ScanRunRead]) -> WebsiteHistoryRecord:
+    """Gets a website's most recent scans ready to show on the updates page.
+
+    Args:
+        website_url: The URL of the website.
+        scan_runs: The website's most recent scans, newest first.
+
+    Returns:
+        The website's history.
+    """
+    return WebsiteHistoryRecord(website_url=website_url, scans=[scan_record(scan_run) for scan_run in scan_runs])
