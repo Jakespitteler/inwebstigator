@@ -15,6 +15,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
+from datetime import datetime
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
@@ -22,13 +23,13 @@ from typing import Any
 import httpx2
 import pytest
 import uvicorn
-from playwright.sync_api import BrowserType, Page, Route
+from playwright.sync_api import BrowserType, ConsoleMessage, Page, Route
 from playwright.sync_api import Error as PlaywrightError
-from sqlalchemy import Engine, create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy import Engine, create_engine, select
+from sqlalchemy.orm import Session, selectinload
 
 from app.db import core
-from app.db.schema import Base
+from app.db.schema import Base, DBWebsite
 from app.main import app
 
 E2E_DIRECTORY: Path = Path(__file__).parent
@@ -164,6 +165,21 @@ class RunningApp:
         """Opens a session on the app's database, e.g. to set up or check saved state."""
         return Session(self.engine)
 
+    def add_website(self, url: str) -> None:
+        """Saves a website straight to the database, as if it had been added and scanned before."""
+        with self.session() as session:
+            session.add(DBWebsite(url=url, last_scan_at=datetime.now()))
+            session.commit()
+
+    def saved_websites(self) -> list[DBWebsite]:
+        """Returns the websites saved in the database, with their critical pages and recipients loaded."""
+        with self.session() as session:
+            websites = session.scalars(
+                select(DBWebsite).options(selectinload(DBWebsite.critical_pages), selectinload(DBWebsite.recipients))
+            ).all()
+            session.expunge_all()
+            return list(websites)
+
 
 def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -254,11 +270,15 @@ def _serve_external_requests_locally(route: Route) -> None:
 def browser_errors(page: Page, app_server: RunningApp) -> Iterator[BrowserErrors]:
     """Records the page's script and console errors, and fails the test if there were any."""
     errors = BrowserErrors()
-    page.on("pageerror", lambda error: errors.messages.append(f"Script error: {error}"))
-    page.on(
-        "console",
-        lambda message: errors.messages.append(f"Console error: {message.text}") if message.type == "error" else None,
-    )
+
+    def record_console_message(message: ConsoleMessage) -> None:
+        # The browser logs every failed request (e.g. a 422 for a page that can't be loaded) as a console error,
+        # even when the dashboard handles it, so only errors the page itself logs are counted
+        if message.type == "error" and not message.text.startswith("Failed to load resource"):
+            errors.messages.append(f"Console error: {message.text}")
+
+    page.on("pageerror", lambda error: errors.messages.append(f"Script error: {error}\n{error.stack}"))
+    page.on("console", record_console_message)
     page.route(lambda url: not url.startswith(app_server.url), _serve_external_requests_locally)
 
     yield errors
