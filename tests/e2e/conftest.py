@@ -92,10 +92,12 @@ class FakeWebsites:
     Attributes:
         pages: Each page's HTML, by URL.
         delay_seconds: How long every page takes to load, e.g. to test cancelling a scan.
+        requested_urls: Every URL the app has requested, in order, e.g. to check a website was not scanned.
     """
 
     pages: dict[str, str] = field(default_factory=dict[str, str])
     delay_seconds: float = 0
+    requested_urls: list[str] = field(default_factory=list[str])
 
     def set_page(self, url: str, html: str) -> None:
         """Adds or changes a page."""
@@ -104,8 +106,10 @@ class FakeWebsites:
     def reset(self) -> None:
         self.pages.clear()
         self.delay_seconds = 0
+        self.requested_urls.clear()
 
     async def respond(self, request: httpx2.Request) -> httpx2.Response:
+        self.requested_urls.append(str(request.url))
         if self.delay_seconds:
             await asyncio.sleep(self.delay_seconds)
         html: str | None = self.pages.get(_without_trailing_slash(str(request.url)))
