@@ -40,6 +40,8 @@ log_cli_level = "INFO"
 markers = [
     "e2e: browser tests of the dashboard (tests/e2e); skip with -m \"not e2e\"",
 ]
+# If a test runs for over 5 minutes, print where every thread is stuck (diagnoses a hang; stops nothing)
+faulthandler_timeout = 300
 
 [tool.ruff]
 target-version = "py312"
