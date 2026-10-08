@@ -1203,6 +1203,16 @@
                     autocomplete="off"
                     spellcheck="false"
                 >
+
+                <p
+                    id="confirm-dialog-error"
+                    class="confirm-dialog-error"
+                    aria-live="polite"
+                    hidden
+                >
+                    Confirmation text does not match.
+                </p>
+
             </div>
 
             <div class="confirm-dialog-actions">
@@ -1532,6 +1542,7 @@
         const confirmDialogInput = document.getElementById("confirm-dialog-input");
         const confirmDialogButton = document.getElementById("confirm-dialog-confirm");
         const confirmDialogExpected = document.getElementById("confirm-dialog-expected");
+        const confirmDialogError = document.getElementById("confirm-dialog-error");
 
         function confirmDeletion({ title, message, confirmLabel = "Delete", typeToConfirm = null }) {
             document.getElementById("confirm-dialog-title").textContent = title;
@@ -1539,6 +1550,7 @@
             document.getElementById("confirm-dialog-type-row").hidden = !typeToConfirm;
             confirmDialogExpected.textContent = typeToConfirm || "";
             confirmDialogInput.value = "";
+            confirmDialogError.hidden = true;
             confirmDialogButton.textContent = confirmLabel;
             confirmDialogButton.disabled = Boolean(typeToConfirm);
 
@@ -1557,8 +1569,13 @@
         }
 
         confirmDialogInput.addEventListener("input", () => {
-            confirmDialogButton.disabled =
-                confirmDialogInput.value.trim() !== confirmDialogExpected.textContent;
+            const enteredText = confirmDialogInput.value.trim();
+            const matches =
+                enteredText === confirmDialogExpected.textContent;
+
+            confirmDialogButton.disabled = !matches;
+            confirmDialogError.hidden =
+                enteredText === "" || matches;
         });
 
         // A click on the backdrop lands on the dialog element itself
@@ -2167,7 +2184,7 @@
                                 message: (scanning ? "Its scan will be cancelled. " : "")
                                     + "It will stop being monitored, and its critical pages, saved page "
                                     + "content and notification emails will be removed. This can't be undone.",
-                                typeToConfirm: websiteName,
+                                typeToConfirm: "CONFIRM",
                             });
 
                         if (!confirmed) {

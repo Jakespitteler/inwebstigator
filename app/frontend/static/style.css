@@ -1791,3 +1791,9 @@ button:disabled {
     opacity: 0.45;
     cursor: not-allowed;
 }
+
+.confirm-dialog .confirm-dialog-error {
+    margin-top: 6px;
+    font-size: 13px;
+    color: var(--danger-text);
+}
