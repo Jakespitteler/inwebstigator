@@ -13,7 +13,7 @@ import asyncio
 import socket
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from email.message import EmailMessage
@@ -29,7 +29,7 @@ from sqlalchemy import Engine, create_engine, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db import core
-from app.db.schema import Base, DBWebsite
+from app.db.schema import Base, DBCriticalPage, DBRecipient, DBWebsite
 from app.main import app
 
 E2E_DIRECTORY: Path = Path(__file__).parent
@@ -165,10 +165,24 @@ class RunningApp:
         """Opens a session on the app's database, e.g. to set up or check saved state."""
         return Session(self.engine)
 
-    def add_website(self, url: str) -> None:
-        """Saves a website straight to the database, as if it had been added and scanned before."""
+    def add_website(
+        self, url: str, critical_pages: Sequence[str] = (), recipients: Sequence[str] = (), **fields: Any
+    ) -> None:
+        """Saves a website straight to the database, as if it had been added and scanned before.
+
+        Like the app, its main URL is always one of its critical pages.
+
+        Args:
+            url: The website's address.
+            critical_pages: Its other critical pages.
+            recipients: Its notification emails.
+            fields: Other columns to set, e.g. `active=False`.
+        """
         with self.session() as session:
-            session.add(DBWebsite(url=url, last_scan_at=datetime.now()))
+            website = DBWebsite(url=url, last_scan_at=datetime.now(), **fields)
+            website.critical_pages = [DBCriticalPage(url=page_url) for page_url in (url, *critical_pages)]
+            website.recipients = [DBRecipient(email=email) for email in recipients]
+            session.add(website)
             session.commit()
 
     def saved_websites(self) -> list[DBWebsite]:
@@ -218,10 +232,7 @@ def running_app(tmp_path_factory: pytest.TempPathFactory) -> Iterator[RunningApp
         monkeypatch.setattr("app.scanner.AsyncClient", websites.client)
         monkeypatch.setattr("app.frontend.api.routers.AsyncClient", websites.client)
         monkeypatch.setattr("app.scanner.send_email", sent_emails.record_message)
-        monkeypatch.setattr("app.frontend.api.routers.send_confirmation", sent_emails.record_confirmation)
-        monkeypatch.setattr(
-            "app.frontend.api.routers.confirm_address_can_receive_email", sent_emails.record_confirmation
-        )
+        # Confirmation emails are recorded by `skip_email_confirmations` below, which runs for every test
 
         server, thread = _start_server(_free_port())
         try:
@@ -236,6 +247,17 @@ def running_app(tmp_path_factory: pytest.TempPathFactory) -> Iterator[RunningApp
             thread.join(timeout=10)
             core.SessionLocal.configure(bind=original_engine)
             engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def skip_email_confirmations(monkeypatch: pytest.MonkeyPatch, running_app: RunningApp) -> None:
+    """Records the confirmation emails sent when an email address is added, instead of sending them.
+
+    Replaces the fixture of the same name in tests/conftest.py, which throws them away, for the browser tests.
+    """
+    record = running_app.sent_emails.record_confirmation
+    monkeypatch.setattr("app.frontend.api.routers.confirm_address_can_receive_email", record)
+    monkeypatch.setattr("app.frontend.api.routers.send_confirmation", record)
 
 
 @pytest.fixture

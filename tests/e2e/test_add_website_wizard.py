@@ -196,8 +196,9 @@ def test_adding_a_website_saves_it_and_shows_its_card(
     assert website.days_between_scans == 2
     assert {page.url for page in website.critical_pages} == {WEBSITE_URL, FEES_URL}
     assert [recipient.email for recipient in website.recipients] == ["team@example.com"]
-    assert {(email.to, email.subject) for email in app_server.sent_emails.emails} >= {
-        ("team@example.com", "Website monitoring started")
+    assert {(email.to, email.subject) for email in app_server.sent_emails.emails} == {
+        ("team@example.com", "Email address added to website monitoring"),
+        ("team@example.com", "Website monitoring started"),
     }
 
 
