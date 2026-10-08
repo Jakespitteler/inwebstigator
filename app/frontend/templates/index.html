@@ -2441,10 +2441,11 @@
             updateBackgroundScanNote();
         }
 
-        // Cancel a website's scan, whether it is still queued or already running
+        // Cancel a website's scan, whether it is still queued or already running.
+        // Only the cancel buttons on website cards: the Add Website wizard's has its own handler above.
         const cancelScanButtons =
             document.querySelectorAll(
-                ".cancel-scan-button"
+                ".website-card .cancel-scan-button"
             );
 
         cancelScanButtons.forEach((button) => {
