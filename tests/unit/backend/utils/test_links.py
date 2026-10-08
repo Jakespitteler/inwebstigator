@@ -190,7 +190,7 @@ def test_extract_links_from_html_skips_missing_href(test_url: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("base_url", "check_url", "expected"),
+    ("site_url", "check_url", "expected"),
     [
         ("https://example.com/", "https://www.example.com/page", True),
         ("https://www.example.com/", "https://example.com/page", True),
@@ -201,6 +201,6 @@ def test_extract_links_from_html_skips_missing_href(test_url: str) -> None:
         ("https://example.com/news", "https://www.example.com/sport", False),
     ],
 )
-def test_is_internal_web_page_treats_www_as_same_site(base_url: str, check_url: str, expected: bool) -> None:
+def test_is_internal_web_page_treats_www_as_same_site(site_url: str, check_url: str, expected: bool) -> None:
     """Test example.com and www.example.com count as one website, but other subdomains and sites do not."""
-    assert is_internal_web_page(base_url, check_url) is expected
+    assert is_internal_web_page(site_url, check_url) is expected
