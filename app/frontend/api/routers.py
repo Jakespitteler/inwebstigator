@@ -52,14 +52,11 @@ from app.frontend.api.utils import (
 from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead, CriticalPageUpdate
 from app.models.recipient_models import RecipientCreate, RecipientUpdate
 from app.models.website_models import NewHttpUrl, WebsiteCreate, WebsiteRead, WebsiteUpdate
-from app.scanner import (
-    cancel_scan,
-    queued_crawls,
-    scan_all_websites,
-    scan_website,
-    send_report_to_recipients,
-)
-from app.scheduler import next_scheduled_check, restart_scan_countdown
+from app.scanning.all_websites_scan import scan_all_websites
+from app.scanning.notifications import send_notifications
+from app.scanning.scan_queue import scan_queue
+from app.scanning.scheduler import next_scheduled_check, restart_scan_countdown
+from app.scanning.website_scan import scan_website
 
 EmailSenderDep = Annotated[EmailSender, Depends(get_email_sender)]
 
@@ -187,7 +184,7 @@ def get_dashboard(session: SessionDep, request: Request):
             "default_days_between_scans": config.scheduler_default_days_between_scans,
             "minimum_days_between_scans": config.scheduler_minimum_days_between_scans,
             "max_pages": config.web_crawler_default_max_pages,
-            "queued_website_urls": set(queued_crawls),
+            "queued_website_urls": set(scan_queue.queued_urls),
         },
     )
 
@@ -457,9 +454,9 @@ async def manually_scan_website(
         recipient_emails: list[str] = [recipient.email for recipient in website.recipients]
         if recipient_email and recipient_email not in recipient_emails:
             recipient_emails.append(recipient_email)
-        await asyncio.to_thread(
-            send_report_to_recipients, recipient_emails, report, manual_scan_subject(str(website.url)), email_sender
-        )
+        subject: str = manual_scan_subject(str(website.url))
+        emails = [OutgoingEmail(to=email, subject=subject, html_body=report) for email in recipient_emails]
+        await asyncio.to_thread(send_notifications, emails, email_sender)
 
         return report
 
@@ -473,7 +470,7 @@ async def cancel_website_scan(url: HttpUrl = Form(...)) -> bool:
     Returns:
         bool: True if the scan was cancelled, or False if it had already finished.
     """
-    return cancel_scan(str(url))
+    return scan_queue.cancel(str(url))
 
 
 # ======================
@@ -556,4 +553,4 @@ async def delete_website(session: SessionDep, id: uuid.UUID) -> None:
     website_service.delete(id)
     session.commit()
 
-    cancel_scan(str(website.url))
+    scan_queue.cancel(str(website.url))

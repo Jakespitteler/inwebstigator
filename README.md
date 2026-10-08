@@ -173,7 +173,7 @@ in the junk folder looks exactly like a broken scraper.
 ### the scheduler
 
 There is no separate scheduler process: it starts and stops with the app
-(`app/scheduler.py`, run from the FastAPI lifespan), so scans only happen while
+(`app/scanning/scheduler.py`, run from the FastAPI lifespan), so scans only happen while
 Inwebstigator is running. Set `AUTOMATIC_SCANS=false` to turn it off.
 
 It runs every 12 hours (`SCHEDULER_MINIMUM_DAYS_BETWEEN_SCANS`), first a second

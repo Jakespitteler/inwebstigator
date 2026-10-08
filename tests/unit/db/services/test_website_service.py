@@ -554,3 +554,18 @@ def test_deactivated_reason_is_only_cleared_by_reactivating(
     updated_website = service.update(id=test_website.id, model_update=model_update)
 
     assert updated_website.deactivated_reason == expected_reason
+
+
+def test_create_monitors_main_url_once(session: Session):
+    """Tests the main URL is always a critical page, without duplicates, and is in the returned website."""
+    payload = WebsiteCreate(
+        url=HttpUrl("https://example.com"), critical_pages=["https://example.com/fees", "https://example.com"]
+    )
+
+    website = WebsiteService(session).create(payload)
+
+    assert sorted(str(page.url) for page in website.critical_pages) == [
+        "https://example.com/",
+        "https://example.com/fees",
+    ]
+    assert payload.critical_pages == ["https://example.com/fees", "https://example.com/"]  # caller's model untouched

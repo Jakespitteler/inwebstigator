@@ -7,9 +7,11 @@ from app.backend.email_service.html_bodies import (
     generate_scan_report_html,
     health_check_html,
     join_scan_reports,
+    monitoring_started_html,
     recipient_added_html,
     report_divider,
 )
+from app.models.website_models import WebsiteCreate
 from tests.unit.backend.email_service.builders import make_block, make_change, make_page, make_website
 
 
@@ -133,3 +135,24 @@ def test_health_check_says_when_a_website_needs_attention() -> None:
         "https://a.example/: Working.",
         "https://b.example/: 2 watched pages cannot be reached.",
     ]
+
+
+def test_monitoring_started_html_lists_the_main_page_and_critical_pages():
+    """Tests the email lists the website's main page, which is always watched, then its other critical pages,
+    each only once (here "/" is the main page again)."""
+    body = monitoring_started_html(WebsiteCreate(url=HttpUrl("https://example.com"), critical_pages=["/news", "/"]), 7)
+
+    assert body.count("<li") == 2
+    assert body.index("https://example.com/<") < body.index("https://example.com/news<")
+
+
+def test_monitoring_started_html_escapes_urls_and_describes_schedule():
+    """Tests the email body escapes URLs and states the scan and health check intervals."""
+    website = WebsiteCreate(url=HttpUrl("https://example.com/?a=1&b=<script>"), days_between_scans=1)
+
+    body = monitoring_started_html(website, 7)
+
+    assert "https://example.com/?a=1&amp;b=%3Cscript%3E" in body  # pydantic percent-encodes the "<" and ">"
+    assert "<script>" not in body
+    assert "checked every day" in body
+    assert "every 7 days" in body

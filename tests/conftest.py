@@ -6,6 +6,7 @@ from app.core.config import config
 
 config.automatic_scans = False
 
+import asyncio
 import time
 import uuid
 from collections.abc import Callable, Iterator
@@ -14,6 +15,7 @@ from datetime import datetime
 import httpx2
 import pytest
 from fastapi.testclient import TestClient
+from pytest_mock import MockerFixture
 from sqlalchemy import UUID as PG_UUID
 from sqlalchemy import Connection, DateTime, Engine, MetaData, StaticPool, String, create_engine, event, text
 from sqlalchemy.orm import Mapped, Session, declarative_base, mapped_column
@@ -27,6 +29,7 @@ from app.db import repository, schema
 from app.db.session import get_db_session
 from app.main import app
 from app.models import critical_page_models, internal_link_models, recipient_models, website_models
+from app.scanning.scan_queue import ScanQueue, scan_queue
 from tests.fakes import FakeEmailSender
 
 type RequestHandler = Callable[[httpx2.Request], httpx2.Response]
@@ -141,11 +144,23 @@ def email_sender(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeEmailSender]:
         The fake sender, holding every email the test sent.
     """
     fake_sender = FakeEmailSender()
-    monkeypatch.setattr("app.scanner.get_email_sender", lambda: fake_sender)
-    monkeypatch.setattr("app.scheduler.get_email_sender", lambda: fake_sender)
+    monkeypatch.setattr("app.scanning.all_websites_scan.get_email_sender", lambda: fake_sender)
+    monkeypatch.setattr("app.scanning.scheduler.get_email_sender", lambda: fake_sender)
     app.dependency_overrides[get_email_sender] = lambda: fake_sender
     yield fake_sender
     app.dependency_overrides.pop(get_email_sender, None)
+
+
+@pytest.fixture
+def empty_scan_queue(mocker: MockerFixture) -> ScanQueue:
+    """Empties the app's scan queue and gives it a lock for this test's event loop, as each test has its own loop.
+
+    Returns:
+        The app's scan queue.
+    """
+    mocker.patch.object(scan_queue, "_lock", asyncio.Lock())
+    mocker.patch.object(scan_queue, "_scans", {})
+    return scan_queue
 
 
 @pytest.fixture(autouse=True)

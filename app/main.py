@@ -16,7 +16,7 @@ from app.db.migrations import add_missing_columns
 from app.db.schema import Base
 from app.db.session import engine
 from app.frontend.api import routers
-from app.scheduler import schedule_scans
+from app.scanning.scheduler import schedule_scans
 
 AUTOMATIC_SCANS: bool = config.automatic_scans
 APP_NAME: str = config.app_name

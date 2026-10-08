@@ -22,7 +22,7 @@ from app.db.session import get_db_session
 from app.frontend.api import routers
 from app.main import app
 from app.models import critical_page_models, recipient_models, website_models
-from app.scanner import queued_crawls
+from app.scanning.scan_queue import ScanQueue, scan_queue
 from tests.fakes import FakeEmailSender
 
 
@@ -310,8 +310,8 @@ def test_manual_scan_of_a_website_already_queued_is_refused(
     api_client: TestClient, test_website: website_models.WebsiteRead, mocker: MockerFixture
 ) -> None:
     """Tests "Run Scan Now" for a website already queued or being scanned is refused rather than queued twice."""
-    mocker.patch.dict("app.scanner.queued_crawls", {str(test_website.url): mocker.Mock()})
-    mock_get_website_updates = mocker.patch("app.scanner.get_website_updates")
+    mocker.patch.object(scan_queue, "_scans", {str(test_website.url): mocker.Mock()})
+    mock_get_website_updates = mocker.patch("app.scanning.website_scan.get_website_updates")
 
     response = api_client.post("/scanner/run", data={"url": str(test_website.url)})
 
@@ -325,7 +325,7 @@ def test_cancel_scan_reports_whether_there_was_a_scan_to_cancel(
     """Tests "Cancel Scan" cancels a queued or running scan, and says so when there was nothing to cancel."""
     mock_crawl = mocker.Mock()
     mock_crawl.cancel.return_value = True
-    mocker.patch.dict("app.scanner.queued_crawls", {str(test_website.url): mock_crawl})
+    mocker.patch.object(scan_queue, "_scans", {str(test_website.url): mock_crawl})
 
     assert api_client.post("/scanner/cancel", data={"url": str(test_website.url)}).json() is True
     mock_crawl.cancel.assert_called_once()
@@ -339,7 +339,7 @@ def test_dashboard_shows_cancel_button_only_for_websites_being_scanned(
     refresh, and other websites do not."""
     session.add(DBWebsite(url="https://not-scanning.example.com"))
     session.flush()
-    mocker.patch.dict("app.scanner.queued_crawls", {str(test_website.url): mocker.Mock()})
+    mocker.patch.object(scan_queue, "_scans", {str(test_website.url): mocker.Mock()})
 
     dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
 
@@ -361,7 +361,7 @@ def test_deleting_a_website_cancels_its_scan(
 ) -> None:
     """Tests deleting a website that is queued or being scanned cancels its scan as well as deleting it."""
     mock_crawl = mocker.Mock()
-    mocker.patch.dict("app.scanner.queued_crawls", {str(test_website.url): mock_crawl})
+    mocker.patch.object(scan_queue, "_scans", {str(test_website.url): mock_crawl})
 
     response = api_client.delete(f"/websites/{test_website.id}")
 
@@ -455,7 +455,7 @@ def test_adding_a_website_too_large_to_scan_deactivates_it(
     def mock_client() -> AsyncClient:
         return AsyncClient(transport=MockTransport(lambda request: Response(200, text="<p>Home page.</p>")))
 
-    mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
+    mocker.patch("app.scanning.website_scan.db_context", side_effect=lambda: nullcontext(session))
     mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
     mocker.patch("app.frontend.api.routers.AsyncClient", side_effect=mock_client)
     mocker.patch(
@@ -546,7 +546,9 @@ def test_scan_settings_explain_what_inactive_means(api_client: TestClient, test_
 
 
 @pytest.fixture
-def first_scan_in_progress(mocker: MockerFixture, session: Session) -> Iterator[asyncio.Event]:
+def first_scan_in_progress(
+    mocker: MockerFixture, session: Session, empty_scan_queue: ScanQueue
+) -> Iterator[asyncio.Event]:
     """Makes a new website's first scan run until it is cancelled, and runs the app against the test database.
 
     Returns:
@@ -558,10 +560,9 @@ def first_scan_in_progress(mocker: MockerFixture, session: Session) -> Iterator[
         crawl_started.set()
         await asyncio.Event().wait()
 
-    mocker.patch("app.scanner.scan_lock", asyncio.Lock())  # A lock for this test's event loop
     mocker.patch("app.frontend.api.routers._check_pages_exist")  # The website is not loaded online
-    mocker.patch("app.scanner.get_website_updates", side_effect=crawl_until_cancelled)
-    mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
+    mocker.patch("app.scanning.website_scan.get_website_updates", side_effect=crawl_until_cancelled)
+    mocker.patch("app.scanning.website_scan.db_context", side_effect=lambda: nullcontext(session))
     mocker.patch("app.frontend.api.routers.db_context", side_effect=lambda: nullcontext(session))
     app.dependency_overrides[get_db_session] = lambda: session
     yield crawl_started
@@ -593,7 +594,7 @@ async def test_stopping_a_new_websites_first_scan_leaves_no_website(
 
     assert added.status_code == 409, added.text
     assert session.scalars(select(DBWebsite)).all() == []
-    assert queued_crawls == {}
+    assert scan_queue.queued_urls == []
 
 
 @pytest.mark.anyio
@@ -608,24 +609,24 @@ async def test_another_website_can_be_added_while_one_is_being_scanned(
         adding_second = asyncio.create_task(client.post("/scanner/initial_scan", json={"url": "https://second.com"}))
 
         async with asyncio.timeout(5):  # Fails rather than hangs if the second website was not queued
-            while len(queued_crawls) < 2:
+            while len(scan_queue.queued_urls) < 2:
                 await asyncio.sleep(0.01)
 
-        first_url, second_url = queued_crawls  # In the order they were added
+        first_url, second_url = scan_queue.queued_urls  # In the order they were added
         assert {website.url for website in session.scalars(select(DBWebsite))} == {first_url, second_url}
 
         # Cancelling the waiting website leaves the one being scanned alone
         assert (await client.post("/scanner/cancel", data={"url": second_url})).json() is True
         async with asyncio.timeout(5):
             assert (await adding_second).status_code == 409
-        assert list(queued_crawls) == [first_url]
+        assert scan_queue.queued_urls == [first_url]
 
         assert (await client.post("/scanner/cancel", data={"url": first_url})).json() is True
         async with asyncio.timeout(5):
             assert (await adding_first).status_code == 409
 
     assert session.scalars(select(DBWebsite)).all() == []
-    assert queued_crawls == {}
+    assert scan_queue.queued_urls == []
 
 
 def test_adding_an_email_to_a_website_counts_as_emailing_it(
