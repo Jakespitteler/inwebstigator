@@ -17,13 +17,14 @@ def _page_html(text: str) -> str:
     return f"<html><body><h1>Example</h1><p>{text}</p></body></html>"
 
 
-def _card(page: Page, name: str = "example.com") -> Locator:
-    return page.locator(f'.website-card[data-website-name="{name}"]')
+def _card(page: Page, url: str = WEBSITE_URL) -> Locator:
+    """Finds a website's card by its address, which stays the same however its display name is worked out."""
+    return page.locator(".website-card").filter(has=page.locator(f'.run-scan-button[data-website-url="{url}"]'))
 
 
-def _open_card(page: Page, name: str = "example.com") -> Locator:
+def _open_card(page: Page, url: str = WEBSITE_URL) -> Locator:
     """Opens a website's card, showing everything below its header."""
-    card = _card(page, name)
+    card = _card(page, url)
     card.locator(".card-toggle").click()
     expect(card.locator(".card-body")).to_be_visible()
     return card
@@ -260,8 +261,9 @@ def test_deleting_a_website_needs_confirm_typed(open_dashboard: Callable[..., Pa
     page = open_dashboard()
     delete_button, error = page.locator("#confirm-dialog-confirm"), page.locator("#confirm-dialog-error")
 
-    _open_card(page).locator(".delete-website-button").click()
-    expect(page.locator("#confirm-dialog-title")).to_have_text("Delete example.com?")
+    card = _open_card(page)
+    card.locator(".delete-website-button").click()
+    expect(page.locator("#confirm-dialog-title")).to_have_text(f"Delete {card.get_attribute('data-website-name')}?")
     expect(page.locator("#confirm-dialog-input")).to_be_focused()
     expect(delete_button).to_be_disabled()
 
