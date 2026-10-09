@@ -569,7 +569,8 @@
                 aria-live="polite"
             >{% if run_all_in_progress %}Scanning every website. Large websites can take several minutes...{% endif %}</p>
 
-            <!-- Shown while any scan runs: closing the window only hides it to the tray, so scans carry on -->
+            <!-- Shown while any scan runs: closing the window only hides it to the tray, so scans carry on.
+                 "Don't show again" hides it for good on this computer. -->
             <p id="background-scan-note" class="background-scan-note" hidden>
                 <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
                     <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/>
@@ -581,6 +582,9 @@
                     Inwebstigator stays in the system tray, near the clock. To stop it completely,
                     right-click the tray icon and choose <strong>Quit</strong>.
                 </span>
+                <button type="button" id="hide-background-scan-note" class="background-scan-note-dismiss">
+                    Don't show again
+                </button>
             </p>
 
             <!-- ADD WEBSITE WIZARD -->
@@ -2395,19 +2399,47 @@
             });
         }
 
-        // While any scan runs (a spinner is showing), say that closing the window won't stop it
+        // While any scan runs (a spinner is showing), say that closing the window won't stop it,
+        // unless "Don't show again" was clicked. That is remembered between launches, like the theme.
         const backgroundScanNote = document.getElementById("background-scan-note");
+        const HIDE_BACKGROUND_SCAN_NOTE_KEY = "inwebstigator-hide-background-scan-note";
+
+        function backgroundScanNoteDismissed() {
+            if (backgroundScanNote.dataset.dismissed === "true") {
+                return true;
+            }
+            try {
+                return localStorage.getItem(HIDE_BACKGROUND_SCAN_NOTE_KEY) === "true";
+            } catch (error) {
+                return false;  // Storage unavailable, so keep showing the note
+            }
+        }
 
         function updateBackgroundScanNote() {
             const addingWebsite = document.getElementById("add-website-progress");
             const scanning =
                 Boolean(document.querySelector(".is-busy"))
                 || Boolean(addingWebsite && !addingWebsite.hidden);
+            const show = scanning && !backgroundScanNoteDismissed();
 
             // Only touch it when it changes, as the observer below would otherwise be woken up forever
-            if (backgroundScanNote.hidden === scanning) {
-                backgroundScanNote.hidden = !scanning;
+            if (backgroundScanNote.hidden === show) {
+                backgroundScanNote.hidden = !show;
             }
+        }
+
+        const hideBackgroundScanNoteButton = document.getElementById("hide-background-scan-note");
+
+        if (hideBackgroundScanNoteButton) {
+            hideBackgroundScanNoteButton.addEventListener("click", () => {
+                try {
+                    localStorage.setItem(HIDE_BACKGROUND_SCAN_NOTE_KEY, "true");
+                } catch (error) {
+                    // Not remembered, but still hidden until the page reloads
+                }
+                backgroundScanNote.hidden = true;
+                backgroundScanNote.dataset.dismissed = "true";
+            });
         }
 
         if (backgroundScanNote) {
