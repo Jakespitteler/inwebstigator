@@ -2,13 +2,13 @@ import uuid
 from collections.abc import Sequence
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, Form, Request, status
+from fastapi import APIRouter, Body, Depends, Form, HTTPException, Request, status
 from fastapi.responses import FileResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import HttpUrl
 
 from app.backend.email_service.delivery import EmailSender, get_email_sender
-from app.backend.scanning.all_websites_scan import scan_all_websites
+from app.backend.scanning.all_websites_scan import cancel_run_all, run_all_in_progress, scan_all_websites_now
 from app.backend.scanning.manual_scan import scan_website_now
 from app.backend.scanning.scan_queue import scan_queue
 from app.backend.scanning.scheduler import next_scheduled_check, restart_scan_countdown
@@ -99,8 +99,15 @@ def get_dashboard(session: SessionDep, request: Request):
             "queued_website_urls": set(scan_queue.queued_urls),
             "api_token": config.api_token,
             "api_token_header": API_TOKEN_HEADER,
+            "run_all_in_progress": run_all_in_progress(),
         },
     )
+
+
+@ROOT_ROUTER.get("/about")
+def get_about(request: Request):
+    """Renders the About page: what the app does, the team, contact and copyright information."""
+    return templates.TemplateResponse(request=request, name="about.html")
 
 
 @ROOT_ROUTER.get("/favicon.ico", include_in_schema=False)
@@ -154,16 +161,35 @@ async def scan_websites(email_sender: EmailSenderDep) -> str | None:
     """Scans every website now for "Run All Scans", emailing each recipient one report of all the changes found.
 
     Websites that are not due a scan yet are included, while websites on cooldown are still skipped. The countdown
-    to the next scheduled check restarts, as every website is being scanned now.
+    to the next scheduled check restarts, as every website is being scanned now. It can be stopped part way through
+    with `/scanner/cancel_all`.
 
     Args:
         email_sender (EmailSenderDep): Sends the reports.
 
     Returns:
         str | None: Consolidated HTML list of scan reports if updates occurred, otherwise None.
+
+    Raises:
+        HTTPException: 409 if "Run All Scans" is already running.
     """
+    if run_all_in_progress():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Run All Scans is already running.")
+
     restart_scan_countdown()
-    return await scan_all_websites(ignore_schedule=True, email_sender=email_sender)
+    return await scan_all_websites_now(email_sender=email_sender)
+
+
+@SCANNER_ROUTER.post("/cancel_all", response_model=bool)
+async def cancel_all_scans() -> bool:
+    """Cancels "Run All Scans": the website being scanned is cancelled and the rest are skipped.
+
+    Websites already scanned keep their results, and their changes are still emailed.
+
+    Returns:
+        bool: True if it was cancelled, or False if "Run All Scans" was not running.
+    """
+    return cancel_run_all()
 
 
 @SCANNER_ROUTER.post("/run", response_model=str | None)

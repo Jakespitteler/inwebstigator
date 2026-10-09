@@ -29,6 +29,7 @@ dev = [
     "plotly>=6.9.0",
     "plotly-stubs>=0.1.3",
     "pyinstaller>=6.22.3",
+    "pytest-playwright>=0.9.0",
 ]
 
 [tool.pytest.ini_options]
@@ -36,6 +37,11 @@ testpaths = ["tests"]
 pythonpath = ["."]
 log_cli = true
 log_cli_level = "INFO"
+markers = [
+    "e2e: browser tests of the dashboard (tests/e2e); skip with -m \"not e2e\"",
+]
+# If a test runs for over 5 minutes, print where every thread is stuck (diagnoses a hang; stops nothing)
+faulthandler_timeout = 300
 
 [tool.ruff]
 target-version = "py313"

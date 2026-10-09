@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
@@ -8,7 +9,15 @@ from pydantic import HttpUrl
 from pytest_mock import MockerFixture
 from sqlalchemy.orm import Session
 
-from app.backend.scanning.all_websites_scan import SCAN_FAILED_MESSAGE, is_due_a_scan, scan_all_websites
+from app.backend.scanning.all_websites_scan import (
+    SCAN_FAILED_MESSAGE,
+    cancel_run_all,
+    is_due_a_scan,
+    run_all_in_progress,
+    scan_all_websites,
+    scan_all_websites_now,
+)
+from app.backend.scanning.scan_queue import ScanQueue
 from app.backend.scanning.scan_reports import send_reports_awaiting_email
 from app.backend.scanning.website_scan import record_scan
 from app.core.config import config
@@ -489,3 +498,83 @@ def test_is_due_a_scan_allows_a_run_to_start_at_most_the_tolerance_early(populat
 
     assert is_due_a_scan(website, due_at - tolerance)
     assert not is_due_a_scan(website, due_at - tolerance - timedelta(minutes=1))
+
+
+# ======================================
+# Cancelling Run All Scans
+# ======================================
+
+
+def test_cancel_run_all_does_nothing_when_run_all_scans_is_not_running() -> None:
+    """Tests cancelling says so when there is no "Run All Scans" to cancel."""
+    assert not run_all_in_progress()
+    assert not cancel_run_all()
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("websites_unchanged_during_run")
+async def test_cancelling_run_all_scans_skips_the_rest_but_still_emails_changes_found(
+    populated_website: WebsiteRead,
+    mocker: MockerFixture,
+    mock_send_reports: MagicMock,
+):
+    """Tests cancelling "Run All Scans" skips the websites still to come, while the changes already found are
+    still emailed, and the cancelled website's scan time is not recorded."""
+    first = _due_website(populated_website, "https://first.com", "first@gmail.com")
+    cancelled = _due_website(populated_website, "https://cancelled.com", "cancelled@gmail.com")
+    skipped = _due_website(populated_website, "https://skipped.com", "skipped@gmail.com")
+    mocker.patch.object(WebsiteService, "get_all", return_value=[first, cancelled, skipped])
+    cancel_results: list[bool] = []
+
+    async def scan(client: object, website: WebsiteRead) -> ScanRunRead:
+        if website.url == first.url:
+            return _scan_finding("https://first.com/new")
+        assert run_all_in_progress()
+        cancel_results.append(cancel_run_all())  # Cancelled while this website is being scanned
+        raise ScanCancelledError(str(website.url))
+
+    mock_scan_website = mocker.patch("app.backend.scanning.all_websites_scan.scan_website", side_effect=scan)
+    mock_update = mocker.patch.object(WebsiteService, "update")
+
+    result = await scan_all_websites_now()
+
+    assert cancel_results == [True]
+    assert [call.args[1].url for call in mock_scan_website.call_args_list] == [first.url, cancelled.url]
+    mock_send_reports.assert_called_once()
+    assert [call.kwargs["id"] for call in mock_update.call_args_list] == [first.id]
+    assert result is not None and "https://first.com/new" in result
+    assert not run_all_in_progress()
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("websites_unchanged_during_run")
+async def test_cancelling_run_all_scans_cancels_the_website_being_scanned(
+    populated_website: WebsiteRead,
+    mocker: MockerFixture,
+    empty_scan_queue: ScanQueue,
+):
+    """Tests cancelling "Run All Scans" stops the website being crawled, so nothing from it is saved."""
+    scanning = _due_website(populated_website, "https://scanning.com", "scanning@gmail.com")
+    skipped = _due_website(populated_website, "https://skipped.com", "skipped@gmail.com")
+    mocker.patch.object(WebsiteService, "get_all", return_value=[scanning, skipped])
+    crawls_started: list[str] = []
+    crawl_started = asyncio.Event()
+
+    async def crawl(client: object, website: WebsiteRead, *args: object) -> None:
+        crawls_started.append(str(website.url))
+        crawl_started.set()
+        await asyncio.Event().wait()  # Runs until cancelled
+
+    mocker.patch("app.backend.scanning.website_scan._find_updates", side_effect=crawl)
+    mock_update = mocker.patch.object(WebsiteService, "update")
+    run_all = asyncio.create_task(scan_all_websites_now())
+    await crawl_started.wait()
+
+    assert cancel_run_all()
+    assert not cancel_run_all()  # Already cancelled
+
+    assert await run_all is None
+    assert crawls_started == [str(scanning.url)]
+    mock_update.assert_not_called()
+    assert empty_scan_queue.queued_urls == []
+    assert not run_all_in_progress()

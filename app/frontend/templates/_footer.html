@@ -1,0 +1,17 @@
+    {# Shared page footer. Set `current_page` before including it so the current page's link is marked. #}
+    <footer class="site-footer">
+        <p class="site-footer-copyright">
+            &copy; 2026 The Inwebstigator team &middot; CITS3200, The University of Western Australia
+        </p>
+
+        <nav class="site-footer-links" aria-label="Footer">
+            <a
+                href="{{ url_for('get_dashboard') }}"
+                {% if current_page == "dashboard" %}aria-current="page"{% endif %}
+            >Dashboard</a>
+            <a
+                href="{{ url_for('get_about') }}"
+                {% if current_page == "about" %}aria-current="page"{% endif %}
+            >About</a>
+        </nav>
+    </footer>

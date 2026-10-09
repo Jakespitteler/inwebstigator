@@ -5,7 +5,8 @@
 
 .change-record,
 .website-card,
-#add-website-form {
+#add-website-form,
+.about-card {
     position: relative;
     overflow: hidden;
     color: var(--text-primary);
@@ -25,7 +26,8 @@
 .dashboard-header::before,
 .change-record::before,
 .website-card::before,
-#add-website-form::before {
+#add-website-form::before,
+.about-card::before {
     content: '';
     position: absolute;
     top: 0;
@@ -47,7 +49,8 @@
 [data-theme="dark"] .dashboard-header::before,
 [data-theme="dark"] .change-record::before,
 [data-theme="dark"] .website-card::before,
-[data-theme="dark"] #add-website-form::before {
+[data-theme="dark"] #add-website-form::before,
+[data-theme="dark"] .about-card::before {
     opacity: 0.55;
 }
 

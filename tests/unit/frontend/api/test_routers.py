@@ -457,13 +457,73 @@ def test_run_all_scans_every_website_and_restarts_the_countdown(
 ) -> None:
     """Tests "Run All Scans" restarts the countdown to the next scheduled check and scans every website, due or not."""
     mock_restart_scan_countdown = mocker.patch("app.frontend.api.routers.restart_scan_countdown")
-    mock_scan_all_websites = mocker.patch("app.frontend.api.routers.scan_all_websites", return_value=None)
+    mock_scan_all_websites_now = mocker.patch("app.frontend.api.routers.scan_all_websites_now", return_value=None)
 
     response = api_client.post("/scanner/run_all")
 
     assert response.status_code == 200, response.text
     mock_restart_scan_countdown.assert_called_once()
-    mock_scan_all_websites.assert_awaited_once_with(ignore_schedule=True, email_sender=email_sender)
+    mock_scan_all_websites_now.assert_awaited_once_with(email_sender=email_sender)
+
+
+def test_run_all_is_refused_while_run_all_scans_is_already_running(
+    api_client: TestClient, mocker: MockerFixture
+) -> None:
+    """Tests a second "Run All Scans" is refused rather than run alongside the first."""
+    mocker.patch("app.frontend.api.routers.run_all_in_progress", return_value=True)
+    mock_scan_all_websites_now = mocker.patch("app.frontend.api.routers.scan_all_websites_now")
+
+    response = api_client.post("/scanner/run_all")
+
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"] == "Run All Scans is already running."
+    mock_scan_all_websites_now.assert_not_called()
+
+
+def test_cancel_all_reports_whether_run_all_scans_was_cancelled(api_client: TestClient, mocker: MockerFixture) -> None:
+    """Tests "Cancel" on Run All Scans cancels it, and says so when it wasn't running."""
+    mocker.patch("app.frontend.api.routers.cancel_run_all", side_effect=[True, False])
+
+    assert api_client.post("/scanner/cancel_all").json() is True
+    assert api_client.post("/scanner/cancel_all").json() is False
+
+
+@pytest.mark.parametrize("running", [True, False])
+def test_dashboard_shows_run_all_cancel_button_only_while_run_all_scans_is_running(
+    api_client: TestClient, test_website: website_models.WebsiteRead, mocker: MockerFixture, running: bool
+) -> None:
+    """Tests the Cancel button for Run All Scans shows, and Run All Scans is disabled, only while it is running,
+    even after a refresh."""
+    mocker.patch("app.frontend.api.routers.run_all_in_progress", return_value=running)
+
+    dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
+
+    run_all_button = dashboard.select_one("#run-all-scans-button")
+    cancel_button = dashboard.select_one("#cancel-all-scans-button")
+    assert run_all_button is not None and cancel_button is not None
+    assert run_all_button.has_attr("disabled") is running
+    assert cancel_button.has_attr("hidden") is not running
+
+
+def test_background_scan_note_can_be_closed_for_now_or_for_good(
+    api_client: TestClient, test_website: website_models.WebsiteRead
+) -> None:
+    """Tests the "you can close this window" note starts hidden, and has a cross to hide it until the next scan
+    as well as a separate "Don't show again" button to stop it showing again."""
+    dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
+
+    note = dashboard.select_one("#background-scan-note")
+    assert note is not None and note.has_attr("hidden")  # Only shown while a scan runs
+
+    close_button = note.select_one("#close-background-scan-note")
+    assert close_button is not None
+    assert close_button.get("type") == "button"  # Doesn't submit anything
+    assert close_button.get("aria-label") == "Hide this note until the next scan"
+
+    dismiss_button = note.select_one("#hide-background-scan-note")
+    assert dismiss_button is not None
+    assert dismiss_button.get("type") == "button"
+    assert " ".join(dismiss_button.get_text().split()) == "Don't show again"
 
 
 def test_manual_scan_records_scan_time(
