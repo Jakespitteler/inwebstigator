@@ -1,321 +1,263 @@
-# TODO
-- Updates page needs a parent card with the website and child card with the critical pages (currently they're all sequential) 
-- Each website card should have its own last scan date and time
-- Critical page count is unnecessary
-- On critical pages sometimes it will add and remove the same text
-- Initial scan saves to recent links added and all that so is showing up in the dashboard
-- UI isn't allowing days between scans to be a float
-- The add website card could probably be the same as the other website cards since Jay Jay wants to keep the advanced settings hidden
-- Make the running first scan text bold and add a spinning loading icon
-- Need a way to cancel the scan
-- Have something saying you can close the window and the scan will run in the background
-- Be able to add facebook.com without needing to write https://www.facebook.com
-- Maybe only add a website to the db once the scan is complete
-- "Daily changes" should be "Changes since last scan"
-- check if email when website is added changes the interval it says
+# Inwebstigator
 
+Inwebstigator monitors websites for changes. For each website it watches a set of
+**critical pages** for edited, added and removed text, links and documents, and
+crawls the rest of the site for pages that appear or disappear. Changes are shown
+on a dashboard and emailed to each website's notification addresses.
 
-### TODOs — Reviewed by JJ
+It's a Windows desktop app: a [FastAPI](https://fastapi.tiangolo.com/) web app
+running locally, shown in a native window by [pywebview](https://pywebview.flowrl.com/),
+with scheduled scans while it runs. Everything is stored in a local SQLite database.
 
-#### Scanning and scheduling
+| Document | For |
+| --- | --- |
+| [INSTALL.md](INSTALL.md) | People using the app: installing it and using the dashboard. |
+| This README | Developers: setting up, running, testing and building. |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the pieces fit together. |
+| [docs/HANDOVER.md](docs/HANDOVER.md) | A team taking the project over: status, decisions, known issues and next steps. |
 
-- **Add a loading indicator when a scan is running.**
-- **Collapse the review/add-site UI while scanning.** After pressing "Run
-  Scan", replace or collapse the larger UI into something small such as
-  "Scanning [site]...".
-- **Allow sites to be queued while a scan is running.** The UI should remain
-  usable while another scan is in progress.
-- **Queue scan requests.** If multiple scan buttons are pressed while scans
-  are already running, requests should be queued rather than interrupting
-  existing scans.
-- **Prevent duplicate scan requests.** The same site should not be added to
-  the scan queue more than once at a time.
-- **Do not interrupt an existing scan when starting another scan.** Currently,
-  starting a scan for an existing site while another site is being scanned
-  appears to stop the current scan and start the new one. The desired behaviour
-  is to queue the new scan and allow the current scan to finish.
-- **Investigate scan queue persistence.** When a scan is interrupted/restarted,
-  it is unclear whether the queue of unexplored links is being maintained
-  correctly.
+**Contents:** [Setting up](#setting-up) · [Running](#running) ·
+[Configuration](#configuration) · [Email](#email) · [Testing](#testing) ·
+[Building the Windows app](#building-the-windows-app) ·
+[Project layout](#project-layout) · [Database](#database) ·
+[Contributing](#contributing)
 
-#### Website display
+---
 
-- **Make monitored websites collapsible.** Each website should initially show
-  only its name (and potentially its link) and a scan button. Clicking anywhere
-  in the website's box should expand it to show the additional information.
-  This should make the dashboard easier to use with multiple monitored sites.
-- **Improve website name display.** For example, `teqsa.gov.au` should be
-  displayed as `TEQSA` rather than the full domain. Investigate whether a
-  library can reliably extract a readable site name from a URL. Note that
-  simply removing the `.com`/`.gov.au` suffix is not sufficient for all cases.
-- **Make the latest scan time per-site.** Currently the latest scan time appears
-  to be global and is displayed for all websites. Each monitored website
-  should display its own latest scan time.
-- **Add our application icon to the dashboard.**
+## Setting up
 
-#### Buttons and UI
-
-- **Decide on the position of the "Add Critical Page" and "Add Email"
-  buttons.** The suggestion was to place them to the left of the input field,
-  alongside the scan button. JJ prefers either keeping the current layout or
-  placing them on the right, as that is closer to his mouse.
-- **Style the delete-website confirmation popup.**
-- **Make deletion safer.** Default to "Cancel" rather than "OK" in the delete
-  confirmation and make the destructive action harder to trigger accidentally.
-- **Hide or de-emphasise the delete button** to reduce accidental deletion.
-- **Add copyright and team information.** Consider adding a footer and/or an
-  About/Contact page containing relevant copyright, team, and contact
-  information.
-
-#### Scan history and change tracking
-
-- **Keep the history of the last 7 scans.** We need to keep track of the last 7 
-  scans according to JJ
-- **Investigate multiple changes per day.** Confirm whether all changes are
-  currently being captured. If not, ensure that earlier changes are preserved
-  rather than being replaced by the latest change.
-
-### TODOs — Not reviewed by JJ
-
-- **Allow the application to be quit from the terminal using `Ctrl+C`.**
-- **Consider allowing advanced users to configure the sender email address.**
-  Currently not considered necessary according to JJ.
-
-
-## Email notifications
-
-Each daily run is a pipeline, one job per stage:
-
-```
-scraper      finds the pages and files on the site
-diff finder  compares that against the previous run, produces Changes
-notifier     packages those Changes into an email and sends it
-```
-
-`app/email_sender/notifier.py` is the last stage only. It is handed a list of
-`Change` objects and does not scrape, does not work out what changed, and does
-not read or write a database. What it sends:
-
-- changes handed to it → a digest listing them
-- nothing for 7 days → a "no changes detected" note
-- otherwise → nothing
-
-Everything in it is a plain function of its arguments. The envelope and the
-one call that touches the network live in `app/email_sender/build_message.py`
-(`build_message()` and `send_email()`), so the wording can be tested without a
-mail server, and a mail server being down can't affect any stage upstream.
-
-The weekly "no changes" note needs to know when we last emailed, which is not
-something any earlier stage knows. So `notify()` takes `last_email_at` as an
-argument rather than looking it up — the notifier stays stateless and the
-caller owns the remembering. Pass `None` and the note simply never fires.
-
-### run demo
+You need [uv](https://docs.astral.sh/uv/getting-started/installation/), which
+installs the right Python (3.13) and every dependency for you.
 
 ```bash
-uv run python -m tests.integration.integration_test_email_sender
+git clone https://github.com/Jakespitteler/inwebstigator.git
+cd inwebstigator
+uv sync                      # creates .venv with the app and dev tools
+cp .env.example .env         # then fill it in (see Configuration)
 ```
 
-Simulates three weeks of daily runs, emails are printed rather than sent. It
-also stands in as a worked example of the caller: it keeps `last_email_at`
-between runs, which is the one bit of state the notifier gives up.
+The app runs on macOS and Linux for development, but the desktop launcher
+(`inwebstigator.py`) and the built `.exe` are Windows only.
 
-Expect 4 emails over 21 days: digests on days 3 and 12, all clears on days 10
-and 19. Day 1 is silent because there is no previous run to compare against,
-so the diff finder reports nothing — otherwise the client gets 200 "new page"
-lines on the first morning.
+> **macOS:** if the project folder is synced by iCloud (e.g. it's on your
+> Desktop), iCloud can corrupt `.venv`. If imports suddenly fail, run
+> `uv sync --reinstall`.
 
-### Email format
+---
 
-Reports go out as multipart email: an HTML part and a plain text part carrying
-the same information. Mail clients that render HTML show the HTML; anything
-else falls back to the text, which is why the text part is never dropped.
+## Running
 
-For content changes the HTML part shows a **side by side before/after table**,
-with the specific words that changed marked in red on the left and green on
-the right. Only the differing parts are shown, plus two lines of unchanged text
-either side for context, and the whole thing is capped at
-`notifier.DIFF_MAX_ROWS` rows so one rewritten page can't produce an enormous
-email.
-
-Side by side needs two columns, and plain text only has about 78 characters to
-work with, so the text part stacks the same edits instead:
-
-```
-Watched pages changed (1)
-  * Enrolment deadlines
-    https://example.edu.au/enrolment
-      - Applications close on 15 July 2026.
-      + Applications close on 1 August 2026.
-      - A late fee of $150 applies after the deadline.
-      + A late fee of $220 applies after the deadline.
-```
-
-The diff is built from `Change.old_text` and `Change.new_text`. Both are
-optional — added and removed pages have nothing to compare, and a change that
-arrives without them still emails fine, just as a plain "this page changed"
-line. **Nothing populates them yet**: the diff finder holds both versions at
-the moment it decides a page changed, so it has to pass them through. Until it
-does, content changes email without a diff.
-
-Scraped page text is untrusted, so everything is HTML-escaped, and only
-`http`/`https` URLs are turned into clickable links.
-
-Times are shown in `REPORT_TIMEZONE` (default `Australia/Perth`), because the
-client reads them, not the server. The 06:00 UTC run shows as `14:00 AWST`.
-Display only — all the date arithmetic stays in UTC so a daylight saving jump
-can't shift the weekly heartbeat.
-
-Every message carries `Date` and `Message-ID` headers. Neither is added
-automatically, and mail without them scores badly with spam filters — a report
-in the junk folder looks exactly like a broken scraper.
-
-### run the scheduler
+### As a web app (any OS)
 
 ```bash
-uv run python -m app.scheduler.background_scheduler
+uv run uvicorn app.main:app --reload
 ```
 
-The notification run happens **once a day at a wall clock time**
-(`DAILY_RUN_HOUR` / `DAILY_RUN_MINUTE`, in `REPORT_TIMEZONE`), not on a
-repeating interval. An interval loop drifts — the wait starts after the task
-finishes, so the true period is the interval plus however long the run took,
-and at daily intervals that walks the client's report later every day.
-Scheduling against the clock has no drift to accumulate.
+Open <http://127.0.0.1:8000> for the dashboard, or <http://127.0.0.1:8000/docs>
+for the API. In VS Code, the **Python Debugger: FastAPI** launch configuration
+does the same with the debugger attached.
 
-Restarts are safe. `last_run_at` is stored per website, so a process that comes
-back up at lunchtime does not fire a second report for a day already covered.
-It fires once on startup precisely so a machine booted after the daily slot
-still covers that day.
-
-Ctrl-C stops it. A task that raises is logged and the loop carries on, so one
-bad run doesn't end monitoring.
-
-### run tests
+Useful while developing:
 
 ```bash
-uv sync          # first time only
-uv run pytest
+AUTOMATIC_SCANS=false uv run uvicorn app.main:app --reload    # no scheduled scans
+DB_PATH=/tmp/inwebstigator-test.db uv run uvicorn app.main:app  # a separate database
 ```
 
-### Configuration
+Use `DB_PATH` (not `DB_NAME`) to point at another database. See
+[Database](#database) for where the real one is.
 
-Settings come from the environment, so no credentials live in source.
+### As the desktop app (Windows)
 
 ```bash
-cp .env.example .env      # then fill it in
+uv run python inwebstigator.py
 ```
 
-`app/core/config.py` reads `.env` for the whole project on import, so there is
-nothing to `source`. Anything already exported wins over the file, so you can
-still override a setting for one run
-(`REPORT_TIMEZONE=UTC uv run python -m tests.integration.integration_test_email_sender`).
-`.env` is gitignored — never commit real values.
+This starts the web app on a local port (48731 if it's free) and opens it in a
+window. Closing the window hides it to the system tray, where **Open**, **Hide**
+and **Quit** control it. Only one copy can run at a time. `Ctrl+C` in the
+terminal quits it. Pass `--debug` to open the browser developer tools.
 
-The addresses and the mail server default to blank rather than to a plausible
-looking placeholder, so a half-filled `.env` fails loudly instead of mailing
-somewhere nobody reads. The demo prints rather than sends, so it still runs
-with no setup at all.
+---
 
-### Sending real test email
+## Configuration
 
-Nothing leaves the machine until you ask it to: `DRY_RUN` defaults to `true`,
-which prints emails instead of sending them. That default is deliberate — a
-fresh checkout can't mail anyone, and forgetting to configure `.env` fails
-loudly rather than quietly mailing an address nobody reads.
+Settings live in `app/core/config.py` and can be overridden by environment
+variables or a `.env` file, using the setting's name in capitals (e.g.
+`smtp_host` → `SMTP_HOST`). Variables already set in the environment win over
+`.env`.
 
-To send yourself a real sample report with a Gmail account:
+| Where `.env` is read from | |
+| --- | --- |
+| Development | The folder you run the command from (the project root). |
+| Built app | The folder `inwebstigator.exe` is started from, i.e. next to the `.exe`. |
+
+The settings you're most likely to need:
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `EMAIL` / `EMAIL_PASSWORD` | blank | The account emails are sent from. Also the From address. |
+| `SMTP_HOST` / `SMTP_PORT` | blank / `465` | The mail server, over SSL. |
+| `IMAP_HOST` / `IMAP_PORT` | blank / `993` | The same account's inbox, used to spot bounced confirmation emails. If blank, it's worked out from `SMTP_HOST` (`smtp.` → `imap.`). |
+| `AUTOMATIC_SCANS` | `true` | Run scheduled scans and health check emails. |
+| `DB_PATH` | `<home>/AppData/Local/inwebstigator/inwebstigator.db` | The SQLite database file. |
+| `SERVER_PREFERRED_PORT` | `48731` | The desktop app's port, if free. |
+| `WEB_CRAWLER_DEFAULT_MAX_PAGES` | `50000` | Websites with more pages are deactivated (critical pages only). |
+| `WEB_CRAWLER_DEFAULT_DELAY` / `WEB_CRAWLER_DEFAULT_CONCURRENT` | `0.5` / `5` | Default crawl speed for new websites. |
+| `SCHEDULER_DEFAULT_DAYS_BETWEEN_SCANS` | `1` | Default scan interval for new websites. |
+| `SCHEDULER_MINIMUM_DAYS_BETWEEN_SCANS` | `0.5` | The shortest allowed interval, and how often the scheduler checks for due websites. |
+| `SCHEDULER_DEFAULT_DAYS_BETWEEN_HEALTH_CHECKS` | `7` | Days without an email before a recipient gets a "Health Check". |
+
+See `app/core/config.py` for the rest (crawler retries, cooldowns, diff
+thresholds). `.env` is gitignored, so never commit real values.
+
+---
+
+## Email
+
+Without email settings the app still works, but adding a notification email
+fails because the confirmation can't be sent. Websites with no notification
+emails are unaffected.
+
+To send real email with a Gmail account:
 
 1. Turn on 2-Step Verification on the Google account.
-2. Create an **App Password** (Google account → Security → 2-Step
-   Verification → App passwords). It's 16 characters. Your normal Gmail
-   password will not work — Google blocks plain logins from scripts.
+2. Create an **App Password** (Google account → Security → 2-Step Verification
+   → App passwords). Your normal password won't work.
 3. Fill in `.env`:
 
    ```bash
-   DRY_RUN=false
    EMAIL=you@gmail.com
-   EMAIL_PASSWORD=abcdefghijklmnop     # the app password, spaces optional
+   EMAIL_PASSWORD=abcdefghijklmnop   # the 16-character app password
    SMTP_HOST=smtp.gmail.com
-   SMTP_PORT=587
-   CLIENT_TO=you@gmail.com             # your own address while testing
+   SMTP_PORT=465
    ```
 
-   `EMAIL` doubles as the From address — we send as the account we
-   authenticate as, and Gmail rewrites a mismatched From anyway.
+When an address is added, the app emails it and watches the sending account's
+inbox for about 30 seconds for a bounce. An address that bounces isn't added.
+The inbox is found from `SMTP_HOST` (`smtp.gmail.com` → `imap.gmail.com`), so
+set `IMAP_HOST` only if your provider's is named differently. If the inbox
+can't be opened, the confirmation is just sent, without checking for a bounce.
 
-4. Send one sample report:
+UWA accounts won't work: Microsoft has turned off the basic SMTP login the app
+uses. Use a personal or project Gmail account.
 
-   ```bash
-   uv run python -m tests.integration.integration_test_email_delivery
-   ```
+---
 
-It checks the settings first and tells you exactly what's missing rather than
-failing inside SMTP. Check the spam folder if nothing arrives — a brand new
-sending address often lands there the first time.
+## Testing
 
-A UWA account won't work for this: Microsoft turned off basic SMTP auth, so
-use a personal Gmail (or a throwaway one) for testing. Whatever the client
-ends up using is a question for them.
+```bash
+uv run pytest                  # everything
+uv run pytest -m "not e2e"     # skip the browser tests (much faster)
+uv run pytest tests/e2e        # only the browser tests
+```
 
-**Put `DRY_RUN` back to `true` when you're done testing**, so nobody runs the
-scheduler and mails a real person by accident.
-
-### State: what is remembered between runs
-
-The notifier is stateless on purpose — it is handed a list of changes and told
-when we last emailed, and it looks nothing up. That keeps the wording testable
-without a database and stops a mail server outage reaching back up the
-pipeline. The remembering happens in `app/services/notification_service.py`,
-against two tables:
-
-| table | what it holds |
+| Folder | What's in it |
 | --- | --- |
-| `notification_states` | per website: `last_run_at`, `last_email_at`, `last_action` |
-| `pending_notifications` | reports whose send failed, with an attempt count and a next-attempt time |
+| `tests/unit/` | Fast tests of each module, using an in-memory database and fake websites. |
+| `tests/e2e/` | Browser tests: the real dashboard in Chrome or Edge, driven by [Playwright](https://playwright.dev/python/), against the app running in the background with a throwaway database, fake websites and recorded (unsent) emails. |
+| `tests/integration/` | Manual scripts for crawling real websites. Not run by `pytest`. |
 
-`last_run_at` and `last_email_at` are deliberately separate. A run that finds
-nothing still counts as a run — that is what stops a restart firing a second
-report for the same day — but it must not move the email clock, or a site that
-never changes would reset its own weekly window every morning and the all-clear
-would never become due.
+The browser tests use Google Chrome or Microsoft Edge if installed. Otherwise
+run `uv run playwright install chromium`, or skip them with `-m "not e2e"`.
+They always run after the other tests, and if any test runs for over 5 minutes
+pytest prints where it's stuck.
 
-**A failed send no longer loses the day's changes.** `notify()` returns
-`"failed"`, the service parks the changes as serialised `Change` dicts, and the
-next run retries them before doing anything else. Retries back off
-exponentially (`RETRY_BASE_DELAY_SECONDS`, capped at `RETRY_MAX_DELAY_SECONDS`)
-and are given up on loudly after `RETRY_MAX_ATTEMPTS` rather than retrying
-forever in silence. A failed *all-clear* is not parked — it carries no changes
-and next week's note says the same thing.
+The browser tests cover the dashboard, but not the Windows app around it (the
+window, tray and build). Check those by hand before each release, with the
+[release checklist](docs/HANDOVER.md#release-checklist).
 
-### Many sites
+Linting and formatting use [Ruff](https://docs.astral.sh/ruff/):
 
-The database models many websites, so each one gets its own report stamped with
-its own URL, and its own weekly all-clear window. `notify()` takes `site_name`
-and `recipients` as arguments for the same reason it takes `last_email_at`: the
-notifier has no business looking any of that up. `site_name` is required — the
-two scripts in `tests/integration/` pass their own, and `NotificationService`
-passes the site's URL. `CLIENT_TO` in `.env` is still the fallback recipient.
+```bash
+uv run ruff check .
+uv run ruff format .
+```
 
-Per-site recipients are not wired up — every report currently goes to
-`CLIENT_TO`. That needs a client/subscriber table, which is a question for the
-team rather than a code change.
+---
 
-### TODOs
+## Building the Windows app
 
-These are marked in the code as well:
+On Windows:
 
-- **Diff text from the scraper side.** `Change.old_text`/`new_text` drive the
-  side by side comparison but nothing fills them in yet — see "Email format".
-  `DBCriticalPage.text_body` already stores the previous page text, so the data
-  is there; the diff finder holds both versions at the moment it decides a page
-  changed, so it is the one that has to pass them through.
-- **The diff finder itself.** `collect_changes()` in the scheduler is the seam
-  it plugs into, and returns an empty list today. Until it exists every run is
-  quiet, which is also why a fresh database emails nobody.
-- **Safety net for the site being down.** If most checks failed, "every page
-  was deleted" is the wrong thing to email anyone. Needs the scraper to report
-  how many checks passed and failed per run.
-- **Per-site recipients.** See "Many sites" above — needs a team decision.
-- **Tests.** The notifier, the scheduler and the notification service are
-  covered under `tests/unit/`. The scraper and diff finder still need theirs.
+```bash
+uv sync
+uv run pyinstaller inwebstigator.spec
+```
+
+This produces `dist/inwebstigator/`, containing `inwebstigator.exe` and its
+supporting files. To send it to someone:
+
+1. Copy a `.env` with the email settings into `dist/inwebstigator/`, next to
+   `inwebstigator.exe`.
+2. Zip the `dist/inwebstigator` folder.
+
+The `.exe` opens a console window alongside the app, which shows its logs.
+The app's data is kept outside this folder (see [Database](#database)), so a
+new version can be unzipped over an old one.
+
+---
+
+## Project layout
+
+```
+inwebstigator.py         Desktop launcher (Windows): local server, window, system tray
+inwebstigator.spec       PyInstaller build settings
+app/
+  main.py                Creates the FastAPI app, database tables and upgrades
+  scheduler.py           Scheduled scans and health check emails (APScheduler)
+  scanner.py             Scanning websites: the scan queue, cancelling, reports, emails
+  backend/
+    site_crawler.py      Crawls a website for its internal pages
+    engine.py            Works out what changed on a website and its critical pages
+    diff_checker.py      Compares page text block by block
+    format_message.py    Email HTML
+    email_service.py     Sending email and spotting bounces
+    utils/               Fetching pages, reading HTML, URLs and links
+  core/                  Settings, errors, logging, file paths
+  db/
+    schema.py            Database tables (SQLAlchemy)
+    migrations.py        Upgrades databases made by older versions
+    repository.py        Generic database operations
+    services/            Database operations for websites, pages, links, recipients
+  models/                Request and response shapes (Pydantic)
+  frontend/
+    api/routers.py       Dashboard page and API routes
+    templates/           Dashboard HTML (Jinja2)
+    static/              CSS, JavaScript, logos and icon
+tests/                   See Testing
+```
+
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how these work together.
+
+---
+
+## Database
+
+The database is a SQLite file at `<home>/AppData/Local/inwebstigator/inwebstigator.db`
+(`%LOCALAPPDATA%\inwebstigator` on Windows; the same path under your home
+folder on macOS). Delete it to start again from nothing.
+
+There's no migration tool. On startup, `app/main.py` runs:
+
+- `Base.metadata.create_all()`, which creates missing tables.
+- `add_missing_columns()`, which adds columns added to the models since a
+  database was made. New columns must be nullable or have a server default.
+- `update_indexes()`, which recreates indexes whose uniqueness changed and adds
+  new ones. Only suitable for loosening a rule, or one existing rows already meet.
+
+Anything else (renaming or removing a column, changing a type, rewriting data)
+needs its own upgrade step in `app/db/migrations.py`, so people's existing
+databases keep working.
+
+---
+
+## Contributing
+
+- Work on a branch per issue, and open a pull request into `main`.
+- Write `Closes #<issue>` in the pull request so the issue closes when it's merged.
+- Before opening it, run `uv run pytest` and `uv run ruff check .` and
+  `uv run ruff format .`.
+- Add tests with your change: unit tests for logic, browser tests for anything
+  on the dashboard.
+- Open issues for bugs and ideas rather than TODO lists in the code or docs.
