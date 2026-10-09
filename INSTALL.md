@@ -11,15 +11,18 @@ please let the team know.
 
 ## Setting up
 
-### 1. Unzip and open Inwebstigator
+### 1. Install and open Inwebstigator
 
-1. Extract the **Inwebstigator** zip file the team sent you.
-2. Open the extracted folder and double-click **Inwebstigator.exe**.
-3. Windows may warn that it **"protected your PC"**, because the program is
+1. Double-click the **Inwebstigator installer** the team sent you.
+2. Windows may warn that it **"protected your PC"**, because the program is
    new. Click **More info**, then **Run anyway**.
+3. Follow the installer's steps. You can tick **Create a desktop shortcut** if
+   you want one.
+4. On the last page, leave **Launch Inwebstigator** ticked and click
+   **Finish**.
 
 The Inwebstigator window opens after a moment. There is no account to create
-or log in to.
+or log in to. You can open it again later from the Start menu.
 
 ### 2. Add a website
 
@@ -64,7 +67,9 @@ running in the system tray (the icons by the clock, sometimes behind the
 again, or **Quit** to stop Inwebstigator completely. If it was stopped,
 it catches up on any missed scans shortly after you next open it.
 
-**After restarting the computer,** open **Inwebstigator.exe** again.
+**After restarting the computer,** there is nothing to do: Inwebstigator
+starts by itself when you sign in to Windows, and catches up on any scans
+missed while the computer was off.
 
 **Emails you'll receive** (they come from the Inwebstigator email account, not
 from a person):
@@ -175,5 +180,7 @@ log file.
 ## Good to know about this test version
 
 - Scans only happen while Inwebstigator is running and the computer is on.
+- Uninstalling Inwebstigator also deletes its saved websites, history and
+  logs.
 - Websites are scanned one at a time, so when several are due it can take a
   while for all of them to finish.
