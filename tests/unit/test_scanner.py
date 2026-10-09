@@ -908,3 +908,84 @@ async def test_scan_all_websites_still_scans_inactive_websites(
     assert [call.args[1] for call in mock_scan_website.call_args_list] == [inactive]
     assert [call.args[0] for call in mock_send_notification.call_args_list] == ["inactive@gmail.com"]
     assert result == "<li>critical page report</li>"
+
+
+# ======================================
+# Cancelling Run All Scans Tests
+# ======================================
+
+
+def test_cancel_run_all_does_nothing_when_run_all_scans_is_not_running() -> None:
+    """Tests cancelling says so when there is no "Run All Scans" to cancel."""
+    assert scanner.current_run_all is None
+    assert not scanner.cancel_run_all()
+    assert not scanner.run_all_in_progress()
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("websites_unchanged_during_run")
+async def test_cancelling_run_all_scans_skips_the_rest_but_still_emails_changes_found(
+    populated_website: WebsiteRead,
+    mocker: MockerFixture,
+):
+    """Tests cancelling "Run All Scans" skips the websites still to come, while the changes already found are
+    still emailed, and the cancelled website's scan time is not recorded."""
+    first = _due_website(populated_website, "https://first.com", "first@gmail.com")
+    cancelled = _due_website(populated_website, "https://cancelled.com", "cancelled@gmail.com")
+    skipped = _due_website(populated_website, "https://skipped.com", "skipped@gmail.com")
+    mocker.patch.object(WebsiteService, "get_all", return_value=[first, cancelled, skipped])
+    cancel_results: list[bool] = []
+
+    async def scan(client: httpx2.AsyncClient, website: WebsiteRead) -> str:
+        if website.url == first.url:
+            return "<li>first report</li>"
+        assert scanner.run_all_in_progress()
+        cancel_results.append(scanner.cancel_run_all())  # Cancelled while this website is being scanned
+        raise ScanCancelledError(website.url)
+
+    mock_scan_website = mocker.patch("app.scanner.scan_website", side_effect=scan)
+    mock_send_notification = mocker.patch("app.scanner.send_notification")
+    mock_update = mocker.patch.object(WebsiteService, "update")
+
+    result = await scanner.scan_all_websites_now()
+
+    assert cancel_results == [True]
+    assert [call.args[1].url for call in mock_scan_website.call_args_list] == [first.url, cancelled.url]
+    assert [call.args[0] for call in mock_send_notification.call_args_list] == ["first@gmail.com"]
+    assert [call.kwargs["id"] for call in mock_update.call_args_list] == [first.id]
+    assert result == "<li>first report</li>"
+    assert not scanner.run_all_in_progress()
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("websites_unchanged_during_run")
+async def test_cancelling_run_all_scans_cancels_the_website_being_scanned(
+    populated_website: WebsiteRead,
+    mocker: MockerFixture,
+):
+    """Tests cancelling "Run All Scans" stops the website being crawled, so nothing from it is saved."""
+    scanning = _due_website(populated_website, "https://scanning.com", "scanning@gmail.com")
+    skipped = _due_website(populated_website, "https://skipped.com", "skipped@gmail.com")
+    mocker.patch.object(WebsiteService, "get_all", return_value=[scanning, skipped])
+    crawls_started: list[str] = []
+    crawl_started = asyncio.Event()
+
+    async def crawl(client: httpx2.AsyncClient, website: WebsiteRead, *args: object) -> None:
+        crawls_started.append(website.url)
+        crawl_started.set()
+        await asyncio.Event().wait()  # Runs until cancelled
+
+    mocker.patch("app.scanner.scan_lock", asyncio.Lock())  # A lock for this test's event loop
+    mocker.patch("app.scanner.get_website_updates", side_effect=crawl)
+    mock_update = mocker.patch.object(WebsiteService, "update")
+    run_all = asyncio.create_task(scanner.scan_all_websites_now())
+    await crawl_started.wait()
+
+    assert scanner.cancel_run_all()
+    assert not scanner.cancel_run_all()  # Already cancelled
+
+    assert await run_all is None
+    assert crawls_started == [scanning.url]
+    mock_update.assert_not_called()
+    assert scanner.queued_crawls == {}
+    assert not scanner.run_all_in_progress()

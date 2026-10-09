@@ -40,9 +40,11 @@ from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead
 from app.models.recipient_models import RecipientCreate, RecipientUpdate
 from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
 from app.scanner import (
+    cancel_run_all,
     cancel_scan,
     queued_crawls,
-    scan_all_websites,
+    run_all_in_progress,
+    scan_all_websites_now,
     scan_website,
     send_monitoring_started_notifications,
     send_notification,
@@ -185,8 +187,15 @@ def get_dashboard(session: SessionDep, request: Request):
             "minimum_days_between_scans": config.scheduler_minimum_days_between_scans,
             "max_pages": config.web_crawler_default_max_pages,
             "queued_website_urls": set(queued_crawls),
+            "run_all_in_progress": run_all_in_progress(),
         },
     )
+
+
+@ROOT_ROUTER.get("/about")
+def get_about(request: Request):
+    """Renders the About page: what the app does, the team, contact and copyright information."""
+    return templates.TemplateResponse(request=request, name="about.html")
 
 
 @ROOT_ROUTER.get("/favicon.ico", include_in_schema=False)
@@ -378,13 +387,32 @@ async def scan_websites() -> str | None:
     """Scans every website now for "Run All Scans", emailing each recipient one report of all the changes found.
 
     Websites that are not due a scan yet are included, while websites on cooldown are still skipped. The countdown
-    to the next scheduled check restarts, as every website is being scanned now.
+    to the next scheduled check restarts, as every website is being scanned now. It can be stopped part way through
+    with `/scanner/cancel_all`.
 
     Returns:
         str | None: Consolidated HTML list of scan reports if updates occurred, otherwise None.
+
+    Raises:
+        HTTPException: 409 if "Run All Scans" is already running.
     """
+    if run_all_in_progress():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Run All Scans is already running.")
+
     restart_scan_countdown()
-    return await scan_all_websites(ignore_schedule=True)
+    return await scan_all_websites_now()
+
+
+@SCANNER_ROUTER.post("/cancel_all", response_model=bool)
+async def cancel_all_scans() -> bool:
+    """Cancels "Run All Scans": the website being scanned is cancelled and the rest are skipped.
+
+    Websites already scanned keep their results, and their changes are still emailed.
+
+    Returns:
+        bool: True if it was cancelled, or False if "Run All Scans" was not running.
+    """
+    return cancel_run_all()
 
 
 @SCANNER_ROUTER.post("/run", response_model=str | None)

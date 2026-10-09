@@ -347,10 +347,41 @@ button, input {
     letter-spacing: -0.5px;
 }
 
+/* The app name links back to the dashboard */
+.home-link,
+.home-link:hover {
+    color: inherit;
+    text-decoration: none;
+    font-weight: inherit;
+}
+
+.home-link {
+    display: inline-block;
+    border-radius: var(--radius-sm);
+    transition: opacity 0.15s ease;
+}
+
+.home-link:hover {
+    opacity: 0.85;
+}
+
+.home-link:focus-visible {
+    outline-color: #fff;
+}
+
 
 /* THEME TOGGLE */
 
-.theme-toggle {
+/* Refresh and theme buttons on the right of the header */
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.theme-toggle,
+.reload-button {
     display: inline-flex;
     align-items: center;
     gap: 8px;
@@ -367,33 +398,39 @@ button, input {
     transition: background 0.14s, color 0.14s, border-color 0.14s, box-shadow 0.14s, transform 0.14s;
 }
 
-.theme-toggle:hover {
+.theme-toggle:hover,
+.reload-button:hover:not(:disabled) {
     background: var(--control-bg-hover);
     color: var(--text-primary);
     transform: translateY(-1px);
 }
 
-.theme-toggle:active {
+.theme-toggle:active,
+.reload-button:active {
     transform: scale(0.97);
 }
 
-.theme-toggle svg {
+.theme-toggle svg,
+.reload-button svg {
     flex-shrink: 0;
 }
 
-.dashboard-header .theme-toggle {
+.dashboard-header .theme-toggle,
+.dashboard-header .reload-button {
     color: #fff;
     background: rgba(255, 255, 255, 0.14);
     border-color: rgba(255, 255, 255, 0.35);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.30);
 }
 
-.dashboard-header .theme-toggle:hover {
+.dashboard-header .theme-toggle:hover,
+.dashboard-header .reload-button:hover:not(:disabled) {
     color: #fff;
     background: rgba(255, 255, 255, 0.24);
 }
 
-.dashboard-header .theme-toggle:focus-visible {
+.dashboard-header .theme-toggle:focus-visible,
+.dashboard-header .reload-button:focus-visible {
     outline-color: #fff;
 }
 
@@ -481,7 +518,8 @@ button, input {
 
 .change-record,
 .website-card,
-#add-website-form {
+#add-website-form,
+.about-card {
     position: relative;
     overflow: hidden;
     color: var(--text-primary);
@@ -501,7 +539,8 @@ button, input {
 .dashboard-header::before,
 .change-record::before,
 .website-card::before,
-#add-website-form::before {
+#add-website-form::before,
+.about-card::before {
     content: '';
     position: absolute;
     top: 0;
@@ -523,7 +562,8 @@ button, input {
 [data-theme="dark"] .dashboard-header::before,
 [data-theme="dark"] .change-record::before,
 [data-theme="dark"] .website-card::before,
-[data-theme="dark"] #add-website-form::before {
+[data-theme="dark"] #add-website-form::before,
+[data-theme="dark"] .about-card::before {
     opacity: 0.55;
 }
 
@@ -1140,6 +1180,7 @@ input::placeholder {
 #add-critical-page-input,
 #add-recipient-email-input,
 .cancel-scan-button,
+.cancel-all-scans-button,
 .delete-website-button,
 .delete-critical-page-button,
 .delete-recipient-button {
@@ -1168,6 +1209,7 @@ input::placeholder {
 #add-critical-page-input:active,
 #add-recipient-email-input:active,
 .cancel-scan-button:active,
+.cancel-all-scans-button:active,
 .delete-website-button:active,
 .delete-critical-page-button:active,
 .delete-recipient-button:active {
@@ -1255,6 +1297,7 @@ button:disabled {
 
 /* Destructive */
 .cancel-scan-button,
+.cancel-all-scans-button,
 .delete-website-button,
 .delete-critical-page-button,
 .delete-recipient-button {
@@ -1267,6 +1310,7 @@ button:disabled {
 }
 
 .cancel-scan-button:hover,
+.cancel-all-scans-button:hover,
 .delete-website-button:hover,
 .delete-critical-page-button:hover,
 .delete-recipient-button:hover {
@@ -1842,6 +1886,132 @@ button:disabled {
 .confirm-dialog-confirm:disabled {
     opacity: 0.45;
     cursor: not-allowed;
+}
+
+
+/* FOOTER (every page) */
+
+.site-footer {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px 24px;
+    width: 90%;
+    max-width: 1100px;
+    margin: 0 auto 28px;
+    padding: 14px 20px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    background: var(--surface);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--card-shadow);
+}
+
+.site-footer-copyright {
+    margin: 0;
+}
+
+.site-footer-links {
+    display: flex;
+    gap: 18px;
+}
+
+.site-footer-links a[aria-current="page"] {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+
+/* ABOUT PAGE */
+
+.about-page .section-title {
+    margin-top: 8px;
+}
+
+.about-card h3 {
+    margin: 0 0 10px;
+    font-size: 17px;
+    font-weight: 600;
+}
+
+.about-card p {
+    margin: 0 0 12px;
+    line-height: 1.6;
+}
+
+.about-card p:last-child {
+    margin-bottom: 0;
+}
+
+.about-list {
+    margin: 0 0 12px;
+    padding-left: 20px;
+    line-height: 1.6;
+}
+
+.about-list li + li {
+    margin-top: 6px;
+}
+
+.about-team {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.about-team li {
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 500;
+    background: var(--content-bg);
+    border: 1px solid var(--content-border);
+    box-shadow: var(--content-shadow);
+}
+
+.back-link {
+    display: inline-block;
+    margin: 4px 0 8px;
+}
+
+@media (max-width: 700px) {
+    .site-footer {
+        width: 94%;
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+
+
+/* REFRESH BUTTON */
+
+.reload-button.is-reloading {
+    cursor: wait;
+}
+
+.reload-button.is-reloading svg {
+    animation: spin 0.8s linear infinite;
+}
+
+/* On narrow screens the Refresh button shows just its icon */
+@media (max-width: 700px) {
+    .reload-button-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+    }
 }
 
 /* Saved email suggestions are outside cards so rounded card edges cannot clip them. */
