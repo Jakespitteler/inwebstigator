@@ -189,6 +189,12 @@ def get_dashboard(session: SessionDep, request: Request):
     )
 
 
+@ROOT_ROUTER.get("/about")
+def get_about(request: Request):
+    """Renders the About page: what the app does, the team, contact and copyright information."""
+    return templates.TemplateResponse(request=request, name="about.html")
+
+
 @ROOT_ROUTER.get("/favicon.ico", include_in_schema=False)
 async def favicon() -> FileResponse:
     icon_path = resource_path("app", "frontend", "static", "favicon.ico")
