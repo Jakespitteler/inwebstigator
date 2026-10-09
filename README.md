@@ -30,8 +30,8 @@ You need [uv](https://docs.astral.sh/uv/getting-started/installation/), which
 installs the right Python (3.13) and every dependency for you.
 
 ```bash
-git clone https://github.com/Jakespitteler/Digital-Horizon-Scan-Project.git
-cd Digital-Horizon-Scan-Project
+git clone https://github.com/Jakespitteler/inwebstigator.git
+cd inwebstigator
 uv sync                      # creates .venv with the app and dev tools
 cp .env.example .env         # then fill it in (see Configuration)
 ```
