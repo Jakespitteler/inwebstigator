@@ -147,7 +147,7 @@ def test_delete_older_scans_keeps_the_latest_and_any_report_not_yet_emailed(
 
     assert kept_ids == {unsent.id, *(scan_run.id for scan_run in latest)}
     assert sent.id not in kept_ids
-    assert session.scalar(select(func.count()).select_from(DBChange)) == 1  # The unsent report's change
+    assert session.scalar(select(func.count()).select_from(DBChange)) == 3  # The kept scans' changes only, the deleted scan's change goes with it
 
 
 def test_deleting_a_website_deletes_its_history(session: Session, test_website: WebsiteRead) -> None:

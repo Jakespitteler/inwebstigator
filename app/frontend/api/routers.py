@@ -25,6 +25,7 @@ from app.db.services.crud_protocol import CRUDOperation
 from app.db.services.recipient_service import RecipientService
 from app.db.services.scan_run_service import ScanRunService
 from app.db.services.website_service import WebsiteService
+from app.db.session import db_context
 from app.frontend.api.db_router_factory import SessionDep, create_crud_router
 from app.frontend.api.request_guard import API_TOKEN_HEADER
 from app.frontend.api.utils import (
@@ -42,6 +43,7 @@ from app.models.critical_page_models import (
     CriticalPageUpdate,
 )
 from app.models.recipient_models import RecipientCreate, RecipientUpdate
+from app.models.scan_run_models import ScanRunRead
 from app.models.website_models import NewHttpUrl, WebsiteCreate, WebsiteRead, WebsiteSettingsUpdate, WebsiteUpdate
 
 EmailSenderDep = Annotated[EmailSender, Depends(get_email_sender)]
@@ -123,19 +125,28 @@ async def favicon() -> FileResponse:
 SCANNER_ROUTER = APIRouter(prefix="/scanner", tags=["Scanner"])
 
 
-@SCANNER_ROUTER.post("/initial_scan", response_model=None)
-async def website_initial_scan(email_sender: EmailSenderDep, model_create: WebsiteCreate) -> None:
+@SCANNER_ROUTER.post("/initial_scan", response_model=ScanRunRead | None)
+async def website_initial_scan(email_sender: EmailSenderDep, model_create: WebsiteCreate) -> ScanRunRead | None:
     """Adds a website and scans it straight away to save its baseline (see `add_website`).
 
     A website already being watched fails with a 409 status, as does cancelling its first scan or adding a website
     that is already being added. A website or critical page that cannot be loaded, or a recipient that cannot be
     emailed, fails with a 422 status. In each case the website is not added.
 
+    A website whose first scan ran into a problem (e.g. it blocked the crawler) is still added, so the problem is
+    returned in the scan for the dashboard to show.
+
     Args:
         email_sender (EmailSenderDep): Sends the emails to the recipients.
         model_create (WebsiteCreate): The website to add.
+
+    Returns:
+        ScanRunRead | None: The website's first scan, or None if it has none.
     """
-    await add_website(model_create, email_sender)
+    website: WebsiteRead = await add_website(model_create, email_sender)
+    with db_context() as session:
+        first_scans: list[ScanRunRead] = ScanRunService(session).get_latest_for_website(website.id, limit=1)
+    return first_scans[0] if first_scans else None
 
 
 @SCANNER_ROUTER.post("/initial_critical_page_scan", response_model=None)

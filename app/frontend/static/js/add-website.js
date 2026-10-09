@@ -83,7 +83,7 @@ function fillAddWebsiteForm(values) {
 // no website still being added, no failure still to read, and nothing typed into the form
 function reloadWhenIdle() {
     const websiteAdded = addWebsiteProgressList.querySelector("[data-state='added']");
-    const failureShown = addWebsiteProgressList.querySelector("[data-state='failed']");
+    const failureShown = addWebsiteProgressList.querySelector("[data-state='failed'], [data-state='warning']");
     if (websiteAdded && !failureShown && websitesBeingAdded.size === 0 && addWebsiteFormIsEmpty()) {
         window.location.reload();
     }
@@ -134,7 +134,8 @@ function showAddingLine(adding, values) {
     return line;
 }
 
-// Shows on a website's line how adding it ended: "added", or "failed" with the reason
+// Shows on a website's line how adding it ended: "added", "warning" (added, but its first scan went wrong)
+// or "failed" with the reason
 function finishAddingLine(line, state, statusText, detailText) {
     line.dataset.state = state;
     line.querySelector(".spinner").hidden = true;
@@ -142,8 +143,8 @@ function finishAddingLine(line, state, statusText, detailText) {
     line.querySelector(".add-website-progress-detail").textContent = detailText;
     line.querySelector(".add-website-cancel").hidden = true;
     line.querySelector(".add-website-retry").hidden = state !== "failed";
-    line.querySelector(".add-website-dismiss").hidden = state !== "failed";
-    line.querySelector(".add-website-refresh").hidden = state !== "added";
+    line.querySelector(".add-website-dismiss").hidden = state === "added";
+    line.querySelector(".add-website-refresh").hidden = state === "failed";
 }
 
 
@@ -212,9 +213,20 @@ if (addWebsiteForm) {
                     );
                 }
 
-                finishAddingLine(
-                    adding.line, "added", `Added ${displayName(websiteUrl)}.`, "Refresh to see it on the dashboard."
-                );
+                // The website is kept even when its first scan went wrong, so say so rather than just "Added"
+                const firstScan = await response.json();
+                if (firstScan && firstScan.status !== "success") {
+                    finishAddingLine(
+                        adding.line,
+                        "warning",
+                        `Added ${displayName(websiteUrl)}, but its first scan did not complete.`,
+                        firstScan.message || "See the dashboard for details."
+                    );
+                } else {
+                    finishAddingLine(
+                        adding.line, "added", `Added ${displayName(websiteUrl)}.`, "Refresh to see it on the dashboard."
+                    );
+                }
 
             } catch (error) {
 
