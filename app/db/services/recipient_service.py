@@ -2,6 +2,7 @@ import logging
 import uuid
 from collections.abc import Sequence
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
@@ -23,12 +24,13 @@ class RecipientService(CRUDService[RecipientRead, RecipientCreate, RecipientUpda
         """
         self._db = session
 
-    def get_all(self, skip: int = 0, limit: int = 100) -> Sequence[RecipientRead]:
+    def get_all(self, skip: int = 0, limit: int | None = 100) -> Sequence[RecipientRead]:
         """Retrieves a paginated list of recipient records from the database.
 
         Args:
             skip: The number of initial records to skip for pagination. Defaults to 0.
-            limit: The maximum number of records to return. Defaults to 100.
+            limit: The maximum number of records to return, or None to return them all. Defaults to 100,
+                which suits paging through the API; anything that must see every record passes None.
 
         Returns:
             A sequence of RecipientRead models representing the retrieved records.
@@ -40,6 +42,11 @@ class RecipientService(CRUDService[RecipientRead, RecipientCreate, RecipientUpda
             limit=limit,
         )
         return [RecipientRead.model_validate(recipient_record) for recipient_record in recipient_records]
+
+    def get_email_addresses(self) -> list[str]:
+        """List all saved addresses for suggestions, including recipients not linked to a website."""
+        addresses = self._db.scalars(select(DBRecipient.email)).all()
+        return sorted(addresses, key=str.casefold)
 
     def get(self, id: uuid.UUID) -> RecipientRead:
         """Retrieves a single recipient record by its unique primary key identifier.

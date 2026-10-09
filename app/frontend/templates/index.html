@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>Inwebstigator</title>
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', path='favicon.ico') }}?v=final-logo">
 
     <!-- Apply the saved theme before the first paint so the page never flashes the wrong one -->
     <script>
@@ -46,10 +47,32 @@
 
 <body>
 
+    <datalist id="saved-recipient-emails">
+        {% for email in saved_recipient_emails %}
+        <option value="{{ email }}"></option>
+        {% endfor %}
+    </datalist>
+
     <main class="dashboard-container">
 
         <div class="dashboard-header">
-            <h1>Inwebstigator</h1>
+            <div class="dashboard-brand">
+                <img
+                    src="{{ url_for('static', path='logo.png') }}"
+                    alt=""
+                    class="brand-logo brand-logo-light"
+                    width="72"
+                    height="72"
+                >
+                <img
+                    src="{{ url_for('static', path='logo-dark.png') }}"
+                    alt=""
+                    class="brand-logo brand-logo-dark"
+                    width="72"
+                    height="72"
+                >
+                <h1>Inwebstigator</h1>
+            </div>
 
             <button
                 type="button"
@@ -126,12 +149,12 @@
                         class="change-record website-change-record"
                         data-collapsible
                         data-card-key="website-update:{{ website_record.website_url }}"
-                        data-card-name="{{ website_record.website_url | website_name }}"
+                        data-card-name="{{ website_names[website_record.website_url] }}"
                     >
 
                         <div class="change-record-header card-header">
                             <div class="change-record-identity">
-                                <h3 class="website-name">{{ website_record.website_url | website_name }}</h3>
+                                <h3 class="website-name">{{ website_names[website_record.website_url] }}</h3>
                                 <a
                                     class="website-url"
                                     href="{{ website_record.website_url }}"
@@ -162,7 +185,7 @@
                                 class="card-toggle"
                                 aria-expanded="false"
                                 aria-controls="website-updates-{{ website_index }}"
-                                aria-label="Show details for {{ website_record.website_url | website_name }}"
+                                aria-label="Show details for {{ website_names[website_record.website_url] }}"
                             >
                                 <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
                                     <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor"
@@ -690,6 +713,9 @@
                                 <input
                                     type="email"
                                     class="recipient-email-input"
+                                    data-saved-email-input
+                                    autocomplete="off"
+                                    aria-label="Notification email"
                                     placeholder="name@example.com"
                                 >
                             </div>
@@ -804,13 +830,13 @@
                         class="website-card"
                         data-collapsible
                         data-card-key="website:{{ website.id }}"
-                        data-card-name="{{ website.url | website_name }}"
-                        data-website-name="{{ website.url | website_name }}"
+                        data-card-name="{{ website_names[website.url] }}"
+                        data-website-name="{{ website_names[website.url] }}"
                     >
 
                         <div class="website-card-header card-header">
                             <div class="website-identity">
-                                <h3 class="website-name">{{ website.url | website_name }}</h3>
+                                <h3 class="website-name">{{ website_names[website.url] }}</h3>
                                 <!-- The name already shows the domain, so only the path is shown under it -->
                                 {% set website_path = website.url.split("//", 1)[-1].partition("/")[2].rstrip("/") %}
                                 <p class="website-meta">
@@ -855,7 +881,7 @@
                                     class="card-toggle"
                                     aria-expanded="false"
                                     aria-controls="website-details-{{ website.id }}"
-                                    aria-label="Show details for {{ website.url | website_name }}"
+                                    aria-label="Show details for {{ website_names[website.url] }}"
                                 >
                                     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
                                         <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor"
@@ -1056,6 +1082,9 @@
                             <input
                                 type="email"
                                 class="new-recipient-email"
+                                data-saved-email-input
+                                autocomplete="off"
+                                aria-label="Add notification email"
                                 placeholder="name@example.com"
                                 aria-label="Add notification email"
                                 required
@@ -1635,6 +1664,9 @@
                         document.createElement("input");
 
                     input.type = "email";
+                    input.setAttribute("data-saved-email-input", "");
+                    input.autocomplete = "off";
+                    input.setAttribute("aria-label", "Notification email");
                     input.className =
                         "recipient-email-input";
                     input.placeholder =
@@ -2509,11 +2541,14 @@
                         const cancelled =
                             await response.json();
 
+                        if (!cancelled) {
+                            window.location.reload();
+                            return;
+                        }
+
                         message.classList.remove("is-busy");
                         message.textContent =
-                            cancelled
-                                ? "Scan cancelled."
-                                : "The scan had already finished. Refresh the page to see the results.";
+                            "Scan cancelled.";
 
                         button.hidden = true;
                         card.querySelector(".run-scan-button").disabled = false;
@@ -2531,6 +2566,7 @@
 
     </script>
 
+    <script src="{{ url_for('static', path='email-suggestions.js') }}?v=1"></script>
 </body>
 
 </html>
