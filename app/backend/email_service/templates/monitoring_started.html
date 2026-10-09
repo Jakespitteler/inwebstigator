@@ -1,0 +1,14 @@
+{% extends "card.html" %}
+
+{% block title %}Now monitoring {{ website.url }}{% endblock %}
+
+{% block content %}
+<p class="paragraph-first">You have been added as a recipient for this website. It is checked every {{ scan_interval }}, and you will be emailed when a change is found.</p>
+<p class="paragraph-before-list">Pages being watched for content changes:</p>
+<ul class="plain-list">
+{% for page_url in watched_pages %}
+<li class="plain-list-item">{{ page_url }}</li>
+{% endfor %}
+</ul>
+<p class="paragraph-after-list">If nothing changes, you will get a short confirmation email every {{ health_check_interval }} so you know monitoring is still running.</p>
+{% endblock %}

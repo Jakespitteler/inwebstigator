@@ -5,10 +5,11 @@ from collections.abc import Callable
 
 from playwright.sync_api import Locator, Page, expect
 
-from app.scanner import queued_crawls
+from app.backend.scanning.scan_queue import scan_queue
 from tests.e2e.conftest import RunningApp
 
-WEBSITE_URL: str = "https://example.com"
+# As the app saves it, with the "/" a website's address always gets
+WEBSITE_URL: str = "https://example.com/"
 WEBSITE_HTML: str = '<html><body><h1>Example</h1><p>Welcome.</p><a href="/fees">Fees</a></body></html>'
 FEES_URL: str = "https://example.com/fees"
 FEES_HTML: str = "<html><body><h1>Fees</h1><p>The fee is $100.</p></body></html>"
@@ -100,7 +101,7 @@ def test_enter_moves_to_the_next_step_instead_of_adding_the_website(open_dashboa
     page.locator("#website-url").press("Enter")
 
     _expect_on_step(page, 2)
-    expect(page.locator("#add-website-progress")).to_be_hidden()
+    expect(page.locator("#add-website-progress-list .scan-progress")).to_have_count(0)
 
 
 def test_scan_settings_start_at_the_defaults(open_dashboard: Callable[..., Page]) -> None:
@@ -172,7 +173,8 @@ def test_adding_a_website_saves_it_and_shows_its_card(
     open_dashboard: Callable[..., Page], app_server: RunningApp
 ) -> None:
     """Tests finishing the wizard runs the first scan, saves the website with its settings, emails its
-    recipient, and shows the website's card with the wizard tucked behind "+ Add website"."""
+    recipient once to say monitoring has started, and shows the website's card with the wizard tucked behind
+    "+ Add website"."""
     _serve_example_website(app_server)
     page = open_dashboard()
 
@@ -196,10 +198,9 @@ def test_adding_a_website_saves_it_and_shows_its_card(
     assert website.days_between_scans == 2
     assert {page.url for page in website.critical_pages} == {WEBSITE_URL, FEES_URL}
     assert [recipient.email for recipient in website.recipients] == ["team@example.com"]
-    assert {(email.to, email.subject) for email in app_server.sent_emails.emails} == {
-        ("team@example.com", "Email address added to website monitoring"),
-        ("team@example.com", "Website monitoring started"),
-    }
+    assert [(email.to, email.subject) for email in app_server.sent_emails.emails] == [
+        ("team@example.com", "Website monitoring started")
+    ]
 
 
 def test_a_website_typed_without_https_is_added(open_dashboard: Callable[..., Page], app_server: RunningApp) -> None:
@@ -218,19 +219,23 @@ def test_a_website_typed_without_https_is_added(open_dashboard: Callable[..., Pa
 def test_a_website_that_cannot_be_loaded_is_not_added(
     open_dashboard: Callable[..., Page], app_server: RunningApp
 ) -> None:
-    """Tests a website that can't be loaded shows why, brings the wizard back with everything still filled in,
-    and saves nothing."""
+    """Tests a website that can't be loaded shows why on its progress line, "Edit and Try Again" brings the wizard
+    back with everything still filled in, and nothing is saved."""
     page = open_dashboard()  # No fake page for the website, so it returns a 404
 
     page.locator("#website-url").fill(WEBSITE_URL)
     page.locator('.guide-dot[data-step="4"]').click()
     page.locator("#guide-submit").click()
 
-    expect(page.locator("#website-form-message")).to_have_text(
+    progress = page.locator("#add-website-progress-list .scan-progress")
+    expect(progress.locator(".add-website-progress-status")).to_have_text(
         f"{WEBSITE_URL} could not be loaded. Check it exists and the URL is correct."
     )
+    expect(progress.locator(".add-website-progress-detail")).to_have_text("example.com was not added.")
+
+    progress.locator(".add-website-retry").click()
+    expect(progress).to_have_count(0)
     expect(page.locator("#add-website-form")).to_be_visible()
-    expect(page.locator("#add-website-progress")).to_be_hidden()
     _expect_on_step(page, 4)
     expect(page.locator("#website-url")).to_have_value(WEBSITE_URL)
     expect(page.locator("#guide-submit")).to_be_enabled()
@@ -240,7 +245,8 @@ def test_a_website_that_cannot_be_loaded_is_not_added(
 def test_cancelling_the_first_scan_does_not_add_the_website(
     open_dashboard: Callable[..., Page], app_server: RunningApp
 ) -> None:
-    """Tests the "Scanning..." line shows while the first scan runs, and cancelling it adds nothing."""
+    """Tests the "Scanning..." line shows while the first scan runs, and cancelling it adds nothing, while the
+    wizard stays free for adding another website."""
     _serve_example_website(app_server)
     page = open_dashboard()
     page.locator("#website-url").fill(WEBSITE_URL)
@@ -249,17 +255,18 @@ def test_cancelling_the_first_scan_does_not_add_the_website(
     app_server.websites.delay_seconds = 0.5  # Slow the scan down enough to cancel it
     page.locator("#guide-submit").click()
 
-    expect(page.locator("#add-website-form")).to_be_hidden()
-    expect(page.locator("#add-website-progress-status")).to_have_text("Scanning example.com…")
+    progress = page.locator("#add-website-progress-list .scan-progress")
+    expect(progress.locator(".add-website-progress-status")).to_have_text("Scanning example.com…")
 
     # Cancel once the scan has started, as before then there is nothing to cancel yet
     deadline = time.monotonic() + 10
-    while WEBSITE_URL not in queued_crawls:
+    while WEBSITE_URL not in scan_queue.queued_urls:
         assert time.monotonic() < deadline, "The first scan never started"
         time.sleep(0.05)
-    page.locator("#guide-cancel-scan").click()
+    progress.locator(".add-website-cancel").click()
 
-    expect(page.locator("#website-form-message")).to_have_text("Scan cancelled. The website was not added.")
+    expect(progress.locator(".add-website-progress-status")).to_have_text("Scan cancelled.")
+    expect(progress.locator(".add-website-progress-detail")).to_have_text("example.com was not added.")
     expect(page.locator("#add-website-form")).to_be_visible()
     assert app_server.saved_websites() == []
 

@@ -15,24 +15,31 @@ import threading
 import time
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
-from email.message import EmailMessage
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from types import TracebackType
+from typing import Any, Self
 
 import httpx2
 import pytest
 import uvicorn
 from playwright.sync_api import BrowserType, ConsoleMessage, Page, Route
 from playwright.sync_api import Error as PlaywrightError
-from sqlalchemy import Engine, create_engine, select
+from sqlalchemy import Engine, create_engine, event, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.db import core
+from app.backend.email_service.delivery import EmailSender, get_email_sender
+from app.backend.email_service.message_builder import OutgoingEmail
+from app.core.config import config
 from app.db.schema import Base, DBCriticalPage, DBRecipient, DBWebsite
+from app.db.session import SessionLocal, configure_sqlite_connection
+from app.frontend.api.request_guard import API_TOKEN_HEADER
 from app.main import app
 
 E2E_DIRECTORY: Path = Path(__file__).parent
+
+# The token the dashboard sends with every request that changes something, for tests that call the app directly
+API_HEADERS: dict[str, str] = {API_TOKEN_HEADER: config.api_token}
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -63,7 +70,7 @@ def browser_type_launch_args(browser_type_launch_args: dict[str, Any], browser_t
         return browser_type_launch_args
 
     for channel in ("chrome", "msedge", None):
-        launch_args = {**browser_type_launch_args, **({"channel": channel} if channel else {})}
+        launch_args: dict[str, Any] = {**browser_type_launch_args, **({"channel": channel} if channel else {})}
         try:
             browser_type.launch(**launch_args).close()
         except PlaywrightError:
@@ -130,15 +137,28 @@ class SentEmail:
 
 @dataclass
 class SentEmails:
-    """Emails the app would have sent, recorded instead of sending them."""
+    """Emails the app would have sent, recorded instead of sending them. Stands in for the app's `EmailSender`."""
 
     emails: list[SentEmail] = field(default_factory=list[SentEmail])
 
-    def record_message(self, msg: EmailMessage) -> None:
-        self.emails.append(SentEmail(to=str(msg["To"]), subject=str(msg["Subject"])))
+    def __enter__(self) -> Self:
+        return self
 
-    def record_confirmation(self, address: str, subject: str, html_body: str) -> None:
-        self.emails.append(SentEmail(to=address, subject=subject))
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        return None
+
+    def send(self, email: OutgoingEmail) -> None:
+        """Records an email instead of sending it."""
+        self.emails.append(SentEmail(to=email.to, subject=email.subject))
+
+    def record_confirmation(self, email: OutgoingEmail, email_sender: EmailSender) -> None:
+        """Records a confirmation email (sent when an address is added) instead of sending it."""
+        self.send(email)
 
     def reset(self) -> None:
         self.emails.clear()
@@ -183,7 +203,7 @@ class RunningApp:
             fields: Other columns to set, e.g. `active=False`.
         """
         with self.session() as session:
-            website = DBWebsite(url=url, last_scan_at=datetime.now(), **fields)
+            website = DBWebsite(url=url, last_scan_at=datetime.now(UTC), **fields)
             website.critical_pages = [DBCriticalPage(url=page_url) for page_url in (url, *critical_pages)]
             website.recipients = [DBRecipient(email=email) for email in recipients]
             session.add(website)
@@ -225,18 +245,19 @@ def running_app(tmp_path_factory: pytest.TempPathFactory) -> Iterator[RunningApp
         f"sqlite:///{tmp_path_factory.mktemp('e2e') / 'inwebstigator.db'}",
         connect_args={"check_same_thread": False},
     )
+    event.listen(engine, "connect", configure_sqlite_connection)  # e.g. deleting a website deletes its pages
     Base.metadata.create_all(engine)
     websites, sent_emails = FakeWebsites(), SentEmails()
 
     with pytest.MonkeyPatch.context() as monkeypatch:
         # Every database session the app opens (requests, scans) uses the throwaway database
-        original_engine = core.SessionLocal.kw["bind"]
-        core.SessionLocal.configure(bind=engine)
+        original_engine = SessionLocal.kw["bind"]
+        SessionLocal.configure(bind=engine)
 
-        monkeypatch.setattr("app.scanner.AsyncClient", websites.client)
-        monkeypatch.setattr("app.frontend.api.routers.AsyncClient", websites.client)
-        monkeypatch.setattr("app.scanner.send_email", sent_emails.record_message)
-        # Confirmation emails are recorded by `skip_email_confirmations` below, which runs for every test
+        monkeypatch.setattr("app.backend.websites.website_setup.new_http_client", websites.client)
+        monkeypatch.setattr("app.backend.scanning.manual_scan.new_http_client", websites.client)
+        monkeypatch.setattr("app.backend.scanning.all_websites_scan.AsyncClient", websites.client)
+        # Emails are recorded by `email_sender` and `skip_email_confirmations` below, which run for every test
 
         server, thread = _start_server(_free_port())
         try:
@@ -249,7 +270,7 @@ def running_app(tmp_path_factory: pytest.TempPathFactory) -> Iterator[RunningApp
         finally:
             server.should_exit = True
             thread.join(timeout=10)
-            core.SessionLocal.configure(bind=original_engine)
+            SessionLocal.configure(bind=original_engine)
             engine.dispose()
 
 
@@ -260,8 +281,21 @@ def skip_email_confirmations(monkeypatch: pytest.MonkeyPatch, running_app: Runni
     Replaces the fixture of the same name in tests/conftest.py, which throws them away, for the browser tests.
     """
     record = running_app.sent_emails.record_confirmation
-    monkeypatch.setattr("app.frontend.api.routers.confirm_address_can_receive_email", record)
-    monkeypatch.setattr("app.frontend.api.routers.send_confirmation", record)
+    monkeypatch.setattr("app.backend.websites.recipient_checks.confirm_address_can_receive_email", record)
+    monkeypatch.setattr("app.backend.websites.recipient_checks.send_confirmation", record)
+
+
+@pytest.fixture(autouse=True)
+def email_sender(monkeypatch: pytest.MonkeyPatch, running_app: RunningApp) -> Iterator[SentEmails]:
+    """Records the emails the app sends (e.g. scan reports) in `RunningApp.sent_emails`, instead of sending them.
+
+    Replaces the fixture of the same name in tests/conftest.py, which keeps them in a sender of its own.
+    """
+    monkeypatch.setattr("app.backend.scanning.all_websites_scan.get_email_sender", lambda: running_app.sent_emails)
+    monkeypatch.setattr("app.backend.scanning.scheduler.get_email_sender", lambda: running_app.sent_emails)
+    app.dependency_overrides[get_email_sender] = lambda: running_app.sent_emails
+    yield running_app.sent_emails
+    app.dependency_overrides.pop(get_email_sender, None)
 
 
 @pytest.fixture

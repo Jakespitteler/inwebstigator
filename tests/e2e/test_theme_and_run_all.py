@@ -1,11 +1,11 @@
 """The light/dark theme toggle, and the "Run All Scans" button."""
 
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from playwright.sync_api import Page, expect
 
-from tests.e2e.conftest import RunningApp
+from tests.e2e.conftest import API_HEADERS, RunningApp
 
 # ======================================
 # Light and dark theme
@@ -113,7 +113,9 @@ def _add_website(page: Page, app_server: RunningApp, url: str, text: str, recipi
     """Adds a website through the app, so its first scan saves the page as it is now."""
     app_server.websites.set_page(url, _page_html(text))
     response = page.request.post(
-        f"{app_server.url}scanner/initial_scan", data={"url": url, "recipient_emails": recipients}
+        f"{app_server.url}scanner/initial_scan",
+        data={"url": url, "recipient_emails": recipients},
+        headers=API_HEADERS,
     )
     assert response.ok, response.text()
 
@@ -144,13 +146,13 @@ def test_run_all_scans_scans_every_website_and_sends_each_recipient_one_report(
     expect(page.locator("#updates-panel")).to_contain_text("$120")
     expect(page.locator("#updates-panel")).to_contain_text("June")
     assert [(email.to, email.subject) for email in app_server.sent_emails.emails] == [
-        ("team@example.com", "Website Update")
+        ("team@example.com", "Website updates: first.example.com and second.example.com")
     ]
 
 
 def test_run_all_scans_skips_websites_on_cooldown(open_dashboard: Callable[..., Page], app_server: RunningApp) -> None:
     """Tests "Run All Scans" leaves a website on cooldown (e.g. after being rate limited) alone."""
-    app_server.add_website("https://resting.example.com", on_cooldown_until=datetime.now() + timedelta(hours=2))
+    app_server.add_website("https://resting.example.com", on_cooldown_until=datetime.now(UTC) + timedelta(hours=2))
     app_server.add_website("https://ready.example.com")
     for url in ("https://resting.example.com", "https://ready.example.com"):
         app_server.websites.set_page(url, _page_html("Welcome."))

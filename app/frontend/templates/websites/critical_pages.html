@@ -1,0 +1,78 @@
+{# A website's critical pages, with a button to delete each one and a form to add another. #}
+{# Needs `website`. #}
+
+<h4>Critical pages ({{ website.critical_pages | length }})</h4>
+
+{% if website.critical_pages %}
+
+    <ul class="critical-page-list">
+
+        {% for page in website.critical_pages %}
+
+            <li>
+
+                <a
+                    href="{{ page.url }}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                >
+                    {{ page.url }}
+                </a>
+
+                {% if page.url == website.url %}
+                <span class="main-page-badge">Main website (automatic)</span>
+                {% else %}
+                <button
+                    type="button"
+                    class="delete-critical-page-button icon-button"
+                    data-page-id="{{ page.id }}"
+                    aria-label="Delete critical page {{ page.url }}"
+                    title="Delete critical page"
+                >
+                    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                        <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                </button>
+                {% endif %}
+
+            </li>
+
+        {% endfor %}
+
+    </ul>
+
+{% else %}
+
+    <p class="empty-state">None yet</p>
+
+{% endif %}
+
+
+<!-- Add a critical page later -->
+<form
+    class="add-critical-page-form inline-add-form"
+    data-website-id="{{ website.id }}"
+>
+
+    <button type="submit" aria-label="Add critical page" title="Add critical page">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round"/>
+        </svg>
+    </button>
+
+    <input
+        type="text"
+        class="new-critical-page-url"
+        placeholder="https://example.com/page"
+        aria-label="Add critical page"
+        required
+    >
+
+    <p
+        class="critical-page-message"
+        aria-live="polite"
+    ></p>
+
+</form>

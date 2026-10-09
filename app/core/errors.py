@@ -71,10 +71,38 @@ class UndeliverableEmailError(Exception):
         super().__init__(f"An email to {address} could not be delivered.")
 
 
+class AlreadyWatchedError(Exception):
+    """Exception raised when a website or critical page being added is already being watched.
+
+    Attributes:
+        url: The URL of the website or page.
+    """
+
+    def __init__(self, url: str) -> None:
+        self.url: str = url
+        super().__init__(f"{url} is already being watched.")
+
+
+class InvalidPageError(ValueError):
+    """Exception raised when a critical page being added is not a valid URL, or is on a different website."""
+
+
 class WebCrawlerError(Exception):
     """Base class for all custom web crawler exceptions in the application."""
 
     ...
+
+
+class PageNotLoadedError(WebCrawlerError):
+    """Exception raised when a website or critical page being added cannot be loaded, so it is not added.
+
+    Attributes:
+        url: The URL of the page that could not be loaded.
+    """
+
+    def __init__(self, url: str) -> None:
+        self.url: str = url
+        super().__init__(f"{url} could not be loaded. Check it exists and the URL is correct.")
 
 
 class TrafficError(WebCrawlerError):
@@ -83,12 +111,16 @@ class TrafficError(WebCrawlerError):
     Attributes:
         url: The target URL string that triggered the traffic error.
         status_code: The HTTP status code returned by the server (e.g., 429, 403, 503).
+        retry_after_seconds: How long the server asked to be left before the next request, if it said.
     """
 
-    def __init__(self, url: str, status_code: int, message: str | None = None) -> None:
+    def __init__(
+        self, url: str, status_code: int, message: str | None = None, retry_after_seconds: float | None = None
+    ) -> None:
         self.url: str = url
         self.status_code: int = status_code
         self.message: str | None = message
+        self.retry_after_seconds: float | None = retry_after_seconds
 
         error_message: str = f"Traffic issue ({status_code}) at {url=}. Crawler is overwhelming the server.."
         if message:
@@ -106,6 +138,68 @@ class WebConnectionError(WebCrawlerError):
 
     def __init__(self, url: str) -> None:
         super().__init__(f"Network traffic issue (Timeout/Connection drop) reaching {url=}.")
+
+
+class WebsiteUnavailableError(WebConnectionError):
+    """Exception raised when a website's home page cannot be loaded (e.g. it returns 403, 404 or 500), so none of the
+    website could be crawled.
+
+    It is treated as the website being unreachable, rather than as every page on it having been removed.
+
+    Attributes:
+        url: The URL of the website's home page.
+    """
+
+    def __init__(self, url: str) -> None:
+        self.url: str = url
+        WebCrawlerError.__init__(self, f"The home page {url} could not be loaded, so the website could not be scanned.")
+
+
+class MostPagesMissingError(WebCrawlerError):
+    """Exception raised when a crawl finds so few of a website's known pages that the website is probably partly down,
+    rather than really having removed them.
+
+    Attributes:
+        url: The URL of the website.
+        missing_count: How many of the pages found by the last scan were not found.
+        known_count: How many pages the last scan found.
+    """
+
+    def __init__(self, url: str, missing_count: int, known_count: int) -> None:
+        self.url: str = url
+        self.missing_count: int = missing_count
+        self.known_count: int = known_count
+        super().__init__(
+            f"{missing_count:,} of the {known_count:,} pages found on {url} by its last scan could not be found, "
+            "so the website may be partly down. Nothing from this scan has been saved."
+        )
+
+
+class NotAWebPageError(WebCrawlerError):
+    """Exception raised when a URL is a file (e.g. a PDF or an image) rather than a web page, so it is not read.
+
+    Attributes:
+        url: The URL of the file.
+        content_type: What the server said the file is, e.g. "application/pdf".
+    """
+
+    def __init__(self, url: str, content_type: str) -> None:
+        self.url: str = url
+        self.content_type: str = content_type
+        super().__init__(f"{url} is not a web page ({content_type}).")
+
+
+class StandInPageError(WebCrawlerError):
+    """Exception raised when a page loads but has lost most of its text, so what was served is almost certainly a
+    stand-in for the real page (e.g. a "Just a moment..." browser check, a maintenance page or a login wall).
+
+    Attributes:
+        url: The URL of the page that was served without its content.
+    """
+
+    def __init__(self, url: str) -> None:
+        self.url: str = url
+        super().__init__(f"{url} loaded, but most of its content is missing.")
 
 
 class WebsiteTooLargeError(WebCrawlerError):

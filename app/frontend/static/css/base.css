@@ -1,0 +1,157 @@
+/* The page itself: its background, text and section headings. */
+
+
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+[hidden] {
+    display: none !important;
+}
+
+
+/* BASE */
+
+html {
+    background: var(--bg-solid);
+}
+
+/* Suppress transitions during initial load so the saved theme applies without a flash */
+html.preloading,
+html.preloading * {
+    transition: none !important;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: var(--font);
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--text-primary);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+    transition: color 0.25s;
+}
+
+/* Soft colour orbs behind the glass, so the blur has something to refract */
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+        radial-gradient(ellipse 72% 65% at 8% 12%, rgba(140, 90, 230, 0.22) 0%, transparent 65%),
+        radial-gradient(ellipse 65% 72% at 92% 82%, rgba(180, 100, 240, 0.18) 0%, transparent 65%),
+        radial-gradient(ellipse 50% 50% at 75% 15%, rgba(80, 150, 255, 0.18) 0%, transparent 58%),
+        radial-gradient(ellipse 42% 52% at 20% 80%, rgba(200, 150, 255, 0.15) 0%, transparent 58%),
+        radial-gradient(ellipse 40% 44% at 50% 48%, rgba(160, 120, 255, 0.12) 0%, transparent 60%);
+}
+
+[data-theme="dark"] body::before {
+    background:
+        radial-gradient(ellipse 72% 65% at 8% 12%, rgba(120, 60, 220, 0.26) 0%, transparent 65%),
+        radial-gradient(ellipse 65% 72% at 92% 82%, rgba(30, 140, 255, 0.20) 0%, transparent 65%),
+        radial-gradient(ellipse 50% 50% at 75% 15%, rgba(220, 60, 140, 0.16) 0%, transparent 58%),
+        radial-gradient(ellipse 42% 52% at 20% 80%, rgba(20, 180, 160, 0.14) 0%, transparent 58%),
+        radial-gradient(ellipse 40% 44% at 50% 48%, rgba(160, 90, 255, 0.12) 0%, transparent 60%);
+}
+
+a {
+    color: var(--link);
+    text-decoration: none;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+h1, h2, h3, h4 {
+    color: var(--text-primary);
+    letter-spacing: -0.2px;
+}
+
+button, input {
+    font-family: var(--font);
+}
+
+.dashboard-container {
+    position: relative;
+    z-index: 1;
+    width: 90%;
+    max-width: 1100px;
+    margin: 28px auto 40px;
+}
+
+/* Section headings sit in their own glass label so they stand off the background */
+.section-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.section-title {
+    display: inline-block;
+    margin: 0 0 16px;
+    padding: 8px 18px;
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-weight: 700;
+    background: var(--surface);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--card-shadow);
+}
+
+.section-heading .section-title {
+    margin: 0;
+}
+
+/* When each website was last scanned, on its card */
+.last-scan {
+    margin: 4px 0 0;
+    font-size: 12.5px;
+    color: var(--text-tertiary);
+}
+
+.week-range {
+    margin: 0;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: var(--content-bg);
+    border: 1px solid var(--content-border);
+    border-radius: 20px;
+    box-shadow: var(--content-shadow);
+}
+
+
+/* EMPTY STATES */
+
+.empty-state {
+    margin: 0 0 20px;
+    padding: 16px 20px;
+    color: var(--text-secondary);
+    background: var(--surface);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    border: 1px dashed var(--border-md);
+    border-radius: var(--radius-lg);
+}
+
+.website-card .empty-state {
+    background: var(--content-bg);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    font-size: 14px;
+}

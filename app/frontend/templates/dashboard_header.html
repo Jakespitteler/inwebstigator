@@ -1,0 +1,23 @@
+{# The shared page header (the app's name, Refresh and light / dark mode), then the Websites / Updates tabs. #}
+
+{% include "_header.html" %}
+
+<div class="tab-buttons" role="tablist" aria-label="Dashboard sections">
+    <button
+        type="button"
+        id="websites-tab"
+        class="tab-button active"
+        role="tab"
+        aria-selected="true"
+        aria-controls="websites-panel"
+    >WEBSITES</button>
+    <button
+        type="button"
+        id="updates-tab"
+        class="tab-button"
+        role="tab"
+        aria-selected="false"
+        aria-controls="updates-panel"
+        tabindex="-1"
+    >UPDATES</button>
+</div>

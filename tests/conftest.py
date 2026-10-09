@@ -1,33 +1,44 @@
+import asyncio
 import sqlite3
-
-from sqlalchemy.pool import ConnectionPoolEntry
-
-from app.core.config import config
-
-config.automatic_scans = False
-
 import time
 import uuid
 from collections.abc import Callable, Iterator
+from contextlib import nullcontext
 from datetime import datetime
 
 import httpx2
 import pytest
 from fastapi.testclient import TestClient
+from pytest_mock import MockerFixture
 from sqlalchemy import UUID as PG_UUID
 from sqlalchemy import Connection, DateTime, Engine, MetaData, StaticPool, String, create_engine, event, text
 from sqlalchemy.orm import Mapped, Session, declarative_base, mapped_column
+from sqlalchemy.pool import ConnectionPoolEntry
 from tenacity import wait_none
 
-from app.backend.email_service import send_email
-from app.backend.utils.http_client import fetch_content_from_url
-from app.backend.utils.links import normalise_url
-from app.db import core, repository, schema
-from app.db.utils.field_types import URLString
+from app.backend.crawler.page_fetcher import fetch_content_from_url
+from app.backend.email_service.delivery import EmailSender, get_email_sender
+from app.backend.email_service.message_builder import OutgoingEmail
+from app.backend.scanning.scan_queue import ScanQueue, scan_queue
+from app.core.config import config
+from app.core.urls import normalise_url
+from app.db import repository, schema
+from app.db.session import configure_sqlite_connection, get_db_session
+from app.frontend.api.request_guard import API_TOKEN_HEADER
 from app.main import app
 from app.models import critical_page_models, internal_link_models, recipient_models, website_models
+from tests.fakes import FakeEmailSender
 
 type RequestHandler = Callable[[httpx2.Request], httpx2.Response]
+
+BACKEND_MODULES_USING_THE_DATABASE: tuple[str, ...] = (
+    "app.backend.websites.website_setup",
+    "app.backend.websites.recipient_checks",
+    "app.backend.scanning.manual_scan",
+    "app.backend.scanning.website_scan",
+    "app.backend.scanning.scan_reports",
+    "app.backend.scanning.notifications",
+)
 
 
 # ==========================
@@ -69,6 +80,7 @@ def engine() -> Iterator[Engine]:
     # an app-level commit inside a test then commits for real and leaks into later tests.
     # Hand transaction control to SQLAlchemy instead (the fix from SQLAlchemy's SQLite docs).
     event.listen(test_engine, "connect", _disable_driver_transactions)
+    event.listen(test_engine, "connect", configure_sqlite_connection)  # Foreign keys are checked, as in the app
     event.listen(test_engine, "begin", _begin_transaction)
 
     yield test_engine
@@ -99,35 +111,86 @@ def session(engine: Engine) -> Iterator[Session]:
 
 
 @pytest.fixture()
-def api_client(session: Session) -> Iterator[TestClient]:
+def backend_uses_test_session(session: Session, mocker: MockerFixture) -> None:
+    """Makes the backend's own units of work (`db_context`) use the test's database session, without committing it.
+
+    The routes hand most of their work to the backend, which opens its own sessions, so a request made in a test
+    reads and saves the same records as the test itself.
+
+    Args:
+        session: The database session fixture to be used.
+        mocker: Patches each backend module's `db_context`.
     """
-    Creates a FastAPI test client with the database session dependency overridden.
+    for module in BACKEND_MODULES_USING_THE_DATABASE:
+        mocker.patch(f"{module}.db_context", side_effect=lambda: nullcontext(session))
+
+
+@pytest.fixture()
+def api_client(session: Session, backend_uses_test_session: None) -> Iterator[TestClient]:
+    """
+    Creates a FastAPI test client with the database session dependency overridden, and the backend using the same
+    session.
 
     Args:
         session: The database session fixture to be injected.
+        backend_uses_test_session: Makes the backend use the same session.
 
     Yields:
         The configured TestClient instance.
     """
-    app.dependency_overrides[core.get_db_session] = lambda: session
-    with TestClient(app) as client:
+    app.dependency_overrides[get_db_session] = lambda: session
+    with TestClient(app, headers={API_TOKEN_HEADER: config.api_token}) as client:
         yield client
         app.dependency_overrides.clear()
+
+
+def _skip_confirmation(email: OutgoingEmail, email_sender: EmailSender) -> None:
+    """Stands in for confirming an address can receive email, so tests do not send emails or wait for bounces.
+
+    Args:
+        email: The confirmation email that would have been sent.
+        email_sender: The sender that would have sent it.
+    """
 
 
 @pytest.fixture(autouse=True)
 def skip_email_confirmations(monkeypatch: pytest.MonkeyPatch) -> None:
     """Treats every added email address as able to receive email, so tests do not send confirmation emails."""
-    monkeypatch.setattr(
-        "app.frontend.api.routers.confirm_address_can_receive_email", lambda address, subject, html_body: None
-    )
-    monkeypatch.setattr("app.frontend.api.routers.send_confirmation", lambda address, subject, html_body: None)
+    monkeypatch.setattr("app.backend.websites.recipient_checks.confirm_address_can_receive_email", _skip_confirmation)
+    monkeypatch.setattr("app.backend.websites.recipient_checks.send_confirmation", _skip_confirmation)
 
 
 @pytest.fixture(autouse=True)
-def disable_retry_wait():
+def email_sender(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeEmailSender]:
+    """Replaces the mail server with a fake for every test, so no test can send a real email.
+
+    Yields:
+        The fake sender, holding every email the test sent.
+    """
+    fake_sender = FakeEmailSender()
+    monkeypatch.setattr("app.backend.scanning.all_websites_scan.get_email_sender", lambda: fake_sender)
+    monkeypatch.setattr("app.backend.scanning.scheduler.get_email_sender", lambda: fake_sender)
+    app.dependency_overrides[get_email_sender] = lambda: fake_sender
+    yield fake_sender
+    app.dependency_overrides.pop(get_email_sender, None)
+
+
+@pytest.fixture
+def empty_scan_queue(mocker: MockerFixture) -> ScanQueue:
+    """Empties the app's scan queue and gives it a lock for this test's event loop, as each test has its own loop.
+
+    Returns:
+        The app's scan queue.
+    """
+    mocker.patch.object(scan_queue, "_lock", asyncio.Lock())
+    mocker.patch.object(scan_queue, "_scans", {})
+    return scan_queue
+
+
+@pytest.fixture(autouse=True)
+def disable_retry_wait() -> Iterator[None]:
+    """Stops fetching pages waiting between retries, so tests of failures run quickly."""
     fetch_content_from_url.retry.wait = wait_none()  # pyright: ignore[reportFunctionMemberAccess]
-    send_email.retry.wait = wait_none()  # pyright: ignore[reportFunctionMemberAccess]
     yield
 
 
@@ -137,7 +200,7 @@ def disable_retry_wait():
 
 
 @pytest.fixture
-def test_url() -> URLString:
+def test_url() -> str:
     """Provides a standard test URL matching test_website domain."""
     return normalise_url("https://www.test_website.com/")
 
@@ -176,7 +239,7 @@ def test_recipient(session: Session) -> recipient_models.RecipientRead:
 
 @pytest.fixture()
 def test_website(
-    session: Session, test_recipient: recipient_models.RecipientRead, test_url: URLString
+    session: Session, test_recipient: recipient_models.RecipientRead, test_url: str
 ) -> website_models.WebsiteRead:
     return website_models.WebsiteRead.model_validate(
         _create_and_add(
@@ -220,7 +283,7 @@ def test_internal_link(session: Session, test_website: schema.DBWebsite) -> inte
 
 
 @pytest.fixture
-def test_html_content(test_url: URLString) -> str:
+def test_html_content(test_url: str) -> str:
     """Provides a mock HTML string containing various link structures."""
     return f"""
     <html>
@@ -241,7 +304,7 @@ def test_html_content(test_url: URLString) -> str:
 
 
 @pytest.fixture
-def mock_client_factory(test_url: URLString) -> Callable[[RequestHandler], httpx2.AsyncClient]:
+def mock_client_factory(test_url: str) -> Callable[[RequestHandler], httpx2.AsyncClient]:
     """Fixture factory to easily create an AsyncClient with a MockTransport."""
 
     def _create_client(handler: RequestHandler, base_url: str = test_url) -> httpx2.AsyncClient:
@@ -288,7 +351,7 @@ def website_handler(test_url: str, test_html_content: str) -> RequestHandler:
 
 
 @pytest.fixture
-def redirect_handler(test_url: URLString) -> RequestHandler:
+def redirect_handler(test_url: str) -> RequestHandler:
     """Provides a mock request handler simulating an HTTP redirect."""
 
     def handler(request: httpx2.Request) -> httpx2.Response:

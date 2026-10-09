@@ -6,10 +6,11 @@ from collections.abc import Callable
 
 from playwright.sync_api import Locator, Page, expect
 
-from app.scanner import queued_crawls
-from tests.e2e.conftest import RunningApp
+from app.backend.scanning.scan_queue import scan_queue
+from tests.e2e.conftest import API_HEADERS, RunningApp
 
-WEBSITE_URL: str = "https://example.com"
+# As the app saves it, with the "/" a website's address always gets
+WEBSITE_URL: str = "https://example.com/"
 FEES_URL: str = "https://example.com/fees"
 
 
@@ -32,7 +33,7 @@ def _open_card(page: Page, url: str = WEBSITE_URL) -> Locator:
 
 def _wait_for_scan_to_start(url: str) -> None:
     deadline = time.monotonic() + 10
-    while url not in queued_crawls:
+    while url not in scan_queue.queued_urls:
         assert time.monotonic() < deadline, f"The scan of {url} never started"
         time.sleep(0.05)
 
@@ -87,7 +88,9 @@ def test_run_scan_finds_a_change_and_refreshes_the_dashboard(
     """Tests "Run scan" scans the website, then the dashboard reloads showing what changed."""
     app_server.websites.set_page(WEBSITE_URL, _page_html("The fee is $100."))
     page = open_dashboard()
-    response = page.request.post(f"{app_server.url}scanner/initial_scan", data={"url": WEBSITE_URL})
+    response = page.request.post(
+        f"{app_server.url}scanner/initial_scan", data={"url": WEBSITE_URL}, headers=API_HEADERS
+    )
     assert response.ok, response.text()
     page.reload()
 

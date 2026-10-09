@@ -1,0 +1,129 @@
+{# One website's card in the Websites tab: its name, scan buttons and, once opened, its details. #}
+{# Needs `website`. #}
+
+<div
+    class="website-card"
+    data-collapsible
+    data-card-key="website:{{ website.id }}"
+    data-card-name="{{ website_names[website.url | string] }}"
+    data-website-name="{{ website_names[website.url | string] }}"
+>
+
+    <div class="website-card-header card-header">
+        <div class="website-identity">
+            <h3 class="website-name">{{ website_names[website.url | string] }}</h3>
+            <!-- The name already shows the domain, so only the path is shown under it -->
+            {% set website_path = (website.url | string).split("//", 1)[-1].partition("/")[2].rstrip("/") %}
+            <p class="website-meta">
+                {% if website_path %}
+                    <a
+                        class="website-url"
+                        href="{{ website.url }}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="{{ website.url }}"
+                    >/{{ website_path }}</a>
+                    <span aria-hidden="true">&middot;</span>
+                {% endif %}
+                <span class="last-scan">
+                    {% if website.last_scan_at %}Last scanned {% endif %}{{ website.last_scan_at | scan_time }}
+                </span>
+            </p>
+        </div>
+
+        <div class="website-card-actions">
+            <!-- Before the run button, so it doesn't appear under the cursor after clicking run -->
+            <button
+                type="button"
+                class="cancel-scan-button"
+                data-website-url="{{ website.url }}"
+                {% if (website.url | string) not in queued_website_urls %}hidden{% endif %}
+            >
+                Cancel Scan
+            </button>
+
+            <button
+                type="button"
+                class="run-scan-button"
+                data-website-url="{{ website.url }}"
+                {% if (website.url | string) in queued_website_urls %}disabled{% endif %}
+            >
+                {% if website.active %}Run scan{% else %}Scan critical pages{% endif %}
+            </button>
+
+            <button
+                type="button"
+                class="card-toggle"
+                aria-expanded="false"
+                aria-controls="website-details-{{ website.id }}"
+                aria-label="Show details for {{ website_names[website.url | string] }}"
+            >
+                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                    <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- A scan queued before the page loaded keeps showing as in progress -->
+    <p
+        class="run-scan-message{% if (website.url | string) in queued_website_urls %} is-busy{% endif %}"
+        aria-live="polite"
+    >{% if (website.url | string) in queued_website_urls %}Scan queued or running...{% endif %}</p>
+
+    <!-- Inactive websites are still scanned, but only their critical pages -->
+    {% if not website.active %}
+        {% set too_large = website.deactivated_reason == "too_large" %}
+        <p class="website-notice{% if too_large %} website-notice-warning{% endif %}">
+            {% if too_large %}
+                <strong>Too large to scan.</strong>
+                This website has more than {{ "{:,}".format(max_pages) }} pages, which is
+                more than Inwebstigator will scan, so it has been deactivated.
+            {% else %}
+                <strong>Inactive.</strong>
+            {% endif %}
+            Only its critical pages are checked for changes. New and removed pages on
+            the rest of the website are not looked for.
+        </p>
+    {% endif %}
+
+    <!-- Everything below is hidden until the card is expanded -->
+    <div
+        class="card-body"
+        id="website-details-{{ website.id }}"
+        hidden
+    >
+
+    <div class="website-summary">
+
+        <p>
+            Internal pages:
+            <strong>{{ website.internal_link_count }}</strong>
+        </p>
+
+        <button
+            type="button"
+            class="delete-website-button"
+            data-website-id="{{ website.id }}"
+            data-website-url="{{ website.url }}"
+        >
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                <path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"
+                    fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Delete website
+        </button>
+
+    </div>
+
+    {% include "websites/critical_pages.html" %}
+
+    {% include "websites/notification_emails.html" %}
+
+    {% include "websites/scan_settings.html" %}
+
+    </div>
+
+</div>

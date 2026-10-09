@@ -1,23 +1,28 @@
-"""The Updates tab: what changed on each website since its last scan, and moving between the dashboard's tabs."""
+"""The Updates tab: each website's latest scans and what they found, and moving between the dashboard's tabs."""
 
 from collections.abc import Callable, Sequence
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from playwright.sync_api import Locator, Page, expect
 from sqlalchemy import select
 
-from app.db.schema import DBCriticalPage
-from tests.e2e.conftest import RunningApp
+from app.db.schema import DBChange, DBScanRun, DBWebsite
+from app.models.scan_run_models import ChangeKind, ScanStatus
+from tests.e2e.conftest import API_HEADERS, RunningApp
 
 WEBSITE_URL: str = "https://example.com"
 
 
 def _site_html(paragraphs: Sequence[str], links: Sequence[str] = (), documents: Sequence[str] = ()) -> str:
-    """A simple page with a "Fees" heading, its paragraphs, then links to other pages and documents."""
+    """A simple page with a "Fees" heading, its paragraphs, then links to other pages and documents.
+
+    Every link reads "Link", as the words of links are part of the page's text, so changing where the links go
+    changes no text.
+    """
     return (
         "<html><body><h2>Fees</h2>"
         + "".join(f"<p>{paragraph}</p>" for paragraph in paragraphs)
-        + "".join(f'<a href="{href}">{href}</a>' for href in (*links, *documents))
+        + "".join(f'<a href="{href}">Link</a>' for href in (*links, *documents))
         + "</body></html>"
     )
 
@@ -25,14 +30,16 @@ def _site_html(paragraphs: Sequence[str], links: Sequence[str] = (), documents: 
 def _add_website(page: Page, app_server: RunningApp, html: str) -> None:
     """Adds the website through the app, so its first scan saves the page as it is now."""
     app_server.websites.set_page(WEBSITE_URL, html)
-    response = page.request.post(f"{app_server.url}scanner/initial_scan", data={"url": WEBSITE_URL})
+    response = page.request.post(
+        f"{app_server.url}scanner/initial_scan", data={"url": WEBSITE_URL}, headers=API_HEADERS
+    )
     assert response.ok, response.text()
 
 
 def _scan(page: Page, app_server: RunningApp, html: str) -> None:
     """Changes the website's page, then scans it the way "Run scan" does."""
     app_server.websites.set_page(WEBSITE_URL, html)
-    response = page.request.post(f"{app_server.url}scanner/run", form={"url": WEBSITE_URL})
+    response = page.request.post(f"{app_server.url}scanner/run", form={"url": WEBSITE_URL}, headers=API_HEADERS)
     assert response.ok, response.text()
 
 
@@ -53,6 +60,11 @@ def _open(card: Locator) -> Locator:
     return body
 
 
+def _open_latest_scan(website_card: Locator) -> Locator:
+    """Opens a website's update card, then its latest scan's card, showing what that scan found."""
+    return _open(_open(website_card).locator(".scan-change-record").first)
+
+
 def _change_items(section: Locator, kind: str) -> list[str]:
     """Returns the text of each added or removed item in a section, e.g. kind="added"."""
     return [text.strip() for text in section.locator(f".change-item-{kind} .change-item-text").all_inner_texts()]
@@ -67,24 +79,26 @@ def _section(body: Locator, heading: str) -> Locator:
 # ======================================
 
 
-def test_says_when_the_latest_scan_found_no_changes(
-    open_dashboard: Callable[..., Page], app_server: RunningApp
-) -> None:
-    """Tests the Updates tab says so when no website has changed."""
+def test_says_when_no_website_has_been_scanned_yet(open_dashboard: Callable[..., Page], app_server: RunningApp) -> None:
+    """Tests the Updates tab says so when no website has been scanned yet."""
     app_server.add_website(WEBSITE_URL)
     page = open_dashboard("#updates")
 
-    expect(page.locator("#updates-panel .empty-state")).to_have_text("No changes were detected in the latest scan.")
+    expect(page.locator("#updates-panel .empty-state")).to_have_text("No websites have been scanned yet.")
     expect(page.locator(".website-change-record")).to_have_count(0)
 
 
 def test_a_first_scan_is_not_shown_as_changes(open_dashboard: Callable[..., Page], app_server: RunningApp) -> None:
-    """Tests adding a website saves what's on it without listing it all as new on the Updates tab."""
+    """Tests adding a website saves what's on it without listing it all as new on the Updates tab: its first scan
+    is shown as finding no changes."""
     page = open_dashboard()
     _add_website(page, app_server, _site_html(["The application fee is $100."], links=["/apply"]))
 
     _show_updates(page, app_server)
-    expect(page.locator(".website-change-record")).to_have_count(0)
+    website_card = page.locator(".website-change-record")
+    expect(website_card.locator(":scope > .card-header .change-summary")).to_contain_text("No changes in its only scan")
+    expect(website_card.locator(".scan-change-record")).to_contain_text("No changes")
+    expect(website_card.locator(".page-change-record")).to_have_count(0)
 
 
 # ======================================
@@ -120,17 +134,21 @@ def test_a_scan_shows_every_kind_of_change(open_dashboard: Callable[..., Page], 
     _show_updates(page, app_server)
     website_card = page.locator(".website-change-record")
     expect(website_card).to_have_count(1)
-    expect(website_card.locator(".website-url")).to_have_text(WEBSITE_URL)
+    expect(website_card.locator(".website-url")).to_have_text(f"{WEBSITE_URL}/")
     expect(website_card.locator(".website-name")).to_have_text("Example")  # Its display name
-    expect(website_card.locator(":scope > .card-header .change-summary")).to_contain_text("1 critical page changed")
-    expect(website_card.locator(":scope > .card-header .change-summary")).to_contain_text("2 internal links")
+    expect(website_card.locator(":scope > .card-header .change-summary")).to_contain_text("1 of 2 scans found changes")
 
-    website_body = _open(website_card)
-    internal_links = _section(website_body, "Internal links")
+    scan_card = _open(website_card).locator(".scan-change-record").first  # The latest scan
+    scan_summary = scan_card.locator(":scope > .card-header .change-summary")
+    expect(scan_summary).to_contain_text("1 critical page changed")
+    expect(scan_summary).to_contain_text("2 internal links")
+
+    scan_body = _open(scan_card)
+    internal_links = _section(scan_body, "Internal links")
     assert _change_items(internal_links, "added") == [f"{WEBSITE_URL}/contact"]
     assert _change_items(internal_links, "removed") == [f"{WEBSITE_URL}/old-guide"]
 
-    page_card = website_body.locator(".page-change-record")
+    page_card = scan_body.locator(".page-change-record")
     expect(page_card).to_have_count(1)
     summary = page_card.locator(":scope > .card-header .change-summary")
     for count in ("3 text changes", "2 links", "2 documents"):
@@ -165,7 +183,7 @@ def test_text_that_looks_like_html_never_reaches_the_dashboard(
     _scan(page, app_server, _site_html(["The fee is $120.", f"Embed a picture with {injected}"]))
 
     _show_updates(page, app_server)
-    page_body = _open(_open(page.locator(".website-change-record")).locator(".page-change-record"))
+    page_body = _open(_open_latest_scan(page.locator(".website-change-record")).locator(".page-change-record"))
 
     expect(page_body).not_to_contain_text("onerror")
     expect(page.locator("#updates-panel img")).to_have_count(0)
@@ -184,7 +202,7 @@ def test_special_characters_are_shown_as_written(open_dashboard: Callable[..., P
     )
 
     _show_updates(page, app_server)
-    page_body = _open(_open(page.locator(".website-change-record")).locator(".page-change-record"))
+    page_body = _open(_open_latest_scan(page.locator(".website-change-record")).locator(".page-change-record"))
 
     content_changed = _section(page_body, "Content changed")
     expect(content_changed).to_contain_text('Fees under < $100 & marked "approx".')
@@ -202,19 +220,19 @@ def test_most_recent_changes_come_first(open_dashboard: Callable[..., Page], app
     for url in ("https://older.example.com", "https://newer.example.com"):
         app_server.add_website(url)
     with app_server.session() as session:
-        for url, changed_at in (
-            ("https://older.example.com", datetime.now() - timedelta(days=2)),
-            ("https://newer.example.com", datetime.now() - timedelta(hours=1)),
+        for url, scanned_at in (
+            ("https://older.example.com", datetime.now(UTC) - timedelta(days=2)),
+            ("https://newer.example.com", datetime.now(UTC) - timedelta(hours=1)),
         ):
-            critical_page = session.scalars(select(DBCriticalPage).where(DBCriticalPage.url == url)).one()
-            critical_page.recent_links_added = [f"{url}/new"]
-            critical_page.last_changed_at = changed_at
+            website = session.scalars(select(DBWebsite).where(DBWebsite.url == url)).one()
+            new_link = DBChange(position=0, kind=ChangeKind.LINK_ADDED, page_url=url, url=f"{url}/new")
+            website.scan_runs.append(DBScanRun(scanned_at=scanned_at, status=ScanStatus.SUCCESS, changes=[new_link]))
         session.commit()
 
     page = open_dashboard("#updates")
 
     expect(page.locator(".website-change-record .website-url")).to_have_text(
-        ["https://newer.example.com", "https://older.example.com"]
+        ["https://newer.example.com/", "https://older.example.com/"]
     )
 
 

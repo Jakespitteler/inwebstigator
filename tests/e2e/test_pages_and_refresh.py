@@ -4,9 +4,10 @@ import time
 from collections.abc import Callable
 from urllib.parse import urlparse
 
-from playwright.sync_api import Page, expect
+from playwright.sync_api import Locator, Page, expect
 
-from app.scanner import queued_crawls, run_all_in_progress
+from app.backend.scanning.all_websites_scan import run_all_in_progress
+from app.backend.scanning.scan_queue import scan_queue
 from tests.e2e.conftest import RunningApp
 
 TEAM: list[str] = [
@@ -54,11 +55,12 @@ def test_the_about_page_has_no_refresh_button(open_dashboard: Callable[..., Page
 def test_every_way_back_to_the_dashboard_works(open_dashboard: Callable[..., Page], app_server: RunningApp) -> None:
     """Tests the app name in the header, the footer's Dashboard link and the About page's back link all go back to
     the dashboard."""
-    for link in (
+    links: tuple[Callable[[Page], Locator], ...] = (
         lambda page: page.locator(".home-link"),
         lambda page: page.locator(".site-footer").get_by_role("link", name="Dashboard"),
         lambda page: page.locator(".back-link"),
-    ):
+    )
+    for link in links:
         page = open_dashboard("about")
 
         link(page).click()
@@ -91,7 +93,7 @@ def test_refresh_shows_the_latest_results(open_dashboard: Callable[..., Page], a
     with page.expect_navigation():
         page.locator("#reloadPageBtn").click()
 
-    expect(page.locator('.run-scan-button[data-website-url="https://example.com"]')).to_have_count(1)
+    expect(page.locator('.run-scan-button[data-website-url="https://example.com/"]')).to_have_count(1)
 
 
 def test_refresh_keeps_the_open_tab_and_cards(open_dashboard: Callable[..., Page], app_server: RunningApp) -> None:
@@ -99,7 +101,7 @@ def test_refresh_keeps_the_open_tab_and_cards(open_dashboard: Callable[..., Page
     app_server.add_website("https://example.com")
     page = open_dashboard()
     card = page.locator(".website-card").filter(
-        has=page.locator('.run-scan-button[data-website-url="https://example.com"]')
+        has=page.locator('.run-scan-button[data-website-url="https://example.com/"]')
     )
     card.locator(".card-toggle").click()
     page.get_by_role("tab", name="Updates").click()
@@ -151,7 +153,7 @@ def test_cancelling_run_all_scans_skips_the_websites_left(
     with page.expect_navigation(timeout=60_000):
         page.locator("#run-all-scans-button").click()
         expect(cancel).to_be_visible()
-        _wait_until(lambda: len(queued_crawls) > 0, "a website's scan started")
+        _wait_until(lambda: len(scan_queue.queued_urls) > 0, "a website's scan started")
         cancel.click()
 
     expect(cancel).to_be_hidden()
@@ -167,7 +169,7 @@ def test_run_all_scans_can_be_cancelled_after_a_refresh(
     _add_slow_websites(app_server)
     page = open_dashboard()
     page.locator("#run-all-scans-button").click()
-    _wait_until(lambda: len(queued_crawls) > 0, "a website's scan started")
+    _wait_until(lambda: len(scan_queue.queued_urls) > 0, "a website's scan started")
 
     with page.expect_navigation():
         page.locator("#reloadPageBtn").click()

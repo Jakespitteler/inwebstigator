@@ -1,0 +1,96 @@
+/* Changes for browsers without blur, reduced motion and small windows. Loaded last. */
+
+
+/* FALLBACKS */
+
+/* Without backdrop blur the translucent surfaces are unreadable, so make them solid */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .change-record,
+    .website-card,
+    #add-website-form {
+        background: var(--surface-opaque);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+    }
+}
+
+
+/* MOBILE */
+
+@media (max-width: 700px) {
+    .dashboard-container {
+        width: 94%;
+        margin-top: 16px;
+    }
+
+    .dashboard-header {
+        padding: 12px 14px;
+    }
+
+    .dashboard-header h1 {
+        font-size: 20px;
+    }
+
+    .tab-buttons {
+        max-width: none;
+    }
+
+    .change-record,
+    .website-card,
+    #add-website-form {
+        padding: 18px;
+    }
+
+    .change-record.page-change-record {
+        padding: 14px;
+    }
+
+    .guide-review {
+        grid-template-columns: 1fr;
+        gap: 2px;
+    }
+
+    .guide-review dd {
+        margin-bottom: 10px;
+    }
+
+    .critical-page-list li,
+    .recipient-list li {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .comparison-table th,
+    .comparison-table td {
+        padding: 10px;
+    }
+}
+
+
+@media (max-width: 480px) {
+    .dashboard-header {
+        gap: 12px;
+    }
+
+    .dashboard-brand {
+        gap: 8px;
+    }
+
+    .brand-logo {
+        width: 56px;
+        height: 56px;
+    }
+
+    .dashboard-header .theme-toggle {
+        padding: 8px;
+    }
+
+    .dashboard-header #themeToggleLabel {
+        display: none;
+    }
+}

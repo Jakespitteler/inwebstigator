@@ -1,7 +1,7 @@
     {# Shared <head> content for every page. Each page sets its own <title>. #}
 
     <!-- Applies the saved light/dark theme before the first paint and wires up the theme toggle -->
-    <script src="{{ url_for('static', path='theme.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
 
     <!-- Fonts load without blocking the page; system fonts are used if offline -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -13,7 +13,20 @@
         onload="this.media='all'"
     >
 
-    <link
-        rel="stylesheet"
-        href="{{ url_for('static', path='style.css') }}"
-    >
+    <!-- The styles, split by part of the page. responsive.css is last, as it overrides the others -->
+    <link rel="stylesheet" href="{{ url_for('static', path='css/theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/base.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/dashboard-header.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/glass-cards.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/change-records.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/website-cards.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/collapsible-cards.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/forms.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/buttons.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/website-card-details.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/add-website-wizard.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/scan-status.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/confirm-dialog.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/site-footer.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/about-page.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/responsive.css') }}">

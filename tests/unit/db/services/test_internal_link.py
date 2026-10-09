@@ -2,16 +2,18 @@ import uuid
 from collections.abc import Sequence
 
 import pytest
+from pydantic import HttpUrl
 from sqlalchemy.orm import Session
 
-from app.core.errors import NotFoundError
+from app.core.errors import IntegrityError, NotFoundError
 from app.db.services.internal_link_service import InternalLinkService
+from app.db.services.website_service import WebsiteService
 from app.models.internal_link_models import (
     InternalLinkCreate,
     InternalLinkRead,
     InternalLinkUpdate,
 )
-from app.models.website_models import WebsiteRead
+from app.models.website_models import WebsiteCreate, WebsiteRead
 
 
 def test_get_all_internal_links(session: Session, test_internal_link: InternalLinkRead) -> None:
@@ -65,7 +67,7 @@ def test_get_internal_link_by_url_not_found(session: Session) -> None:
     Args:
         session: The database session fixture.
     """
-    non_existent_url = "https://www.test_website.com/non-existent-link"
+    non_existent_url = HttpUrl("https://www.test_website.com/non-existent-link")
 
     with pytest.raises(NotFoundError):
         InternalLinkService(session).get_by_url(url=non_existent_url)
@@ -79,7 +81,7 @@ def test_create_internal_link(session: Session, test_website: WebsiteRead) -> No
         session: The database session fixture.
     """
     internal_link_details = InternalLinkCreate(
-        url="https://www.test_website.com/test_internal_link",
+        url=HttpUrl("https://www.test_website.com/test_internal_link"),
         website_id=test_website.id,
     )
 
@@ -100,19 +102,55 @@ def test_create_batch_internal_links(session: Session, test_website: WebsiteRead
         test_website: The test website record.
     """
     urls = [
-        "https://www.test_website.com/batch_link_1",
-        "https://www.test_website.com/batch_link_2",
+        HttpUrl("https://www.test_website.com/batch_link_1"),
+        HttpUrl("https://www.test_website.com/batch_link_2"),
     ]
-    created_links: Sequence[InternalLinkRead] = InternalLinkService(session).create_batch(urls, test_website.id)
+    InternalLinkService(session).create_batch(urls, test_website.id)
 
-    assert len(created_links) == 2
-    for created_link, url in zip(created_links, urls, strict=True):
-        assert created_link.id is not None
-        assert created_link.url == url
-        assert created_link.website_id == test_website.id
+    for url in urls:
+        fetched_link: InternalLinkRead = InternalLinkService(session).get_by_url(url)
+        assert fetched_link.id is not None
+        assert fetched_link.website_id == test_website.id
 
-        fetched_link = InternalLinkService(session).get(id=created_link.id)
-        assert fetched_link.url == url
+
+def test_get_urls_for_website_returns_only_that_websites_links(
+    session: Session, test_website: WebsiteRead, test_internal_link: InternalLinkRead
+) -> None:
+    """
+    Tests the URLs of a website's internal links are returned, and not those of other websites.
+
+    Args:
+        session: The database session fixture.
+        test_website: The test website record.
+        test_internal_link: The test website's internal link.
+    """
+    service = InternalLinkService(session)
+    other_website = WebsiteService(session).create(WebsiteCreate(url=HttpUrl("https://other.example.com")))
+    service.create_batch([HttpUrl("https://other.example.com/page")], website_id=other_website.id)
+
+    assert service.get_urls_for_website(test_website.id) == [str(test_internal_link.url)]
+    assert service.get_urls_for_website(other_website.id) == ["https://other.example.com/page"]
+
+
+def test_delete_batch_deletes_more_links_than_one_statement_can_hold(
+    session: Session, test_website: WebsiteRead
+) -> None:
+    """
+    Tests deleting more links than SQLite allows values in one statement (e.g. a large website losing most of its
+    pages), which are deleted a chunk at a time, leaving the website's other links alone.
+
+    Args:
+        session: The database session fixture.
+        test_website: The test website record.
+    """
+    service = InternalLinkService(session)
+    removed_urls = [HttpUrl(f"https://www.test_website.com/removed/{number}") for number in range(40_000)]
+    kept_url = HttpUrl("https://www.test_website.com/kept")
+    service.create_batch([*removed_urls, kept_url], website_id=test_website.id)
+
+    service.delete_batch(urls=removed_urls, website_id=test_website.id)
+
+    assert service.get_urls_for_website(test_website.id) == [str(kept_url)]
 
 
 def test_update_internal_link(session: Session, test_internal_link: InternalLinkRead) -> None:
@@ -123,7 +161,7 @@ def test_update_internal_link(session: Session, test_internal_link: InternalLink
         session: The database session fixture.
         test_internal_link: The test critical page record.
     """
-    model_update = InternalLinkUpdate(url="https://www.test_website.com/updated_internal_link")
+    model_update = InternalLinkUpdate(url=HttpUrl("https://www.test_website.com/updated_internal_link"))
 
     updated_internal_link: InternalLinkRead = InternalLinkService(session).update(
         id=test_internal_link.id, model_update=model_update
@@ -160,8 +198,8 @@ def test_delete_batch_internal_links(session: Session, test_website: WebsiteRead
     """
     service = InternalLinkService(session)
     urls = [
-        "https://www.test_website.com/batch_delete_1",
-        "https://www.test_website.com/batch_delete_2",
+        HttpUrl("https://www.test_website.com/batch_delete_1"),
+        HttpUrl("https://www.test_website.com/batch_delete_2"),
     ]
     service.create_batch(urls, website_id=test_website.id)
 
@@ -175,14 +213,18 @@ def test_delete_batch_internal_links(session: Session, test_website: WebsiteRead
             service.get_by_url(url)
 
 
-def test_delete_batch_empty_urls(session: Session, test_website: WebsiteRead) -> None:
+def test_delete_batch_empty_urls(
+    session: Session, test_website: WebsiteRead, test_internal_link: InternalLinkRead
+) -> None:
     """
-    Tests that calling delete_batch with an empty sequence executes without error.
+    Tests that calling delete_batch with an empty sequence executes without error and deletes nothing.
 
     Args:
         session: The database session fixture.
     """
     InternalLinkService(session).delete_batch(urls=[], website_id=test_website.id)
+
+    assert InternalLinkService(session).get_urls_for_website(test_website.id) == [str(test_internal_link.url)]
 
 
 def test_get_internal_link_raises_not_found(session: Session) -> None:
@@ -203,7 +245,7 @@ def test_update_internal_link_raises_not_found(session: Session) -> None:
     Args:
         session: The database session fixture.
     """
-    model_update = InternalLinkUpdate(url="https://www.test_website.com/updated_link")
+    model_update = InternalLinkUpdate(url=HttpUrl("https://www.test_website.com/updated_link"))
     with pytest.raises(NotFoundError):
         InternalLinkService(session).update(id=uuid.uuid4(), model_update=model_update)
 
@@ -217,3 +259,68 @@ def test_delete_internal_link_raises_not_found(session: Session) -> None:
     """
     with pytest.raises(NotFoundError):
         InternalLinkService(session).delete(id=uuid.uuid4())
+
+
+def test_two_websites_can_save_the_same_page(session: Session, test_website: WebsiteRead) -> None:
+    """Tests overlapping websites (e.g. example.com and example.com/research) can both save a page they share, so
+    the second website's crawl does not fail."""
+    research_website = WebsiteService(session).create(WebsiteCreate(url=HttpUrl(f"{test_website.url}research")))
+    shared_page = HttpUrl(f"{test_website.url}research/projects")
+
+    InternalLinkService(session).create_batch([shared_page], website_id=test_website.id)
+    InternalLinkService(session).create_batch([shared_page], website_id=research_website.id)
+
+    assert InternalLinkService(session).get_urls_for_website(test_website.id) == [str(shared_page)]
+    assert InternalLinkService(session).get_urls_for_website(research_website.id) == [str(shared_page)]
+
+
+@pytest.fixture
+def overlapping_website(session: Session, test_website: WebsiteRead) -> WebsiteRead:
+    """Provides a second website that shares a page with the test website, which both have saved."""
+    research_website = WebsiteService(session).create(WebsiteCreate(url=HttpUrl(f"{test_website.url}research")))
+    for website in (test_website, research_website):
+        InternalLinkService(session).create_batch([HttpUrl(f"{test_website.url}research/projects")], website.id)
+    return research_website
+
+
+def test_delete_batch_only_deletes_the_given_websites_links(
+    session: Session, test_website: WebsiteRead, overlapping_website: WebsiteRead
+) -> None:
+    """Tests deleting a page from one website leaves the same page saved for another website."""
+    shared_page = HttpUrl(f"{test_website.url}research/projects")
+
+    InternalLinkService(session).delete_batch(urls=[shared_page], website_id=test_website.id)
+
+    assert InternalLinkService(session).get_urls_for_website(test_website.id) == []
+    assert InternalLinkService(session).get_urls_for_website(overlapping_website.id) == [str(shared_page)]
+
+
+def test_delete_all_for_website_only_deletes_that_websites_links(
+    session: Session, test_website: WebsiteRead, overlapping_website: WebsiteRead
+) -> None:
+    """Tests every link of one website is deleted, and another website's links are kept."""
+    InternalLinkService(session).delete_all_for_website(overlapping_website.id)
+
+    assert InternalLinkService(session).get_urls_for_website(overlapping_website.id) == []
+    assert InternalLinkService(session).get_urls_for_website(test_website.id) == [
+        f"{test_website.url}research/projects"
+    ]
+
+
+def test_create_batch_with_no_urls_saves_nothing(session: Session, test_website: WebsiteRead) -> None:
+    """Tests saving an empty list of links (e.g. a scan that found no new pages) does nothing, rather than failing."""
+    InternalLinkService(session).create_batch([], website_id=test_website.id)
+
+    assert InternalLinkService(session).get_urls_for_website(test_website.id) == []
+
+
+def test_a_website_cannot_save_the_same_page_twice(session: Session, test_internal_link: InternalLinkRead) -> None:
+    """Tests a page already saved for a website cannot be saved for it again, as links are unique per website."""
+    with pytest.raises(IntegrityError):
+        InternalLinkService(session).create_batch([test_internal_link.url], website_id=test_internal_link.website_id)
+
+
+def test_links_of_a_website_that_does_not_exist_are_refused(session: Session) -> None:
+    """Tests links cannot be saved for a website that does not exist, as foreign keys are checked."""
+    with pytest.raises(IntegrityError):
+        InternalLinkService(session).create_batch([HttpUrl("https://example.com/a")], website_id=uuid.uuid4())

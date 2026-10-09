@@ -1,12 +1,19 @@
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
-from sqlalchemy import Column, Engine, Integer, MetaData, String, Table, create_engine, insert, inspect, select
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+import sqlalchemy.exc
+from sqlalchemy import Column, Engine, Index, Integer, MetaData, String, Table, create_engine, insert, inspect, select
 
-from app.db.migrations import add_missing_columns, update_indexes
-from app.db.schema import Base, DBInternalLink, DBWebsite
+from app.db.migrations import (
+    UTC_TIMES_VERSION,
+    add_missing_columns,
+    add_missing_indexes,
+    convert_local_times_to_utc,
+    drop_outdated_unique_indexes,
+    prepare_database,
+)
 
 
 @pytest.fixture
@@ -64,86 +71,165 @@ def test_add_missing_columns_leaves_up_to_date_and_missing_tables_alone(
     assert len(inspect(old_database).get_columns("websites")) == 3
 
 
-# ======================================
-# update_indexes
-# ======================================
-
-
-def _indexes(engine: Engine, table_name: str) -> dict[str, tuple[tuple[str, ...], bool]]:
-    """Returns each index on a table as its columns and whether it is unique."""
-    return {
-        index["name"]: (tuple(index["column_names"]), bool(index["unique"]))
-        for index in inspect(engine).get_indexes(table_name)
-    }
-
-
-@pytest.fixture
-def database_with_links_unique_across_websites() -> Iterator[Engine]:
-    """Provides a database made by an older version of the app, where an internal link's URL had to be unique across
-    every website rather than within its website, holding one website with one link."""
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
+def test_prepare_database_lets_two_websites_save_the_same_page(tmp_path: Path) -> None:
+    """Tests a database made when internal links had to be unique across every website is updated, so overlapping
+    websites (e.g. example.com and example.com/research) can both save a page, but one website still cannot save it
+    twice."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
     with engine.begin() as connection:
-        connection.exec_driver_sql("DROP INDEX uq_internal_link_url_website")
-        connection.exec_driver_sql("DROP INDEX ix_internal_links_url")
+        connection.exec_driver_sql(
+            "CREATE TABLE internal_links (id CHAR(32) PRIMARY KEY, url VARCHAR, website_id CHAR(32))"
+        )
         connection.exec_driver_sql("CREATE UNIQUE INDEX ix_internal_links_url ON internal_links (url)")
 
-    with Session(engine) as session:
-        website = DBWebsite(url="https://example.com")
-        session.add(website)
-        session.flush()
-        session.add(DBInternalLink(url="https://example.com/news/story", website_id=website.id))
-        session.commit()
+    prepare_database(engine)
+    prepare_database(engine)  # Running it again changes nothing
 
-    yield engine
+    insert_link = "INSERT INTO internal_links (id, url, website_id) VALUES (?, 'https://example.com/a', ?)"
+    with engine.begin() as connection:
+        connection.exec_driver_sql(insert_link, ("1", "website-1"))
+        connection.exec_driver_sql(insert_link, ("2", "website-2"))
+    with pytest.raises(sqlalchemy.exc.IntegrityError), engine.begin() as connection:
+        connection.exec_driver_sql(insert_link, ("3", "website-1"))
     engine.dispose()
 
 
-def test_update_indexes_lets_overlapping_websites_share_internal_links(
-    database_with_links_unique_across_websites: Engine,
+PERTH: timezone = timezone(timedelta(hours=8))
+
+
+def _saved_scan_time(engine: Engine) -> str:
+    """Reads the one scan's time exactly as it is saved in the database."""
+    with engine.connect() as connection:
+        return connection.exec_driver_sql("SELECT scanned_at FROM scan_runs").scalar_one()
+
+
+def test_times_saved_in_local_time_are_converted_to_utc_once(tmp_path: Path) -> None:
+    """Tests a time an older version of the app saved in the computer's own time (Perth, UTC+8) is moved to UTC,
+    and is not moved again when the app next starts."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    with engine.begin() as connection:
+        connection.exec_driver_sql("CREATE TABLE scan_runs (id CHAR(32) PRIMARY KEY, scanned_at DATETIME)")
+        connection.exec_driver_sql("INSERT INTO scan_runs VALUES ('1', '2026-10-08 13:00:00.000000')")
+
+    convert_local_times_to_utc(engine, {"scan_runs": ("scanned_at",)}, local_time_zone=PERTH)
+    convert_local_times_to_utc(engine, {"scan_runs": ("scanned_at",)}, local_time_zone=PERTH)
+
+    assert _saved_scan_time(engine) == "2026-10-08 05:00:00.000000"
+    engine.dispose()
+
+
+def test_a_new_database_is_marked_as_saving_utc_times(tmp_path: Path) -> None:
+    """Tests a new database is marked as already using UTC, so a time the app saves later is never converted."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'new.db'}")
+    prepare_database(engine)
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "INSERT INTO websites (id, url, recommended_delay, recommended_concurrent, days_between_scans, active, "
+            "failed_attempts_at_min_speed) VALUES ('1', 'https://example.com', 0.5, 5, 1, 1, 0)"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO scan_runs (id, website_id, scanned_at, status) "
+            "VALUES ('1', '1', '2026-10-08 05:00:00.000000', 'success')"
+        )
+
+    prepare_database(engine)
+
+    assert _saved_scan_time(engine) == "2026-10-08 05:00:00.000000"
+    engine.dispose()
+
+
+def _index_names(engine: Engine, table_name: str) -> list[str | None]:
+    """Lists the names of a table's indexes as the database has them."""
+    return [index["name"] for index in inspect(engine).get_indexes(table_name)]
+
+
+def test_drop_outdated_unique_indexes_keeps_an_index_that_is_not_unique_and_skips_missing_tables(
+    tmp_path: Path,
 ) -> None:
-    """Tests upgrading makes links unique within their website, keeping existing links, so another website can save
-    the same link while one website still cannot save it twice."""
-    engine = database_with_links_unique_across_websites
+    """Tests only a unique index with an outdated name is dropped, so a plain index of the same name is kept, and a
+    table that does not exist yet is skipped rather than failing."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    with engine.begin() as connection:
+        connection.exec_driver_sql("CREATE TABLE internal_links (id CHAR(32) PRIMARY KEY, url VARCHAR)")
+        connection.exec_driver_sql("CREATE INDEX ix_internal_links_url ON internal_links (url)")
 
-    update_indexes(engine, Base.metadata)
+    drop_outdated_unique_indexes(engine, {"ix_internal_links_url": "internal_links", "ix_missing_url": "missing_table"})
 
-    assert _indexes(engine, "internal_links") == {
-        "ix_internal_links_url": (("url",), False),
-        "uq_internal_link_url_website": (("url", "website_id"), True),
-    }
-    with Session(engine) as session:
-        first_website = session.scalars(select(DBWebsite)).one()
-        assert [link.url for link in first_website.internal_links] == ["https://example.com/news/story"]
-
-        news_section = DBWebsite(url="https://example.com/news")
-        session.add(news_section)
-        session.flush()
-        session.add(DBInternalLink(url="https://example.com/news/story", website_id=news_section.id))
-        session.commit()
-
-        session.add(DBInternalLink(url="https://example.com/news/story", website_id=news_section.id))
-        with pytest.raises(IntegrityError):
-            session.commit()
+    assert _index_names(engine, "internal_links") == ["ix_internal_links_url"]
+    engine.dispose()
 
 
-def test_update_indexes_leaves_up_to_date_and_missing_tables_alone(
-    database_with_links_unique_across_websites: Engine,
+def test_add_missing_indexes_adds_new_indexes_to_existing_tables_only(
+    old_database: Engine, current_metadata: MetaData
 ) -> None:
-    """Tests running it again changes nothing, a database made by this version is already up to date, and tables not
-    created yet are left for `create_all()` to make."""
-    engine = database_with_links_unique_across_websites
-    update_indexes(engine, Base.metadata)
-    upgraded = _indexes(engine, "internal_links")
+    """Tests an index added to the model of an existing table is created, while a table not created yet is left for
+    `create_all()` to make, and running it again changes nothing."""
+    Index("ix_websites_nickname", current_metadata.tables["websites"].c.nickname)
+    Index("ix_new_table_id", current_metadata.tables["new_table"].c.id)
+    add_missing_columns(old_database, current_metadata)
 
-    update_indexes(engine, Base.metadata)
-    assert _indexes(engine, "internal_links") == upgraded
+    add_missing_indexes(old_database, current_metadata)
+    add_missing_indexes(old_database, current_metadata)
 
-    fresh_engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(fresh_engine)
-    update_indexes(fresh_engine, Base.metadata)
-    assert _indexes(fresh_engine, "internal_links") == upgraded
+    assert _index_names(old_database, "websites") == ["ix_websites_nickname"]
+    assert inspect(old_database).get_table_names() == ["websites"]
 
-    empty_engine = create_engine("sqlite:///:memory:")
-    update_indexes(empty_engine, Base.metadata)
-    assert inspect(empty_engine).get_table_names() == []
+
+def test_prepare_database_adds_new_columns_to_an_older_database_keeping_its_rows(tmp_path: Path) -> None:
+    """Tests a critical pages table made before the failure columns existed gains them, with the existing page given
+    the column's default of 0 failures and no failure reason."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE critical_pages (id CHAR(32) PRIMARY KEY, created_at DATETIME, updated_at DATETIME, "
+            "url VARCHAR NOT NULL, website_id CHAR(32) NOT NULL)"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO critical_pages (id, url, website_id) VALUES ('1', 'https://example.com/', 'website-1')"
+        )
+
+    prepare_database(engine)
+
+    with engine.connect() as connection:
+        saved_page = connection.exec_driver_sql(
+            "SELECT url, consecutive_failures, last_failure_reason FROM critical_pages"
+        ).one()
+    assert tuple(saved_page) == ("https://example.com/", 0, None)
+    engine.dispose()
+
+
+def test_converting_times_skips_missing_tables_and_empty_times(tmp_path: Path) -> None:
+    """Tests a table an older database does not have is skipped, a time that was never set stays empty, and the
+    database is still marked as converted."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE scan_runs (id CHAR(32) PRIMARY KEY, scanned_at DATETIME, notified_at DATETIME)"
+        )
+        connection.exec_driver_sql("INSERT INTO scan_runs VALUES ('1', '2026-10-08 13:00:00.000000', NULL)")
+
+    convert_local_times_to_utc(
+        engine, {"websites": ("last_scan_at",), "scan_runs": ("scanned_at", "notified_at")}, local_time_zone=PERTH
+    )
+
+    with engine.connect() as connection:
+        saved_times = connection.exec_driver_sql("SELECT scanned_at, notified_at FROM scan_runs").one()
+        database_version = connection.exec_driver_sql("PRAGMA user_version").scalar_one()
+    assert tuple(saved_times) == ("2026-10-08 05:00:00.000000", None)
+    assert database_version == UTC_TIMES_VERSION
+    engine.dispose()
+
+
+def test_times_are_converted_from_the_computers_own_time_zone_by_default(tmp_path: Path) -> None:
+    """Tests a saved time is read as the computer's own local time when no time zone is given."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    with engine.begin() as connection:
+        connection.exec_driver_sql("CREATE TABLE scan_runs (id CHAR(32) PRIMARY KEY, scanned_at DATETIME)")
+        connection.exec_driver_sql("INSERT INTO scan_runs VALUES ('1', '2026-10-08 13:00:00.000000')")
+
+    convert_local_times_to_utc(engine, {"scan_runs": ("scanned_at",)})
+
+    local_time = datetime(2026, 10, 8, 13, 0).astimezone()  # 13:00 in the computer's own time zone
+    expected_utc_time = local_time.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")
+    assert _saved_scan_time(engine) == expected_utc_time
+    engine.dispose()

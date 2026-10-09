@@ -1,0 +1,37 @@
+{% set SYMBOLS = {"added": "+", "removed": "-"} %}
+
+{% macro section_title(text, severity="") -%}
+<h3 class="section-title{% if severity %} {{ severity }}{% endif %}">{{ text }}</h3>
+{%- endmacro %}
+
+{% macro change_label(text) -%}
+<p class="change-label">{{ text }}:</p>
+{%- endmacro %}
+
+{% macro link(url) -%}
+{% if (url | string).lower().startswith(("http://", "https://")) %}<a href="{{ url }}" class="link-active">{{ url }}</a>{% else %}<span class="link-inactive">{{ url }}</span>{% endif %}
+{%- endmacro %}
+
+{% macro badge(kind, text) -%}
+<span class="badge {{ kind }}">{{ SYMBOLS[kind] }} {{ text }}</span>
+{%- endmacro %}
+
+{% macro badge_list(kind, items) -%}
+<ul class="change-list">
+{% for item in items %}
+<li class="change-item">{{ badge(kind, item) }}</li>
+{% endfor %}
+</ul>
+{%- endmacro %}
+
+{% macro heading_label(heading) -%}
+{% if heading %}<strong class="block-heading">[{{ heading }}] </strong>{% endif %}
+{%- endmacro %}
+
+{% macro text_block(kind, block) -%}
+<div class="text-block {{ kind }}">{{ heading_label(block.parent_heading) }}{{ block.text }}</div>
+{%- endmacro %}
+
+{% macro words(diff_words, kind) -%}
+{% for word in diff_words %}{% if not loop.first %} {% endif %}{% if word.change == "same" %}{{ word.text }}{% else %}<span class="word-changed {{ kind }}">{{ word.text }}</span>{% endif %}{% endfor %}
+{%- endmacro %}

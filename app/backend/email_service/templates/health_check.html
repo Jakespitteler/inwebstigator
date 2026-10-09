@@ -1,0 +1,17 @@
+{% extends "card.html" %}
+
+{% block title %}Health check{% endblock %}
+
+{% block content %}
+<p class="header-meta">Sent {{ sent_at }}</p>
+{% if needs_attention %}
+<p class="paragraph-summary">Some of your websites are not being fully monitored. Check them on the dashboard.</p>
+{% else %}
+<p class="paragraph-summary">Monitoring is running, and no changes have been found since your last email.</p>
+{% endif %}
+<ul class="plain-list">
+{% for health in website_healths %}
+<li class="health-item"><strong{% if health.needs_attention %} class="needs-attention"{% endif %}>{{ health.url }}</strong>: {{ health.status }}</li>
+{% endfor %}
+</ul>
+{% endblock %}

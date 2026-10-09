@@ -8,6 +8,7 @@
         "autoflush",
         "autojunk",
         "autouse",
+        "AWST",
         "dtick",
         "getfixturevalue",
         "inwebstigator",
