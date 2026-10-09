@@ -1,22 +1,30 @@
 # Inwebstigator: User Guide
 
 Inwebstigator watches websites for you. It checks the websites you choose on a
-schedule, shows you what changed, and emails you about it, so you don't have to
-keep checking them yourself.
+schedule, shows you what changed, and emails you about it, so you don't have to keep checking them yourself.
 
 This is a test version. If anything is confusing or doesn't work, please let
 the team know.
 
 **Contents**
 
-- [Getting started](#getting-started)
-- [Adding a website](#adding-a-website)
-- [The Websites tab](#the-websites-tab)
-- [The Updates tab](#the-updates-tab)
-- [Emails you'll receive](#emails-youll-receive)
-- [Keeping Inwebstigator running](#keeping-inwebstigator-running)
-- [If something goes wrong](#if-something-goes-wrong)
-- [Good to know](#good-to-know)
+- [Inwebstigator: User Guide](#inwebstigator-user-guide)
+  - [Getting started](#getting-started)
+    - [Open Inwebstigator](#open-inwebstigator)
+    - [Around the dashboard](#around-the-dashboard)
+  - [Adding a website](#adding-a-website)
+    - [If a website can't be added](#if-a-website-cant-be-added)
+  - [The Websites tab](#the-websites-tab)
+    - [Scanning a website now](#scanning-a-website-now)
+    - [Critical pages](#critical-pages)
+    - [Notification emails](#notification-emails)
+    - [Scan settings](#scan-settings)
+    - [Deleting a website](#deleting-a-website)
+  - [The Updates tab](#the-updates-tab)
+  - [Emails you'll receive](#emails-youll-receive)
+  - [Keeping Inwebstigator running](#keeping-inwebstigator-running)
+  - [If something goes wrong](#if-something-goes-wrong)
+  - [Good to know](#good-to-know)
 
 ---
 

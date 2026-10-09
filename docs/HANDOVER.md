@@ -84,7 +84,7 @@ the unit coordinator and the client who owns the code.
 
 ---
 
-## Your first day
+## First steps
 
 1. Start your own repository as above, or get added to the one your team made.
 2. Follow the README's [Setting up](../README.md#setting-up) and
@@ -142,15 +142,10 @@ time. INSTALL.md tells users how to get past this.
 
 ### Branches not yet in `main`
 
-If any of these are still open on the original repository when you start,
+If any branches are still open on the original repository when you start,
 bring the branch over as shown in
 [Starting your own repository](#starting-your-own-repository).
 
-| Branch | What it is | What's needed |
-| --- | --- | --- |
-| `about-page-footer` ([#105](https://github.com/Jakespitteler/inwebstigator/pull/105)) | The About page, footer, Refresh button and home link. INSTALL.md already describes these. | Ready to merge. |
-| `dashboard-browser-tests` | The browser tests in `tests/e2e/`. | Ready to merge. One more set of tests (the About page, footer and Refresh) is planned for after `about-page-footer`. |
-| `jake-bug-fixes` ([#99](https://github.com/Jakespitteler/inwebstigator/pull/99)) | A large restructure: it moves most of `app/` into new packages, splits the CSS and JavaScript into files, and adds `changes` and `scan_runs` tables (the start of scan history, #71). | Has merge conflicts. Merging it changes most file paths in ARCHITECTURE.md and the README, so they'll need updating. It also changes the database, so test it against a database made by the current version. |
 
 The original repository's other branches (`demo`, `diff_check`,
 `weekly-changes-dashboard`, `windows-executable` and older ones) are from
@@ -160,14 +155,6 @@ earlier in the project and out of date. There's no need to bring them over.
 
 Open issues from the original repository that still need doing:
 
-| Original issue | What's left |
-| --- | --- |
-| [#89](https://github.com/Jakespitteler/inwebstigator/issues/89) A trailing slash makes a duplicate critical page | **Still a bug.** See [Known issues](#known-issues). |
-| [#82](https://github.com/Jakespitteler/inwebstigator/issues/82) Two emails are sent when a website is added | The confirmation, then "Website monitoring started". Decide with Jay Jay whether to merge them or drop one. |
-| [#83](https://github.com/Jakespitteler/inwebstigator/issues/83) Cancel button for Run All Scans | Each website's scan can be cancelled, but not the whole run. |
-| [#71](https://github.com/Jakespitteler/inwebstigator/issues/71) Keep the last 7 scans | Started in `jake-bug-fixes`. Today only each page's latest change is kept. |
-| [#98](https://github.com/Jakespitteler/inwebstigator/issues/98) Test that the scheduler is working | `tests/unit/test_scheduler.py` covers the logic. Still worth leaving the app running for a few days to watch scheduled scans and health checks happen for real. |
-| [#21](https://github.com/Jakespitteler/inwebstigator/issues/21) How many requests TEQSA allows | The crawler already slows down when blocked, so this is about choosing better default speeds. |
 
 [#12](https://github.com/Jakespitteler/inwebstigator/issues/12) (sitemaps) and
 [#9](https://github.com/Jakespitteler/inwebstigator/issues/9) (text hashing)
@@ -220,18 +207,16 @@ Why it's built the way it is, and what each choice costs.
 
 Roughly in order of how much they'd help the client:
 
-1. **Bring over the unfinished branches:** `about-page-footer`, the browser
-   tests, and `jake-bug-fixes` (with its conflicts fixed), then update the docs
-   for its new file layout.
-2. **Fix the known issues above.** Most are small.
-3. **Start automatically with Windows.** A "start Inwebstigator when I log in"
+
+1. **Fix the known issues above.** Most are small.
+2. **Start automatically with Windows.** A "start Inwebstigator when I log in"
    option would stop scans silently stopping after a restart.
-4. **Write logs to a file** in the data folder, and add a way to open it from
+3. **Write logs to a file** in the data folder, and add a way to open it from
    the tray, so the client can send them.
-5. **Scan history (#71).** Keep past changes rather than only the latest.
-6. **Automate releases:** a GitHub Actions workflow on Windows that runs the
+4. **Scan history (#71).** Keep past changes rather than only the latest.
+5. **Automate releases:** a GitHub Actions workflow on Windows that runs the
    tests and builds the zip (without `.env`, which would be added by hand).
-7. **Sign the `.exe`** so Windows stops warning about it.
+6. **Sign the `.exe`** so Windows stops warning about it.
 
 ---
 
