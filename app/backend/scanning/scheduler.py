@@ -6,11 +6,12 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler  # pyright: ignore[r
 from fastapi import FastAPI
 
 from app.backend.email_service.delivery import EmailSender, get_email_sender
-from app.backend.scanning.all_websites_scan import scan_all_websites
+from app.backend.scanning.all_websites_scan import latest_check_time, scan_all_websites
 from app.backend.scanning.health_checks import send_due_health_checks
 from app.core.config import config
 
 SCAN_JOB_ID: str = "scan_then_send_health_checks"
+CATCH_UP_JOB_ID: str = "catch_up_on_missed_checks"
 scheduler = AsyncIOScheduler()
 
 
@@ -38,27 +39,14 @@ def next_scheduled_check() -> datetime | None:
     return job.next_run_time if job else None  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
 
 
-def restart_scan_countdown() -> None:
-    """Restarts the countdown to the next scheduled check, e.g. after every website has just been scanned on demand.
-
-    The job is given a new interval trigger, which first fires one interval from now. Does nothing if automatic
-    scans are not running.
-    """
-    if scheduler.get_job(SCAN_JOB_ID) is None:  # pyright: ignore[reportUnknownMemberType]
-        return
-    scheduler.reschedule_job(  # pyright: ignore[reportUnknownMemberType]
-        job_id=SCAN_JOB_ID,
-        trigger="interval",
-        days=config.scheduler_minimum_days_between_scans,
-    )
-
-
 @asynccontextmanager
 async def schedule_scans(app: FastAPI) -> AsyncGenerator[None]:
     """FastAPI lifespan that runs the scans and health checks on a schedule while the app is running.
 
-    The first run is shortly after startup, to catch up on anything missed while the app was closed. A run that is
-    late (e.g. because the computer was asleep) still happens.
+    The checks are at the same times every day (8am and 8pm by default, see `latest_check_time`), whenever the app
+    was started. One more check runs shortly after startup, to catch up on a check missed while the app or the
+    computer was off (e.g. this morning's), which only scans the websites that missed it. A check that is late (e.g.
+    because the computer was asleep) still happens.
 
     Args:
         app: The application instance.
@@ -66,13 +54,22 @@ async def schedule_scans(app: FastAPI) -> AsyncGenerator[None]:
     Yields:
         Control back to FastAPI while the scheduler is running.
     """
+    started_at: datetime = datetime.now(UTC)
     scheduler.add_job(  # pyright: ignore[reportUnknownMemberType]
         func=scan_then_send_health_checks,
         trigger="interval",
         days=config.scheduler_minimum_days_between_scans,
-        next_run_time=datetime.now(UTC) + timedelta(seconds=1),
+        start_date=latest_check_time(started_at),  # Lines the checks up with the scan time, e.g. 8am and 8pm
         misfire_grace_time=None,
         id=SCAN_JOB_ID,
+        replace_existing=True,
+    )
+    scheduler.add_job(  # pyright: ignore[reportUnknownMemberType]
+        func=scan_then_send_health_checks,
+        trigger="date",
+        run_date=started_at + timedelta(seconds=1),
+        misfire_grace_time=None,
+        id=CATCH_UP_JOB_ID,
         replace_existing=True,
     )
 

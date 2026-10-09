@@ -166,22 +166,26 @@ There is no separate scheduler process: it starts and stops with the app
 (`app/backend/scanning/scheduler.py`, run from the FastAPI lifespan), so scans only happen while
 Inwebstigator is running. Set `AUTOMATIC_SCANS=false` to turn it off.
 
-It runs every 12 hours (`SCHEDULER_MINIMUM_DAYS_BETWEEN_SCANS`), first a second
-after the app starts, so a computer that was off at the usual time catches up
-as soon as the app opens. Each run:
+It checks at 8am and 8pm on the computer's clock (`SCHEDULER_SCAN_TIME`, then
+every `SCHEDULER_MINIMUM_DAYS_BETWEEN_SCANS`), at the same times whenever the app
+was started. It also checks a second after the app starts, so a check missed
+while the computer or the app was off (e.g. that morning's) catches up as soon
+as the app opens. Each run:
 
 1. Scans each website whose own "days between scans" has passed since its last
-   scan, skipping websites on cooldown. The time is counted from the exact time
-   of the last scan, less `SCHEDULER_SCAN_DUE_TOLERANCE_MINUTES`, so a run that
-   starts a few seconds early still counts. Each recipient is emailed one
-   report of the changes, and of any scans that failed.
+   scan, skipping websites on cooldown. The time is counted between the checks
+   the last scan and this run fall in, so a scan that ran late (e.g. at 5pm,
+   after the 8am check was missed) is still followed by one at the next
+   morning's check. `SCHEDULER_SCAN_DUE_TOLERANCE_MINUTES` lets an interval that
+   doesn't line up with the checks be scanned at the nearest one. Each
+   recipient is emailed one report of the changes, and of any scans that failed.
 2. Sends a health check to each recipient still on a website who has not been
    emailed for their `days_between_health_checks` (7 by default). Being sent a
    confirmation when added to a website counts as being emailed.
 
-"Run All Scans" on the dashboard scans every website straight away and restarts
-the 12-hour countdown. A run that raises is logged, and the next run happens as
-normal.
+"Run All Scans" on the dashboard scans every website straight away, and the
+scheduled checks carry on at their usual times. A run that raises is logged, and
+the next run happens as normal.
 
 ### run the app
 

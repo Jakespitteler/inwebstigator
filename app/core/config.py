@@ -1,4 +1,5 @@
 import secrets
+from datetime import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -83,6 +84,9 @@ class Config(BaseSettings):
 
     scans_kept_per_website: int = 7
 
+    # The scheduled checks are at this time on the computer's clock, then every minimum interval after it (8am and
+    # 8pm by default), so scans happen at the same times whenever the app was started
+    scheduler_scan_time: time = time(8, 0)
     scheduler_minimum_days_between_scans: float = 0.5
     scheduler_default_days_between_scans: float = 1
     scheduler_default_days_between_health_checks: float = 7

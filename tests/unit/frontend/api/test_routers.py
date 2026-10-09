@@ -452,17 +452,15 @@ def test_hosted_names_are_used_in_compact_cards_and_updates(api_client: TestClie
     assert last_scan.get_text(strip=True) == "Not scanned yet"
 
 
-def test_run_all_scans_every_website_and_restarts_the_countdown(
+def test_run_all_scans_every_website(
     api_client: TestClient, mocker: MockerFixture, email_sender: FakeEmailSender
 ) -> None:
-    """Tests "Run All Scans" restarts the countdown to the next scheduled check and scans every website, due or not."""
-    mock_restart_scan_countdown = mocker.patch("app.frontend.api.routers.restart_scan_countdown")
+    """Tests "Run All Scans" scans every website, due or not."""
     mock_scan_all_websites_now = mocker.patch("app.frontend.api.routers.scan_all_websites_now", return_value=None)
 
     response = api_client.post("/scanner/run_all")
 
     assert response.status_code == 200, response.text
-    mock_restart_scan_countdown.assert_called_once()
     mock_scan_all_websites_now.assert_awaited_once_with(email_sender=email_sender)
 
 

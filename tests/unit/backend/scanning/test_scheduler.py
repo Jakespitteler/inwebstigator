@@ -1,15 +1,15 @@
 import asyncio
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 
 import pytest
 from apscheduler.schedulers.asyncio import AsyncIOScheduler  # pyright: ignore[reportMissingTypeStubs]
 from fastapi import FastAPI
 from pytest_mock import MockerFixture
 
+from app.backend.scanning.all_websites_scan import latest_check_time
 from app.backend.scanning.scheduler import (
     next_scheduled_check,
-    restart_scan_countdown,
     scan_then_send_health_checks,
     schedule_scans,
     scheduler,
@@ -51,56 +51,56 @@ async def test_scan_then_send_health_checks_sends_no_health_checks_when_the_scan
 
 
 @pytest.mark.anyio
-async def test_restart_scan_countdown_gives_the_scan_job_a_new_interval_from_now(mocker: MockerFixture) -> None:
-    """Tests that restarting the countdown (after "Run All Scans") moves the next scheduled check from shortly after
-    startup to one full interval from now, as a real scheduler sees it."""
+async def test_scheduled_checks_are_at_the_scan_time_whenever_the_app_started(mocker: MockerFixture) -> None:
+    """Tests the next scheduled check is the next 8am or 8pm on the computer's clock, rather than counted from when
+    the app started, as a real scheduler sees it."""
+    mocker.patch.object(config, "scheduler_scan_time", time(8, 0))
+    mocker.patch.object(config, "scheduler_minimum_days_between_scans", 0.5)
     mocker.patch("app.backend.scanning.scheduler.scheduler", AsyncIOScheduler())
     mocker.patch("app.backend.scanning.scheduler.scan_then_send_health_checks", _do_nothing)
-    interval = timedelta(days=config.scheduler_minimum_days_between_scans)
+    started_at = datetime.now(UTC)
 
     async with schedule_scans(FastAPI()):
-        first_check = next_scheduled_check()
-        restarted_at = datetime.now(UTC)
-        restart_scan_countdown()
         next_check = next_scheduled_check()
 
-    assert first_check is not None and first_check <= restarted_at + timedelta(seconds=1)
     assert next_check is not None
-    assert restarted_at + interval <= next_check <= datetime.now(UTC) + interval
-
-
-def test_restart_scan_countdown_does_nothing_when_automatic_scans_are_off(mocker: MockerFixture) -> None:
-    """Tests nothing is rescheduled when there is no scan job, as automatic scans are not running."""
-    mocker.patch.object(scheduler, "get_job", return_value=None)
-    mock_reschedule_job = mocker.patch.object(scheduler, "reschedule_job")
-
-    restart_scan_countdown()
-
-    mock_reschedule_job.assert_not_called()
+    assert next_check == latest_check_time(started_at) + timedelta(hours=12)
+    assert next_check.astimezone().time() in (time(8, 0), time(20, 0))
 
 
 @pytest.mark.anyio
 async def test_schedule_scans_lifespan(mocker: MockerFixture) -> None:
-    """Tests lifespan initialisation: one job covering scans and health checks, first run shortly after
-    startup to catch up on anything missed while the app was closed, and the scheduler's lifecycle."""
+    """Tests lifespan initialisation: one job for the scans and health checks at the scheduled checks, one more
+    shortly after startup to catch up on a check missed while the app was closed, and the scheduler's lifecycle."""
     mock_add_job = mocker.patch.object(scheduler, "add_job")
     mock_start = mocker.patch.object(scheduler, "start")
     mock_shutdown = mocker.patch.object(scheduler, "shutdown")
     started_at = datetime.now(UTC)
 
     async with schedule_scans(FastAPI()):
-        mock_add_job.assert_called_once()
-        assert mock_add_job.call_args.args == ()
-        job_options = dict(mock_add_job.call_args.kwargs)
-        next_run_time = job_options.pop("next_run_time")
-        assert started_at < next_run_time <= datetime.now(UTC) + timedelta(seconds=1)
-        assert job_options == {
+        scheduled_checks, catch_up = mock_add_job.call_args_list
+        assert scheduled_checks.args == catch_up.args == ()
+
+        scheduled_options = dict(scheduled_checks.kwargs)
+        assert scheduled_options.pop("start_date") == latest_check_time(started_at)  # Lined up with the scan time
+        assert scheduled_options == {
             "func": scan_then_send_health_checks,
             "trigger": "interval",
             "days": config.scheduler_minimum_days_between_scans,
             "misfire_grace_time": None,  # a late run (e.g. after the computer slept) still happens
             "id": "scan_then_send_health_checks",
             "replace_existing": True,  # a restarted lifespan does not add a duplicate job
+        }
+
+        catch_up_options = dict(catch_up.kwargs)
+        run_date = catch_up_options.pop("run_date")
+        assert started_at < run_date <= datetime.now(UTC) + timedelta(seconds=1)
+        assert catch_up_options == {
+            "func": scan_then_send_health_checks,
+            "trigger": "date",
+            "misfire_grace_time": None,
+            "id": "catch_up_on_missed_checks",
+            "replace_existing": True,
         }
         mock_start.assert_called_once()
         mock_shutdown.assert_not_called()

@@ -11,7 +11,7 @@ from app.backend.email_service.delivery import EmailSender, get_email_sender
 from app.backend.scanning.all_websites_scan import cancel_run_all, run_all_in_progress, scan_all_websites_now
 from app.backend.scanning.manual_scan import scan_website_now
 from app.backend.scanning.scan_queue import scan_queue
-from app.backend.scanning.scheduler import next_scheduled_check, restart_scan_countdown
+from app.backend.scanning.scheduler import next_scheduled_check
 from app.backend.websites.website_setup import (
     add_critical_page,
     add_website,
@@ -160,9 +160,9 @@ async def critical_page_initial_scan(
 async def scan_websites(email_sender: EmailSenderDep) -> str | None:
     """Scans every website now for "Run All Scans", emailing each recipient one report of all the changes found.
 
-    Websites that are not due a scan yet are included, while websites on cooldown are still skipped. The countdown
-    to the next scheduled check restarts, as every website is being scanned now. It can be stopped part way through
-    with `/scanner/cancel_all`.
+    Websites that are not due a scan yet are included, while websites on cooldown are still skipped. The scheduled
+    checks carry on at their usual times, and only scan these websites again once they are next due. It can be
+    stopped part way through with `/scanner/cancel_all`.
 
     Args:
         email_sender (EmailSenderDep): Sends the reports.
@@ -176,7 +176,6 @@ async def scan_websites(email_sender: EmailSenderDep) -> str | None:
     if run_all_in_progress():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Run All Scans is already running.")
 
-    restart_scan_countdown()
     return await scan_all_websites_now(email_sender=email_sender)
 
 
