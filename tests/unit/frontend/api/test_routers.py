@@ -321,6 +321,27 @@ def test_dashboard_shows_run_all_cancel_button_only_while_run_all_scans_is_runni
     assert cancel_button.has_attr("hidden") is not running
 
 
+def test_background_scan_note_can_be_closed_for_now_or_for_good(
+    api_client: TestClient, test_website: website_models.WebsiteRead
+) -> None:
+    """Tests the "you can close this window" note starts hidden, and has a cross to hide it until the next scan
+    as well as a separate "Don't show again" button to stop it showing again."""
+    dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
+
+    note = dashboard.select_one("#background-scan-note")
+    assert note is not None and note.has_attr("hidden")  # Only shown while a scan runs
+
+    close_button = note.select_one("#close-background-scan-note")
+    assert close_button is not None
+    assert close_button.get("type") == "button"  # Doesn't submit anything
+    assert close_button.get("aria-label") == "Hide this note until the next scan"
+
+    dismiss_button = note.select_one("#hide-background-scan-note")
+    assert dismiss_button is not None
+    assert dismiss_button.get("type") == "button"
+    assert " ".join(dismiss_button.get_text().split()) == "Don't show again"
+
+
 def test_manual_scan_records_scan_time(
     api_client: TestClient, session: Session, test_website: website_models.WebsiteRead, mocker: MockerFixture
 ) -> None:
