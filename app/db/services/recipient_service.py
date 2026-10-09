@@ -39,6 +39,11 @@ class RecipientService(BaseCRUDService[DBRecipient, RecipientRead, RecipientCrea
         recipient_records: Sequence[DBRecipient] = self._db.scalars(statement).all()
         return [RecipientRead.model_validate(recipient_record) for recipient_record in recipient_records]
 
+    def get_email_addresses(self) -> list[str]:
+        """List all saved addresses for suggestions, including recipients not linked to a website."""
+        addresses: Sequence[str] = self._db.scalars(select(DBRecipient.email)).all()
+        return sorted(addresses, key=str.casefold)
+
     def get_by_email(self, email: EmailStr) -> RecipientRead:
         """Retrieves a single recipient record and its relationships by its associated email attribute.
 

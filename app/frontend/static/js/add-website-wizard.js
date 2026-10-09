@@ -157,6 +157,9 @@ if (addRecipientEmailButton) {
                 document.createElement("input");
 
             input.type = "email";
+            input.setAttribute("data-saved-email-input", "");
+            input.autocomplete = "off";
+            input.setAttribute("aria-label", "Notification email");
             input.className =
                 "recipient-email-input";
             input.placeholder =

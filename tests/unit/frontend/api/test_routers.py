@@ -16,7 +16,6 @@ from pytest_mock import MockerFixture
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.backend.crawler.links import website_name
 from app.backend.email_service.message_builder import OutgoingEmail
 from app.backend.scanning.scan_queue import ScanQueue, scan_queue
 from app.core.config import config
@@ -234,14 +233,17 @@ def _next_check_text(api_client: TestClient) -> str | None:
 
 
 def _last_scan_by_website(api_client: TestClient) -> dict[str, str]:
-    """Returns each website card's "Last scanned" line, keyed by the website's display name."""
+    """Returns each website card's "Last scanned" line, keyed by its full URL."""
     response = api_client.get("/")
     assert response.status_code == 200, response.text
     cards = BeautifulSoup(response.text, "html.parser").select(".website-card")
-    return {
-        card["data-website-name"]: " ".join(card.select_one(".last-scan").get_text().split())  # type: ignore[union-attr]
-        for card in cards
-    }
+    scan_times: dict[str, str] = {}
+    for card in cards:
+        button = card.select_one(".run-scan-button")
+        timestamp = card.select_one(".last-scan")
+        assert button is not None and timestamp is not None
+        scan_times[str(button["data-website-url"])] = " ".join(timestamp.get_text().split())
+    return scan_times
 
 
 def test_dashboard_shows_each_websites_own_scan_time(api_client: TestClient, session: Session) -> None:
@@ -256,9 +258,9 @@ def test_dashboard_shows_each_websites_own_scan_time(api_client: TestClient, ses
     session.flush()
 
     assert _last_scan_by_website(api_client) == {
-        "older.example.com": "Last scanned 28 Sep 2026, 09:05",
-        "newer.example.com": "Last scanned 01 Oct 2026, 14:30",
-        "never-scanned.example.com": "Not scanned yet",
+        "https://older.example.com/": "Last scanned 28 Sep 2026, 09:05",
+        "https://newer.example.com/": "Last scanned 01 Oct 2026, 14:30",
+        "https://never-scanned.example.com/": "Not scanned yet",
     }
 
 
@@ -358,11 +360,11 @@ def test_updates_are_listed_most_recent_change_first(api_client: TestClient, ses
     session.flush()
 
     dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
-    website_names = [name.get_text(strip=True) for name in dashboard.select(".website-change-record .website-name")]
+    website_urls = [link["href"] for link in dashboard.select(".website-change-record .website-url")]
     scan_times = [" ".join(time.get_text().split()) for time in dashboard.select(".scan-change-record .change-time")]
     new_links = [link.get_text(strip=True) for link in dashboard.select(".page-change-record .change-item-added")]
 
-    assert website_names == ["newer.example.com", "older.example.com"]
+    assert website_urls == ["https://newer.example.com/", "https://older.example.com/"]
     assert scan_times == [
         "Scanned 04 Oct 2026, 09:00",
         "Scanned 02 Oct 2026, 09:00",
@@ -416,6 +418,40 @@ def test_updates_show_only_the_latest_scans_and_which_are_waiting_to_be_emailed(
     assert "too-old-to-show" not in updates_panel.get_text()
 
 
+def test_hosted_names_are_used_in_compact_cards_and_updates(api_client: TestClient, session: Session) -> None:
+    """Tests a website's name is read from its saved home page, including for sites on a hosting provider's
+    subdomain, and is shown on both its card and its updates."""
+    url = "https://webloom-two.vercel.app/test-site"
+    session.add(
+        DBWebsite(
+            url=url,
+            critical_pages=[DBCriticalPage(url=url, text_body="<title>Webloom Two</title>")],
+            scan_runs=[_scan(url, datetime(2026, 10, 1, 9, 0).astimezone(), "https://webloom-two.vercel.app/new")],
+        )
+    )
+    session.flush()
+
+    response = api_client.get("/")
+
+    assert response.status_code == 200
+    dashboard = BeautifulSoup(response.text, "html.parser")
+    card = dashboard.select_one(".website-card")
+    update = dashboard.select_one(".website-change-record")
+    assert card is not None and update is not None
+    card_name = card.select_one(".website-name")
+    update_name = update.select_one(".website-name")
+    website_link = card.select_one(".website-meta .website-url")
+    last_scan = card.select_one(".website-meta .last-scan")
+    assert card_name is not None and update_name is not None
+    assert website_link is not None and last_scan is not None
+    assert card_name.get_text(strip=True) == "Webloom Two - Test Site"
+    assert update_name.get_text(strip=True) == "Webloom Two - Test Site"
+    assert card["data-website-name"] == "Webloom Two - Test Site"
+    assert website_link["href"] == url
+    assert website_link.get_text(strip=True) == "/test-site"
+    assert last_scan.get_text(strip=True) == "Not scanned yet"
+
+
 def test_run_all_scans_every_website_and_restarts_the_countdown(
     api_client: TestClient, mocker: MockerFixture, email_sender: FakeEmailSender
 ) -> None:
@@ -444,7 +480,7 @@ def test_manual_scan_records_scan_time(
     assert website
     last_scan_at = website.last_scan_at
     assert last_scan_at is not None and last_scan_at >= before
-    assert _last_scan_by_website(api_client)[website_name(str(test_website.url))] == (
+    assert _last_scan_by_website(api_client)[str(test_website.url)] == (
         f"Last scanned {last_scan_at.astimezone():%d %b %Y, %H:%M}"
     )
 

@@ -1,8 +1,13 @@
+import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from ipaddress import ip_address
 from typing import Protocol
+from urllib.parse import unquote, urlsplit
 
+from bs4 import BeautifulSoup
+from bs4.filter import SoupStrainer
 from markupsafe import Markup, escape
 from pydantic import HttpUrl
 
@@ -20,6 +25,74 @@ SCAN_STATUS_LABELS: dict[ScanStatus, str] = {
     ScanStatus.TOO_LARGE: "Too large to crawl",
     ScanStatus.PAGES_MISSING: "Most pages missing",
 }
+
+
+def website_name(url: str, html: str | None = None) -> str:
+    """Format the site name and URL path, preserving names recognised in saved metadata."""
+    try:
+        parsed_url = urlsplit(url)
+        hostname = (parsed_url.hostname or "").rstrip(".")
+    except ValueError:
+        return "Website"
+    if not hostname:
+        return "Website"
+
+    try:
+        ip_address(hostname)
+        return _website_name_with_path(hostname, parsed_url.path)
+    except ValueError:
+        pass
+
+    labels = hostname.removeprefix("www.").split(".")
+    # Common country-code endings, e.g. uwa.edu.au and bbc.co.uk.
+    country_categories = {"ac", "asn", "co", "com", "edu", "gov", "id", "mil", "net", "org"}
+    # These providers host separate sites on subdomains; name the tenant, not the provider.
+    hosting_domains = {"vercel.app", "github.io", "netlify.app"}
+    if len(labels) >= 3 and (
+        ".".join(labels[-2:]) in hosting_domains or (len(labels[-1]) == 2 and labels[-2] in country_categories)
+    ):
+        name = labels[-3]
+    else:
+        name = labels[-2] if len(labels) > 1 else labels[0]
+
+    if html:
+        recognised_name = _website_name_from_html(name, html)
+        if recognised_name:
+            return _website_name_with_path(recognised_name, parsed_url.path)
+    short_name = name.replace("-", " ").replace("_", " ").title()
+    return _website_name_with_path(short_name, parsed_url.path)
+
+
+def _website_name_with_path(name: str, path: str) -> str:
+    """Append readable path sections without query parameters or fragments."""
+    sections = [
+        unquote(section).replace("-", " ").replace("_", " ").strip().title() for section in path.split("/") if section
+    ]
+    return " - ".join([name, *(section for section in sections if section)])
+
+
+def _website_name_from_html(name: str, html: str) -> str | None:
+    """Match the domain label to words in site metadata, avoiding article titles."""
+    soup = BeautifulSoup(html, "html.parser", parse_only=SoupStrainer(["title", "meta"]))
+    candidates = [
+        str(meta.get("content") or "")
+        for meta in soup.find_all("meta")
+        if str(meta.get("property") or meta.get("name") or "").lower() in {"og:site_name", "application-name"}
+    ]
+    candidates.extend(title.get_text(" ", strip=True) for title in soup.find_all("title"))
+    target = re.sub(r"[\W_]+", "", name).casefold()
+    for candidate in candidates:
+        words = re.findall(r"[^\W_]+", candidate)
+        for start in range(len(words)):
+            combined = ""
+            for end in range(start, len(words)):
+                combined += words[end].casefold()
+                if combined == target:
+                    # Preserve acronyms and brand capitals supplied by the site itself.
+                    return " ".join(word[0].upper() + word[1:] for word in words[start : end + 1])
+                if not target.startswith(combined):
+                    break
+    return None
 
 
 def format_timestamp(moment: datetime) -> str:

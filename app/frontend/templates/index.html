@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>Inwebstigator</title>
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', path='favicon.ico') }}?v=final-logo">
 
     <!-- Every request the dashboard makes carries this token, which pages from other websites cannot read -->
     <meta name="api-token" content="{{ api_token }}">
@@ -78,6 +79,12 @@
 
 <body>
 
+    <datalist id="saved-recipient-emails">
+        {% for email in saved_recipient_emails %}
+        <option value="{{ email }}"></option>
+        {% endfor %}
+    </datalist>
+
     <main class="dashboard-container">
 
         {% include "dashboard_header.html" %}
@@ -103,6 +110,7 @@
     <script src="{{ url_for('static', path='js/notification-emails.js') }}"></script>
     <script src="{{ url_for('static', path='js/website-settings.js') }}"></script>
     <script src="{{ url_for('static', path='js/scans.js') }}"></script>
+    <script src="{{ url_for('static', path='js/email-suggestions.js') }}?v=1"></script>
 
 </body>
 

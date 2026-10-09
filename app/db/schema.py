@@ -163,7 +163,7 @@ class DBRecipient(Base):
 class DBInternalLink(Base):
     __tablename__ = "internal_links"
     # A page is unique within its website, but can belong to two websites (e.g. example.com and example.com/research)
-    __table_args__ = (Index("uq_internal_links_url_website", "url", "website_id", unique=True),)
+    __table_args__ = (Index("uq_internal_link_url_website", "url", "website_id", unique=True),)
 
     url: Mapped[str] = mapped_column(URLText, nullable=False, index=True)
     website_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("websites.id", ondelete="CASCADE"), nullable=False)

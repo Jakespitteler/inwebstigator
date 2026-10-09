@@ -7,7 +7,6 @@ from fastapi.responses import FileResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import HttpUrl
 
-from app.backend.crawler.links import website_name
 from app.backend.email_service.delivery import EmailSender, get_email_sender
 from app.backend.scanning.all_websites_scan import scan_all_websites
 from app.backend.scanning.manual_scan import scan_website_now
@@ -34,6 +33,7 @@ from app.frontend.api.utils import (
     newest_first,
     scan_time,
     website_history_record,
+    website_name,
 )
 from app.models.critical_page_models import (
     CriticalPageCreate,
@@ -61,6 +61,16 @@ templates.env.filters["scan_time"] = scan_time  # pyright: ignore[reportUnknownM
 @ROOT_ROUTER.get("/")
 def get_dashboard(session: SessionDep, request: Request):
     websites: Sequence[WebsiteRead] = WebsiteService(session).get_all(limit=None)
+
+    website_names: dict[str, str] = {}
+    for website in websites:
+        saved_html: str | None = next(
+            (page.text_body for page in website.critical_pages if page.url == website.url and page.text_body),
+            None,
+        )
+        if saved_html or str(website.url) not in website_names:
+            website_names[str(website.url)] = website_name(str(website.url), saved_html)
+
     scan_run_service = ScanRunService(session)
     website_records: list[WebsiteHistoryRecord] = [
         website_history_record(
@@ -77,6 +87,8 @@ def get_dashboard(session: SessionDep, request: Request):
             "scans_kept_per_website": config.scans_kept_per_website,
             "next_check": next_scheduled_check(),
             "websites": websites,
+            "website_names": website_names,
+            "saved_recipient_emails": RecipientService(session).get_email_addresses(),
             "default_delay": config.web_crawler_default_delay,
             "max_delay": config.web_crawler_max_delay,
             "default_concurrent": config.web_crawler_default_concurrent,

@@ -17,6 +17,7 @@ from app.core.errors import (
     ScanCancelledError,
     UndeliverableEmailError,
     WebConnectionError,
+    WebsiteAlreadyMonitoredError,
 )
 from app.core.logging_setup import setup_logging
 from app.core.paths import resource_path
@@ -153,6 +154,24 @@ async def page_not_added_handler(request: Request, exc: InvalidPageError | PageN
     """
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content={"detail": str(exc)},
+    )
+
+
+@app.exception_handler(WebsiteAlreadyMonitoredError)
+async def website_already_monitored_handler(request: Request, exc: WebsiteAlreadyMonitoredError):
+    """
+    Handles WebsiteAlreadyMonitoredError exceptions by returning a 409 status, with a message the dashboard shows.
+
+    Args:
+        request: The incoming request.
+        exc: The WebsiteAlreadyMonitoredError exception.
+
+    Returns:
+        A JSONResponse with a 409 status.
+    """
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
         content={"detail": str(exc)},
     )
 

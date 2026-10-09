@@ -6,12 +6,12 @@
     class="change-record website-change-record"
     data-collapsible
     data-card-key="website-update:{{ website_record.website_url }}"
-    data-card-name="{{ website_record.website_url | string | website_name }}"
+    data-card-name="{{ website_names[website_record.website_url | string] }}"
 >
 
     <div class="change-record-header card-header">
         <div class="change-record-identity">
-            <h3 class="website-name">{{ website_record.website_url | string | website_name }}</h3>
+            <h3 class="website-name">{{ website_names[website_record.website_url | string] }}</h3>
             <a
                 class="website-url"
                 href="{{ website_record.website_url }}"
@@ -41,7 +41,7 @@
             class="card-toggle"
             aria-expanded="false"
             aria-controls="website-updates-{{ website_index }}"
-            aria-label="Show details for {{ website_record.website_url | string | website_name }}"
+            aria-label="Show details for {{ website_names[website_record.website_url | string] }}"
         >
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
                 <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor"

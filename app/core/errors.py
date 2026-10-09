@@ -45,6 +45,20 @@ class IntegrityError(DataBaseError):
         super().__init__("Data validation error. Ensure all referenced IDs exist and unique constraints are met.")
 
 
+class WebsiteAlreadyMonitoredError(DataBaseError):
+    """Exception raised when adding a website that is already being monitored.
+
+    The address can be written differently, e.g. with or without "www.", a trailing "/", or http instead of https.
+
+    Attributes:
+        url: The address of the website already being monitored, as it is saved.
+    """
+
+    def __init__(self, url: str) -> None:
+        self.url: str = url
+        super().__init__(f"{url} is already being monitored.")
+
+
 class UndeliverableEmailError(Exception):
     """Exception raised when an email to an address bounces, so the address cannot receive email.
 

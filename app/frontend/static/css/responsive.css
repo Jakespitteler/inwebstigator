@@ -70,3 +70,27 @@
         padding: 10px;
     }
 }
+
+
+@media (max-width: 480px) {
+    .dashboard-header {
+        gap: 12px;
+    }
+
+    .dashboard-brand {
+        gap: 8px;
+    }
+
+    .brand-logo {
+        width: 56px;
+        height: 56px;
+    }
+
+    .dashboard-header .theme-toggle {
+        padding: 8px;
+    }
+
+    .dashboard-header #themeToggleLabel {
+        display: none;
+    }
+}

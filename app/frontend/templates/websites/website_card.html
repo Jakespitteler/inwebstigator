@@ -5,13 +5,13 @@
     class="website-card"
     data-collapsible
     data-card-key="website:{{ website.id }}"
-    data-card-name="{{ website.url | string | website_name }}"
-    data-website-name="{{ website.url | string | website_name }}"
+    data-card-name="{{ website_names[website.url | string] }}"
+    data-website-name="{{ website_names[website.url | string] }}"
 >
 
     <div class="website-card-header card-header">
         <div class="website-identity">
-            <h3 class="website-name">{{ website.url | string | website_name }}</h3>
+            <h3 class="website-name">{{ website_names[website.url | string] }}</h3>
             <!-- The name already shows the domain, so only the path is shown under it -->
             {% set website_path = (website.url | string).split("//", 1)[-1].partition("/")[2].rstrip("/") %}
             <p class="website-meta">
@@ -56,7 +56,7 @@
                 class="card-toggle"
                 aria-expanded="false"
                 aria-controls="website-details-{{ website.id }}"
-                aria-label="Show details for {{ website.url | string | website_name }}"
+                aria-label="Show details for {{ website_names[website.url | string] }}"
             >
                 <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
                     <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor"
