@@ -2,6 +2,7 @@ import asyncio
 import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 
 from httpx2 import AsyncClient
@@ -124,6 +125,46 @@ def cancel_scan(url: str) -> bool:
     """
     crawl_task = queued_crawls.get(url)
     return crawl_task is not None and crawl_task.cancel()
+
+
+@dataclass
+class RunAllScans:
+    """A "Run All Scans" started from the dashboard, so it can be cancelled part way through.
+
+    Attributes:
+        cancelled (bool): Whether it has been cancelled, so no more websites are scanned.
+        website_url (str | None): The website being scanned now, so its scan can be cancelled too.
+    """
+
+    cancelled: bool = False
+    website_url: str | None = None
+
+
+# The dashboard's "Run All Scans" in progress, if there is one
+current_run_all: RunAllScans | None = None
+
+
+def cancel_run_all() -> bool:
+    """Cancels the dashboard's "Run All Scans": the website being scanned is cancelled and the rest are skipped.
+
+    Websites already scanned keep their results, and their changes are still emailed.
+
+    Returns:
+        bool: True if it was cancelled, or False if no "Run All Scans" was running.
+    """
+    run_all = current_run_all
+    if run_all is None or run_all.cancelled:
+        return False
+
+    run_all.cancelled = True
+    if run_all.website_url:
+        cancel_scan(run_all.website_url)
+    return True
+
+
+def run_all_in_progress() -> bool:
+    """Checks whether the dashboard's "Run All Scans" is running, so the dashboard can show its Cancel button."""
+    return current_run_all is not None
 
 
 async def _check_for_updates(
@@ -279,7 +320,7 @@ def _get_latest_state(website: WebsiteRead) -> WebsiteRead | None:
             return None
 
 
-async def scan_all_websites(ignore_schedule: bool = False) -> str | None:
+async def scan_all_websites(ignore_schedule: bool = False, run_all: RunAllScans | None = None) -> str | None:
     """Asynchronously scans all non-cooldown websites that are due a scan. Inactive websites
     only have their critical pages checked.
 
@@ -290,9 +331,12 @@ async def scan_all_websites(ignore_schedule: bool = False) -> str | None:
     and skipped, so one problem cannot stop the other websites being scanned or reported. A website
     deleted during the run is skipped, or its scan cancelled if it was being scanned.
 
+    If `run_all` is cancelled, no more websites are scanned, but the changes already found are still emailed.
+
     Args:
         ignore_schedule (bool, optional): Also scan websites that are not due a scan yet, e.g. for
             "Run All Scans" on the dashboard. Websites on cooldown are still skipped. Defaults to False.
+        run_all (RunAllScans | None, optional): Lets the dashboard cancel the run. Defaults to None.
 
     Returns:
         str | None: Consolidated HTML list of scan reports if updates/errors occurred,
@@ -308,6 +352,10 @@ async def scan_all_websites(ignore_schedule: bool = False) -> str | None:
     all_reports: list[str] = []
     async with AsyncClient() as client:
         for listed_website in websites:
+            if run_all and run_all.cancelled:
+                logger.info("Run All Scans was cancelled, so the remaining websites have been skipped.")
+                break
+
             website: WebsiteRead | None = _get_latest_state(listed_website)
             if website is None:
                 logger.info(f"{listed_website.url} has been skipped as it was deleted during the run.")
@@ -326,6 +374,8 @@ async def scan_all_websites(ignore_schedule: bool = False) -> str | None:
                 logger.info(f"{website.url} has been skipped as there has not been enough time since last scan.")
                 continue
 
+            if run_all:
+                run_all.website_url = website.url
             try:
                 report: str | None = await scan_website(client, website)
             except ScanAlreadyQueuedError:
@@ -337,6 +387,9 @@ async def scan_all_websites(ignore_schedule: bool = False) -> str | None:
             except Exception:
                 logger.exception(f"Scan failed for {website.url}, continuing with the remaining websites.")
                 report = None
+            finally:
+                if run_all:
+                    run_all.website_url = None
 
             if report:
                 all_reports.append(report)
@@ -359,3 +412,21 @@ async def scan_all_websites(ignore_schedule: bool = False) -> str | None:
             logger.exception(f"Failed to send scan report to {recipient_email}")
 
     return "".join(all_reports) or None
+
+
+async def scan_all_websites_now() -> str | None:
+    """Scans every website now for the dashboard's "Run All Scans", in a way `cancel_run_all()` can stop.
+
+    Websites not due a scan yet are included, while websites on cooldown are still skipped.
+
+    Returns:
+        str | None: Consolidated HTML list of scan reports if updates/errors occurred, otherwise None.
+    """
+    global current_run_all
+
+    run_all = RunAllScans()
+    current_run_all = run_all
+    try:
+        return await scan_all_websites(ignore_schedule=True, run_all=run_all)
+    finally:
+        current_run_all = None
