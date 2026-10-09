@@ -1180,6 +1180,7 @@ input::placeholder {
 #add-critical-page-input,
 #add-recipient-email-input,
 .cancel-scan-button,
+.cancel-all-scans-button,
 .delete-website-button,
 .delete-critical-page-button,
 .delete-recipient-button {
@@ -1208,6 +1209,7 @@ input::placeholder {
 #add-critical-page-input:active,
 #add-recipient-email-input:active,
 .cancel-scan-button:active,
+.cancel-all-scans-button:active,
 .delete-website-button:active,
 .delete-critical-page-button:active,
 .delete-recipient-button:active {
@@ -1295,6 +1297,7 @@ button:disabled {
 
 /* Destructive */
 .cancel-scan-button,
+.cancel-all-scans-button,
 .delete-website-button,
 .delete-critical-page-button,
 .delete-recipient-button {
@@ -1307,6 +1310,7 @@ button:disabled {
 }
 
 .cancel-scan-button:hover,
+.cancel-all-scans-button:hover,
 .delete-website-button:hover,
 .delete-critical-page-button:hover,
 .delete-recipient-button:hover {
