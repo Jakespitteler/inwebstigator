@@ -86,11 +86,16 @@ name, and its changes as `WebsiteDailyRecord` objects (`frontend/api/utils.py`).
 Changed text is turned into highlighted word-by-word HTML by `build_word_diff()`,
 which escapes everything it wraps.
 
-The page's JavaScript is inline in `index.html`, apart from
-`static/email-suggestions.js`. After an action (adding, deleting, saving
-settings, finishing a scan) it usually just reloads the page. The open tab is
-kept in the URL (`#updates`) and open cards in `sessionStorage`, so a reload
-doesn't lose your place.
+The header (`_header.html`), footer (`_footer.html`) and `<head>`
+(`_head.html`) are shared with the About page (`about.html`), as is
+`static/theme.js`, the light and dark toggle. The rest of the dashboard's
+JavaScript is inline in `index.html`, apart from `static/email-suggestions.js`.
+
+After an action (adding, deleting, saving settings, finishing a scan) the
+dashboard usually just reloads. The open tab is kept in the URL (`#updates`)
+and open cards in `sessionStorage`, so a reload doesn't lose your place. The
+chosen theme and "Don't show again" on the background scan note are kept in
+`localStorage`, which the desktop window keeps between launches.
 
 **Display names** come from `website_name()`. It uses the site name or title
 saved on the website's main page if it can match it to the domain, otherwise
@@ -101,10 +106,12 @@ a cleaned-up domain (e.g. `uwa.edu.au` → "Uwa"), plus any path (e.g. "Uwa - Ne
 | Route | What it does |
 | --- | --- |
 | `GET /` | The dashboard. |
+| `GET /about` | The About page: what the app does, the team and copyright. |
 | `POST /scanner/initial_scan` | Adds a website and runs its first scan. See [Adding a website](#adding-a-website). |
 | `POST /scanner/initial_critical_page_scan` | Adds a critical page to a website and saves its first copy. |
 | `POST /scanner/run` | Scans one website now (**Run scan**). Emails "Manual Website Scan" if anything changed. |
 | `POST /scanner/run_all` | Scans every website now, ignoring their schedules (**Run All Scans**), and restarts the scheduler's countdown. |
+| `POST /scanner/cancel_all` | Cancels a running **Run All Scans**: the website being scanned is cancelled and the rest skipped. Websites already scanned keep their results. |
 | `POST /scanner/cancel` | Cancels a website's queued or running scan. |
 | `/websites`, `/critical_pages`, `/recipients` | Create, read, update and delete, from `create_crud_router()`. Updating a website confirms any added emails first. Deleting one cancels its scan. |
 
@@ -296,8 +303,9 @@ health checks count from.
 and report a missing mailbox later, by sending a bounce back to the sender. So
 `confirm_address_can_receive_email()` counts the bounces about the address in
 the sending account's inbox (over IMAP), sends the confirmation, then checks
-the inbox every 3 seconds for up to 30 seconds for a new one. Without
-`IMAP_HOST` it just sends. Addresses that are already recipients are emailed
+the inbox every 3 seconds for up to 30 seconds for a new one. The inbox is
+`IMAP_HOST`, or `SMTP_HOST` with `smtp.` swapped for `imap.`. If it can't be
+opened, the confirmation is just sent. Addresses that are already recipients are emailed
 without waiting.
 
 ---

@@ -98,7 +98,7 @@ The settings you're most likely to need:
 | --- | --- | --- |
 | `EMAIL` / `EMAIL_PASSWORD` | blank | The account emails are sent from. Also the From address. |
 | `SMTP_HOST` / `SMTP_PORT` | blank / `465` | The mail server, over SSL. |
-| `IMAP_HOST` / `IMAP_PORT` | blank / `993` | The same account's inbox, used to spot bounced confirmation emails. Optional. |
+| `IMAP_HOST` / `IMAP_PORT` | blank / `993` | The same account's inbox, used to spot bounced confirmation emails. If blank, it's worked out from `SMTP_HOST` (`smtp.` → `imap.`). |
 | `AUTOMATIC_SCANS` | `true` | Run scheduled scans and health check emails. |
 | `DB_PATH` | `<home>/AppData/Local/inwebstigator/inwebstigator.db` | The SQLite database file. |
 | `SERVER_PREFERRED_PORT` | `48731` | The desktop app's port, if free. |
@@ -131,12 +131,13 @@ To send real email with a Gmail account:
    EMAIL_PASSWORD=abcdefghijklmnop   # the 16-character app password
    SMTP_HOST=smtp.gmail.com
    SMTP_PORT=465
-   IMAP_HOST=imap.gmail.com           # optional: lets the app spot bounces
    ```
 
-When an address is added, the app emails it and, if `IMAP_HOST` is set, watches
-the sending account's inbox for about 30 seconds for a bounce. An address that
-bounces isn't added.
+When an address is added, the app emails it and watches the sending account's
+inbox for about 30 seconds for a bounce. An address that bounces isn't added.
+The inbox is found from `SMTP_HOST` (`smtp.gmail.com` → `imap.gmail.com`), so
+set `IMAP_HOST` only if your provider's is named differently. If the inbox
+can't be opened, the confirmation is just sent, without checking for a bounce.
 
 UWA accounts won't work: Microsoft has turned off the basic SMTP login the app
 uses. Use a personal or project Gmail account.
@@ -161,6 +162,10 @@ The browser tests use Google Chrome or Microsoft Edge if installed. Otherwise
 run `uv run playwright install chromium`, or skip them with `-m "not e2e"`.
 They always run after the other tests, and if any test runs for over 5 minutes
 pytest prints where it's stuck.
+
+The browser tests cover the dashboard, but not the Windows app around it (the
+window, tray and build). Check those by hand before each release, with the
+[release checklist](docs/HANDOVER.md#release-checklist).
 
 Linting and formatting use [Ruff](https://docs.astral.sh/ruff/):
 

@@ -113,9 +113,15 @@ was last scanned. Click the card (or the arrow at its right) to open it.
 - **Run All Scans** (at the top of the list) checks every website straight
   away, and sends each person one email covering all the changes.
 - **Cancel** stops a scan that's waiting or running. Nothing it found is saved.
+- While **Run All Scans** is running, a **Cancel** button appears next to it.
+  It stops the website being scanned and skips the rest. Websites already
+  scanned keep their results, and their changes are still emailed.
 
 Scans run one at a time. If you start several, they wait their turn
 ("Scan queued…").
+
+While a scan runs, a note reminds you that closing the window won't stop it.
+Click **Don't show again** to hide it for good.
 
 ### Critical pages
 
