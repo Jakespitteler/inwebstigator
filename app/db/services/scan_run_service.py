@@ -22,6 +22,15 @@ def _has_report() -> ColumnElement[bool]:
     return or_(DBScanRun.status != ScanStatus.SUCCESS, DBScanRun.changes.any())
 
 
+def _is_empty() -> ColumnElement[bool]:
+    """Matches the scans that went normally but found nothing, so there is no history worth keeping.
+
+    Returns:
+        The condition, for use in a query of scans.
+    """
+    return not_(_has_report())
+
+
 def _is_awaiting_email() -> ColumnElement[bool]:
     """Matches the scans whose report has not been emailed yet.
 
@@ -111,21 +120,31 @@ class ScanRunService:
     def delete_older_scans(self, website_id: uuid.UUID, keep: int) -> None:
         """Deletes a website's scans older than its most recent ones, so its history does not grow forever.
 
+        Scans that found nothing do not count towards `keep`. Only the website's newest scan is kept if it found
+        nothing, so a run of empty scans does not push out the scans that found changes.
+
         A scan whose report has not been emailed yet is kept until it has been, so its changes are not lost.
 
         Args:
             website_id: The website whose history to trim.
-            keep: How many of the website's most recent scans to keep.
+            keep: How many of the website's most recent scans that found something to keep.
         """
         latest_scan_ids: Select[uuid.UUID] = (
             select(DBScanRun.id)
-            .where(DBScanRun.website_id == website_id)
+            .where(DBScanRun.website_id == website_id, not_(_is_empty()))
             .order_by(DBScanRun.scanned_at.desc())
             .limit(keep)
+        )
+        newest_scan_id: Select[uuid.UUID] = (
+            select(DBScanRun.id)
+            .where(DBScanRun.website_id == website_id)
+            .order_by(DBScanRun.scanned_at.desc())
+            .limit(1)
         )
         statement: Select[DBScanRun] = select(DBScanRun).where(
             DBScanRun.website_id == website_id,
             DBScanRun.id.not_in(latest_scan_ids),
+            DBScanRun.id.not_in(newest_scan_id),
             not_(_is_awaiting_email()),
         )
         old_scan_runs: Sequence[DBScanRun] = self._db.scalars(statement).all()

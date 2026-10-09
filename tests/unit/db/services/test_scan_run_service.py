@@ -135,14 +135,18 @@ def test_delete_older_scans_keeps_the_latest_and_any_report_not_yet_emailed(
     """Tests a website's history is trimmed to its most recent scans, except that a report whose email failed is kept
     (with its changes) until it has been sent."""
     unsent = _add_scan(session, test_website, days_after_first=0, changes=[_link_added("https://a.com/")])
-    old_without_changes = _add_scan(session, test_website, days_after_first=1)
-    latest = [_add_scan(session, test_website, days_after_first=day) for day in range(2, 4)]
+    sent = _add_scan(session, test_website, days_after_first=1, changes=[_link_added("https://b.com/")])
+    ScanRunService(session).mark_emailed([sent.id], emailed_at=datetime(2026, 10, 2, 9, 5, tzinfo=UTC))
+    latest = [
+        _add_scan(session, test_website, days_after_first=day, changes=[_link_added(f"https://c{day}.com/")])
+        for day in range(2, 4)
+    ]
 
     ScanRunService(session).delete_older_scans(test_website.id, keep=2)
     kept_ids = {scan_run.id for scan_run in ScanRunService(session).get_latest_for_website(test_website.id, 10)}
 
     assert kept_ids == {unsent.id, *(scan_run.id for scan_run in latest)}
-    assert old_without_changes.id not in kept_ids
+    assert sent.id not in kept_ids
     assert session.scalar(select(func.count()).select_from(DBChange)) == 1  # The unsent report's change
 
 
@@ -192,12 +196,46 @@ def test_delete_older_scans_keeps_an_unsent_failure_report_but_not_a_sent_one(
     unsent_failure = _add_scan(session, test_website, days_after_first=0, status=ScanStatus.CONNECTION_ERROR)
     sent_failure = _add_scan(session, test_website, days_after_first=1, status=ScanStatus.CONNECTION_ERROR)
     ScanRunService(session).mark_emailed([sent_failure.id], emailed_at=datetime(2026, 10, 2, 9, 5, tzinfo=UTC))
-    latest = _add_scan(session, test_website, days_after_first=2)
+    latest = _add_scan(session, test_website, days_after_first=2, changes=[_link_added("https://a.com/")])
 
     ScanRunService(session).delete_older_scans(test_website.id, keep=1)
 
     kept_ids = {scan_run.id for scan_run in ScanRunService(session).get_latest_for_website(test_website.id, 10)}
     assert kept_ids == {unsent_failure.id, latest.id}
+
+
+def test_delete_older_scans_keeps_only_the_newest_scan_that_found_nothing(
+    session: Session, test_website: WebsiteRead
+) -> None:
+    """Tests a run of empty scans leaves just the newest one, and does not push out scans that found changes."""
+    with_changes = [
+        _add_scan(session, test_website, days_after_first=day, changes=[_link_added(f"https://c{day}.com/")])
+        for day in range(2)
+    ]
+    for day in range(2, 5):
+        _add_scan(session, test_website, days_after_first=day)
+    newest_empty = _add_scan(session, test_website, days_after_first=5)
+    for scan_run in with_changes:
+        ScanRunService(session).mark_emailed([scan_run.id], emailed_at=FIRST_SCAN_AT + timedelta(days=6))
+
+    ScanRunService(session).delete_older_scans(test_website.id, keep=2)
+    kept_ids = {scan_run.id for scan_run in ScanRunService(session).get_latest_for_website(test_website.id, 10)}
+
+    assert kept_ids == {newest_empty.id, *(scan_run.id for scan_run in with_changes)}
+
+
+def test_delete_older_scans_removes_the_empty_scan_once_a_newer_scan_finds_changes(
+    session: Session, test_website: WebsiteRead
+) -> None:
+    """Tests the one kept empty scan is deleted when the next scan finds changes."""
+    empty = _add_scan(session, test_website, days_after_first=0)
+    with_changes = _add_scan(session, test_website, days_after_first=1, changes=[_link_added("https://a.com/")])
+
+    ScanRunService(session).delete_older_scans(test_website.id, keep=7)
+    kept_ids = {scan_run.id for scan_run in ScanRunService(session).get_latest_for_website(test_website.id, 10)}
+
+    assert kept_ids == {with_changes.id}
+    assert empty.id not in kept_ids
 
 
 def test_get_awaiting_email_returns_reports_of_every_website_oldest_first(
