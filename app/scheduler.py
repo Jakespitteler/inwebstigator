@@ -48,7 +48,7 @@ async def _scan_then_send_health_checks() -> None:
     await scan_all_websites()
 
     with db_context() as session:
-        recipients = RecipientService(session).get_all()
+        recipients = RecipientService(session).get_all(limit=None)
     for recipient in recipients:
         try:
             _send_health_check_if_no_change(recipient)

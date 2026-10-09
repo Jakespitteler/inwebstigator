@@ -301,13 +301,41 @@ button, input {
     align-items: center;
     gap: 20px;
     margin-bottom: 32px;
-    padding: 14px 20px;
+    padding: 2px 8px;
     background: var(--header-bg);
     backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(1.04);
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(1.04);
     border: 1px solid rgba(200, 180, 255, 0.45);
     border-radius: var(--radius-lg);
     box-shadow: var(--header-glow), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.dashboard-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.brand-logo {
+    display: block;
+    width: 85px;
+    height: 85px;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+
+/* Follow the same saved or system theme as the rest of the dashboard. */
+.brand-logo-dark {
+    display: none;
+}
+
+[data-theme="dark"] .brand-logo-light {
+    display: none;
+}
+
+[data-theme="dark"] .brand-logo-dark {
+    display: block;
 }
 
 .dashboard-header h1 {
@@ -1725,6 +1753,30 @@ button:disabled {
 }
 
 
+@media (max-width: 480px) {
+    .dashboard-header {
+        gap: 12px;
+    }
+
+    .dashboard-brand {
+        gap: 8px;
+    }
+
+    .brand-logo {
+        width: 56px;
+        height: 56px;
+    }
+
+    .dashboard-header .theme-toggle {
+        padding: 8px;
+    }
+
+    .dashboard-header #themeToggleLabel {
+        display: none;
+    }
+}
+
+
 /* DELETE CONFIRMATION DIALOG */
 
 .confirm-dialog {
@@ -1956,4 +2008,50 @@ button:disabled {
         clip: rect(0 0 0 0);
         white-space: nowrap;
     }
+}
+
+/* Saved email suggestions are outside cards so rounded card edges cannot clip them. */
+.email-suggestions {
+    position: fixed;
+    z-index: 1000;
+    box-sizing: border-box;
+    overflow-y: auto;
+    background: linear-gradient(var(--surface-opaque), var(--surface-opaque)), var(--bg-solid);
+    color: var(--text-primary);
+    border: 1px solid var(--control-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--card-shadow-hover);
+    padding: 4px;
+    font-family: var(--font);
+    font-size: 14px;
+}
+
+.email-suggestions[hidden] {
+    display: none;
+}
+
+.email-suggestion-option,
+.email-suggestions-empty {
+    padding: 10px 12px;
+    border-radius: 6px;
+    overflow-wrap: anywhere;
+}
+
+.email-suggestion-option {
+    cursor: pointer;
+}
+
+.email-suggestion-option:hover,
+.email-suggestion-option[aria-selected="true"] {
+    background: var(--accent-light);
+}
+
+.email-suggestions-empty {
+    color: var(--text-secondary);
+}
+
+.confirm-dialog .confirm-dialog-error {
+    margin-top: 6px;
+    font-size: 13px;
+    color: var(--danger-text);
 }
