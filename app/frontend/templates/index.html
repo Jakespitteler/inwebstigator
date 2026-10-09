@@ -570,22 +570,37 @@
             >{% if run_all_in_progress %}Scanning every website. Large websites can take several minutes...{% endif %}</p>
 
             <!-- Shown while any scan runs: closing the window only hides it to the tray, so scans carry on.
-                 "Don't show again" hides it for good on this computer. -->
-            <p id="background-scan-note" class="background-scan-note" hidden>
+                 The cross hides it for the scans running now; "Don't show again" hides it for good on this
+                 computer, and is kept apart from the cross so it isn't clicked by accident. -->
+            <div id="background-scan-note" class="background-scan-note" role="note" hidden>
                 <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
                     <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/>
                     <path d="M12 11v6M12 7.5v.5" fill="none" stroke="currentColor"
                         stroke-width="2" stroke-linecap="round"/>
                 </svg>
-                <span>
-                    You can close this window and the scan will keep running in the background.
-                    Inwebstigator stays in the system tray, near the clock. To stop it completely,
-                    right-click the tray icon and choose <strong>Quit</strong>.
-                </span>
-                <button type="button" id="hide-background-scan-note" class="background-scan-note-dismiss">
-                    Don't show again
+                <div class="background-scan-note-body">
+                    <p>
+                        You can close this window and the scan will keep running in the background.
+                        Inwebstigator stays in the system tray, near the clock. To stop it completely,
+                        right-click the tray icon and choose <strong>Quit</strong>.
+                    </p>
+                    <button type="button" id="hide-background-scan-note" class="background-scan-note-dismiss">
+                        Don't show again
+                    </button>
+                </div>
+                <button
+                    type="button"
+                    id="close-background-scan-note"
+                    class="background-scan-note-close"
+                    aria-label="Hide this note until the next scan"
+                    title="Hide until the next scan"
+                >
+                    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                        <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round"/>
+                    </svg>
                 </button>
-            </p>
+            </div>
 
             <!-- ADD WEBSITE WIZARD -->
             <section class="guide-section" aria-label="Add website">
@@ -2404,6 +2419,9 @@
         const backgroundScanNote = document.getElementById("background-scan-note");
         const HIDE_BACKGROUND_SCAN_NOTE_KEY = "inwebstigator-hide-background-scan-note";
 
+        // Set by the cross, which hides the note only until the scans running now have finished
+        let backgroundScanNoteClosedForNow = false;
+
         function backgroundScanNoteDismissed() {
             if (backgroundScanNote.dataset.dismissed === "true") {
                 return true;
@@ -2420,7 +2438,10 @@
             const scanning =
                 Boolean(document.querySelector(".is-busy"))
                 || Boolean(addingWebsite && !addingWebsite.hidden);
-            const show = scanning && !backgroundScanNoteDismissed();
+            if (!scanning) {
+                backgroundScanNoteClosedForNow = false;  // So the next scan shows it again
+            }
+            const show = scanning && !backgroundScanNoteClosedForNow && !backgroundScanNoteDismissed();
 
             // Only touch it when it changes, as the observer below would otherwise be woken up forever
             if (backgroundScanNote.hidden === show) {
@@ -2439,6 +2460,15 @@
                 }
                 backgroundScanNote.hidden = true;
                 backgroundScanNote.dataset.dismissed = "true";
+            });
+        }
+
+        const closeBackgroundScanNoteButton = document.getElementById("close-background-scan-note");
+
+        if (closeBackgroundScanNoteButton) {
+            closeBackgroundScanNoteButton.addEventListener("click", () => {
+                backgroundScanNoteClosedForNow = true;
+                backgroundScanNote.hidden = true;
             });
         }
 

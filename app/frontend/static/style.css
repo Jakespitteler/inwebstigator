@@ -1599,27 +1599,57 @@ button:disabled {
     color: var(--link);
 }
 
-.background-scan-note span {
+.background-scan-note-body {
     flex: 1;
+    min-width: 0;
 }
 
-/* "Don't show again": quiet, so it doesn't compete with the note itself */
+.background-scan-note-body p {
+    margin: 0;
+}
+
+/* "Don't show again": a small link under the text, away from the cross, so it isn't clicked by accident */
 .background-scan-note-dismiss {
-    flex-shrink: 0;
-    align-self: center;
-    padding: 4px 10px;
+    margin-top: 4px;
+    padding: 0;
     font-family: var(--font);
-    font-size: 12.5px;
-    font-weight: 500;
-    color: var(--link);
+    font-size: 12px;
+    color: var(--text-tertiary);
+    background: none;
+    border: none;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+}
+
+.background-scan-note-dismiss:hover {
+    color: var(--text-secondary);
+}
+
+/* The cross: hides the note until the next scan */
+.background-scan-note-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    margin: -4px -6px 0 0;
+    padding: 0;
+    color: var(--text-tertiary);
     background: none;
     border: 1px solid transparent;
     border-radius: var(--radius-sm);
     cursor: pointer;
-    white-space: nowrap;
 }
 
-.background-scan-note-dismiss:hover {
+.background-scan-note .background-scan-note-close svg {
+    margin: 0;
+    color: currentColor;
+}
+
+.background-scan-note-close:hover {
+    color: var(--text-primary);
     background: var(--control-bg);
     border-color: var(--control-border);
 }
