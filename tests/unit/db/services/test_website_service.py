@@ -494,6 +494,30 @@ def test_handle_traffic_error_deactivates_website_at_max_failures(session: Sessi
 
     fetched_website = service.get(id=website.id)
     assert fetched_website.active is False
+    assert fetched_website.deactivated_reason == DeactivationReason.RATE_LIMITED
+
+
+def test_reactivating_a_rate_limited_website_starts_its_failed_attempts_again(
+    session: Session, test_website: WebsiteRead
+) -> None:
+    """Tests switching a website back on after it was deactivated for rate limiting clears its failed attempts, so
+    a single rate limit does not switch it off again straight away."""
+    service = WebsiteService(session)
+    service.update(
+        id=test_website.id,
+        model_update=WebsiteUpdate(
+            recommended_delay=config.web_crawler_max_delay,
+            recommended_concurrent=config.web_crawler_min_concurrent,
+            failed_attempts_at_min_speed=config.web_crawler_max_failed_attempts_at_min_speed,
+        ),
+    )
+    service.handle_traffic_error(website=service.get(test_website.id))
+
+    reactivated = service.update(id=test_website.id, model_update=WebsiteUpdate(active=True))
+    service.handle_traffic_error(website=reactivated)
+
+    fetched_website = service.get(id=test_website.id)
+    assert (fetched_website.active, fetched_website.failed_attempts_at_min_speed) == (True, 1)
 
 
 def test_handle_connection_error(session: Session, test_website: WebsiteRead) -> None:

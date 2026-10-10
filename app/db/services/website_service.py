@@ -128,8 +128,8 @@ class WebsiteService(BaseCRUDService[DBWebsite, WebsiteRead, WebsiteCreate, Webs
         """Updates attributes of an existing website record and syncs its sub-resources.
 
         Handles updates to website URLs, batch updates for monitored critical pages,
-        and batch additions/removals of internal links. Re-activating a website clears
-        why it was deactivated.
+        and batch additions/removals of internal links. Re-activating an inactive website clears
+        why it was deactivated and its failed attempts, so one more rate limit does not switch it off again.
 
         Args:
             id: The UUID identifier of the website record to update.
@@ -148,8 +148,8 @@ class WebsiteService(BaseCRUDService[DBWebsite, WebsiteRead, WebsiteCreate, Webs
             exclude_unset=True,
             exclude={"critical_page_updates", "recipient_emails"},
         )
-        if model_update.active:
-            update_data["deactivated_reason"] = None
+        if model_update.active and not website_record.active:
+            update_data |= {"deactivated_reason": None, "failed_attempts_at_min_speed": 0}
 
         recipient_service = RecipientService(self._db)
         if model_update.add_recipient_emails:
@@ -267,7 +267,7 @@ class WebsiteService(BaseCRUDService[DBWebsite, WebsiteRead, WebsiteCreate, Webs
         If the crawler is operating above minimum speed limits, throttles requests and sets
         a 24-hour cooldown. If already operating at minimum crawl speed, increments the
         consecutive failure counter and sets a 24-hour cooldown, automatically deactivating
-        the website if the maximum failure threshold is reached.
+        the website (recording why) if the maximum failure threshold is reached.
 
         Args:
             website (WebsiteRead): The website record that encountered a traffic rate-limiting error.
@@ -289,7 +289,10 @@ class WebsiteService(BaseCRUDService[DBWebsite, WebsiteRead, WebsiteCreate, Webs
         self.set_cooldown(id=website.id, hours=config.website_cooldown_hours_after_throttle)
 
         if website.failed_attempts_at_min_speed >= config.web_crawler_max_failed_attempts_at_min_speed:
-            self.update(id=website.id, model_update=WebsiteUpdate(active=False))
+            self.update(
+                id=website.id,
+                model_update=WebsiteUpdate(active=False, deactivated_reason=DeactivationReason.RATE_LIMITED),
+            )
             return f"Failed {website.failed_attempts_at_min_speed} times. Deactivating: {website.url}"
 
         self.update(

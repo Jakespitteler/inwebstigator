@@ -176,11 +176,14 @@ def update[DBTable: Base](session: Session, record: DBTable, updates: dict[str, 
     try:
         session.flush()
     except SQLIntegrityError as e:
-        logger.error(f"Failed to update record in database. {record=}, {updates=}")
+        # Only the names of the fields are logged, as their values can be huge (e.g. a page's whole HTML)
+        logger.error(f"Failed to update record in database. {record=}, fields={sorted(updates)}")
         raise IntegrityError() from e
 
     session.refresh(record)
-    logger.info(f"Record updated in database successfully: {record.__tablename__=}, {record.id=} {updates=}")
+    logger.info(
+        f"Record updated in database successfully: {record.__tablename__=}, {record.id=} fields={sorted(updates)}"
+    )
     return record
 
 

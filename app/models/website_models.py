@@ -35,9 +35,13 @@ URL_LIST_ADAPTER: TypeAdapter[list[HttpUrl]] = TypeAdapter(list[HttpUrl])
 
 
 class DeactivationReason(StrEnum):
-    """Why the app deactivated a website itself, so the dashboard can tell the user."""
+    """Why the app deactivated a website itself, so the dashboard can tell the user.
+
+    A website switched off on the dashboard has no reason saved.
+    """
 
     TOO_LARGE = "too_large"
+    RATE_LIMITED = "rate_limited"
 
 
 class WebsiteCreate(BaseModel):

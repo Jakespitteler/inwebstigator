@@ -488,9 +488,10 @@ async def get_website_updates(
             previous_urls=stored_internal_links,
             current_urls=current_internal_links,
         )
-        logger.info(f"{updates.recent_added_internal_links=}")
-        logger.info(f"{updates.recent_removed_internal_links=}")
+        # Only the counts are logged, as a website can have thousands of pages
+        added_count: int = len(updates.recent_added_internal_links or [])
         missing_count: int = len(updates.recent_removed_internal_links or [])
+        logger.info(f"{stored_website.url}: {added_count} pages added and {missing_count} pages removed.")
         if not accept_missing_pages and _has_lost_most_pages(len(stored_internal_links), missing_count):
             raise CrawlFailedError(
                 MostPagesMissingError(str(stored_website.url), missing_count, len(stored_internal_links)),
