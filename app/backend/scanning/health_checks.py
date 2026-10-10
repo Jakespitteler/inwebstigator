@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from collections.abc import Sequence
 from datetime import UTC, datetime, time, timedelta
 
@@ -12,6 +13,9 @@ from app.db.services.website_service import WebsiteService
 from app.db.session import db_context
 from app.models.recipient_models import RecipientRead
 from app.models.website_models import WebsiteRead
+
+# Held while health checks are sent, so two runs that finish together never send the same health check twice
+HEALTH_CHECKS_LOCK: threading.Lock = threading.Lock()
 
 
 def is_health_check_due(recipient: RecipientRead, now: datetime) -> bool:
@@ -58,27 +62,40 @@ def _health_check_email(recipient_email: str, websites: Sequence[WebsiteRead], n
     )
 
 
+def _send_due_health_checks(email_sender: EmailSender) -> None:
+    """Sends a health check to each recipient who has gone long enough without an email, one run at a time.
+
+    Recipients are read once the previous run has finished, so a health check it just sent counts as recent contact.
+
+    Args:
+        email_sender: Sends the emails.
+    """
+    with HEALTH_CHECKS_LOCK:
+        with db_context() as session:
+            recipients: Sequence[RecipientRead] = RecipientService(session).get_all_with_websites()
+            websites: Sequence[WebsiteRead] = WebsiteService(session).get_all(limit=None)
+
+        now: datetime = datetime.now(UTC)
+        websites_by_recipient: dict[str, list[WebsiteRead]] = group_by_recipient(
+            websites, lambda website: website.recipients
+        )
+        health_checks: list[OutgoingEmail] = [
+            _health_check_email(recipient.email, websites_by_recipient.get(recipient.email, []), now)
+            for recipient in recipients
+            if is_health_check_due(recipient, now)
+        ]
+        send_notifications_skipping_failures(health_checks, email_sender)
+
+
 async def send_due_health_checks(email_sender: EmailSender) -> None:
     """Sends a health check to each recipient who has gone long enough without an email.
 
     Recipients are read every time, so an email sent by a scan that has just run counts as recent contact, and newly
     added recipients and changed intervals are picked up. Only recipients still linked to a website are sent one.
-    The emails are sent from a thread, and a failed email is logged, so one bad address does not stop the others.
+    The work is done in a thread, keeping the dashboard responsive, and a failed email is logged, so one bad address
+    does not stop the others. Two runs that finish together take turns, so nobody gets two health checks.
 
     Args:
         email_sender: Sends the emails.
     """
-    with db_context() as session:
-        recipients: Sequence[RecipientRead] = RecipientService(session).get_all_with_websites()
-        websites: Sequence[WebsiteRead] = WebsiteService(session).get_all(limit=None)
-
-    now: datetime = datetime.now(UTC)
-    websites_by_recipient: dict[str, list[WebsiteRead]] = group_by_recipient(
-        websites, lambda website: website.recipients
-    )
-    health_checks: list[OutgoingEmail] = [
-        _health_check_email(recipient.email, websites_by_recipient.get(recipient.email, []), now)
-        for recipient in recipients
-        if is_health_check_due(recipient, now)
-    ]
-    await asyncio.to_thread(send_notifications_skipping_failures, health_checks, email_sender)
+    await asyncio.to_thread(_send_due_health_checks, email_sender)

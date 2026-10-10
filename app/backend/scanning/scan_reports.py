@@ -1,4 +1,5 @@
 import logging
+import threading
 import uuid
 from collections.abc import Collection, Mapping, Sequence
 from datetime import UTC, datetime
@@ -8,7 +9,11 @@ from app.backend.email_service.delivery import EmailSender, is_undeliverable
 from app.backend.email_service.email_wording import scan_report_subject
 from app.backend.email_service.html_bodies import generate_scan_report_html, join_scan_reports
 from app.backend.email_service.message_builder import OutgoingEmail
-from app.backend.scanning.notifications import group_by_recipient, send_notifications_skipping_failures
+from app.backend.scanning.notifications import (
+    group_by_recipient,
+    send_notifications,
+    send_notifications_skipping_failures,
+)
 from app.db.services.scan_run_service import ScanRunService
 from app.db.services.website_service import WebsiteService
 from app.db.session import db_context
@@ -16,6 +21,10 @@ from app.models.scan_run_models import ScanRunRead
 from app.models.website_models import WebsiteRead
 
 logger: logging.Logger = logging.getLogger(__name__)
+
+# Held while reports are emailed and recorded as emailed, so two runs that finish together (e.g. Run All Scans and a
+# scheduled check, or Run Scan Now during a scheduled check) never email the same report twice
+REPORT_EMAILS_LOCK: threading.Lock = threading.Lock()
 
 
 class WebsiteReport(NamedTuple):
@@ -135,25 +144,71 @@ def send_reports_awaiting_email(email_sender: EmailSender) -> None:
     server that rejects the email, is not tried again, as it would fail the same way every time. A report for a
     website with no recipients counts as sent, as there is nobody to send it to.
 
-    Blocks while the emails send, so async code runs it in a thread.
+    Blocks while the emails send, so async code runs it in a thread. Only one run sends at a time, so two runs that
+    finish together do not both email the same reports.
 
     Args:
         email_sender: Sends the emails.
     """
-    reports: list[WebsiteReport] = _reports_awaiting_email()
-    if not reports:
-        return
+    with REPORT_EMAILS_LOCK:
+        reports: list[WebsiteReport] = _reports_awaiting_email()
+        if not reports:
+            return
 
-    report_emails: list[ReportEmail] = _report_emails(reports)
-    failures: dict[OutgoingEmail, Exception] = send_notifications_skipping_failures(
-        [report_email.email for report_email in report_emails], email_sender
-    )
-    scan_runs_to_retry: set[uuid.UUID] = _scan_runs_to_retry(report_emails, failures)
-    if scan_runs_to_retry:
-        logger.warning("%d scan reports could not be emailed, so they will be sent again.", len(scan_runs_to_retry))
-    try:
-        record_reports_emailed(
-            [report.scan_run.id for report in reports if report.scan_run.id not in scan_runs_to_retry]
+        report_emails: list[ReportEmail] = _report_emails(reports)
+        failures: dict[OutgoingEmail, Exception] = send_notifications_skipping_failures(
+            [report_email.email for report_email in report_emails], email_sender
         )
-    except Exception:
-        logger.exception("The scan reports were emailed, but that could not be recorded, so they may be sent again.")
+        scan_runs_to_retry: set[uuid.UUID] = _scan_runs_to_retry(report_emails, failures)
+        if scan_runs_to_retry:
+            logger.warning("%d scan reports could not be emailed, so they will be sent again.", len(scan_runs_to_retry))
+        try:
+            record_reports_emailed(
+                [report.scan_run.id for report in reports if report.scan_run.id not in scan_runs_to_retry]
+            )
+        except Exception:
+            logger.exception(
+                "The scan reports were emailed, but that could not be recorded, so they may be sent again."
+            )
+
+
+def _is_awaiting_email(scan_run_id: uuid.UUID) -> bool:
+    """Checks whether a scan's report is still waiting to be emailed.
+
+    Args:
+        scan_run_id: The scan.
+
+    Returns:
+        True if the report has not been emailed yet.
+    """
+    with db_context() as session:
+        return ScanRunService(session).is_awaiting_email(scan_run_id)
+
+
+def email_report_once(
+    scan_run_id: uuid.UUID,
+    emails: Sequence[OutgoingEmail],
+    recipient_emails: Collection[str],
+    email_sender: EmailSender,
+) -> None:
+    """Emails one scan's report (e.g. from Run Scan Now), then records it as emailed, without emailing anyone twice.
+
+    A scheduled run that finished while the scan ran may already have emailed the report to the website's
+    recipients, in which case only the other addresses are emailed. Blocks while the emails send, so async code runs
+    it in a thread.
+
+    Args:
+        scan_run_id: The scan whose report is being emailed.
+        emails: The report email for each address.
+        recipient_emails: The website's recipients, who a scheduled run emails the report to.
+        email_sender: Sends the emails.
+
+    Raises:
+        smtplib.SMTPException: If an email could not be sent. The report is kept to send again.
+        OSError: If the mail server could not be reached. The report is kept to send again.
+    """
+    with REPORT_EMAILS_LOCK:
+        if not _is_awaiting_email(scan_run_id):
+            emails = [email for email in emails if email.to not in recipient_emails]
+        send_notifications(emails, email_sender)
+        record_reports_emailed([scan_run_id])

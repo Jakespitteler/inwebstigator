@@ -1,3 +1,5 @@
+import asyncio
+import time
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
@@ -6,6 +8,7 @@ from pydantic import HttpUrl
 from pytest_mock import MockerFixture
 from sqlalchemy.orm import Session
 
+from app.backend.email_service.message_builder import OutgoingEmail
 from app.backend.scanning.health_checks import is_health_check_due, send_due_health_checks
 from app.backend.scanning.scan_reports import send_reports_awaiting_email
 from app.db.services.recipient_service import RecipientService
@@ -227,3 +230,30 @@ async def test_a_scan_report_email_counts_as_contact(session: Session, email_sen
     await send_due_health_checks(email_sender)
 
     assert [email.subject for email in email_sender.sent] == ["Website update: example.com"]
+
+
+@pytest.mark.anyio
+async def test_two_runs_that_finish_together_send_each_health_check_once(
+    mock_db_context: MagicMock, test_recipient: RecipientRead, mocker: MockerFixture
+) -> None:
+    """Tests two runs that send the health checks at the same time (e.g. the catch-up check and a scheduled check)
+    take turns, so the second sees the health check the first sent and the recipient gets only one."""
+    emailed: list[str] = []
+
+    class SlowEmailSender(FakeEmailSender):
+        def send(self, email: OutgoingEmail) -> None:
+            time.sleep(0.2)  # Like a real mail server, so the two runs overlap
+            super().send(email)
+
+    def recipients_now() -> list[RecipientRead]:
+        if emailed:
+            return [test_recipient.model_copy(update={"last_email_at": datetime.now(UTC)})]
+        return [_overdue(test_recipient)]
+
+    mocker.patch.object(RecipientService, "get_all_with_websites", side_effect=recipients_now)
+    mocker.patch("app.backend.scanning.notifications._record_email_sent", side_effect=emailed.append)
+    email_sender = SlowEmailSender()
+
+    await asyncio.gather(send_due_health_checks(email_sender), send_due_health_checks(email_sender))
+
+    assert [email.to for email in email_sender.sent] == [test_recipient.email]

@@ -111,6 +111,20 @@ async def test_manual_scan_of_a_website_without_recipients_returns_its_report_wi
     assert email_sender.sent == []
 
 
+async def test_a_manual_report_a_scheduled_run_already_emailed_only_goes_to_the_extra_address(
+    session: Session, mocker: MockerFixture, email_sender: FakeEmailSender
+) -> None:
+    """Tests a "Run Scan Now" report that a scheduled run emailed to the website's recipients while the scan was
+    finishing is not emailed to them again, but still goes to the extra address asked for."""
+    website = _add_website(session, "https://example.com", ["recipient@example.com"])
+    scan_run = _scan_finds(session, mocker, website, ["https://example.com/new"])
+    ScanRunService(session).mark_emailed([scan_run.id], emailed_at=datetime.now(UTC))  # By the scheduled run
+
+    await scan_website_now(website.url, email_sender, extra_email="extra@example.com")
+
+    assert [email.to for email in email_sender.sent] == ["extra@example.com"]
+
+
 async def test_manual_scan_keeps_its_report_when_the_email_fails(
     session: Session, mocker: MockerFixture, email_sender: FakeEmailSender
 ) -> None:

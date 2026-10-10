@@ -9,8 +9,7 @@ from app.backend.email_service.delivery import EmailSender
 from app.backend.email_service.email_wording import manual_scan_subject
 from app.backend.email_service.html_bodies import generate_scan_report_html
 from app.backend.email_service.message_builder import OutgoingEmail
-from app.backend.scanning.notifications import send_notifications
-from app.backend.scanning.scan_reports import record_reports_emailed
+from app.backend.scanning.scan_reports import email_report_once
 from app.backend.scanning.website_scan import scan_website
 from app.core.errors import ReportNotEmailedError
 from app.db.services.website_service import WebsiteService
@@ -83,9 +82,9 @@ async def scan_website_now(
     if recipient_emails:
         subject: str = manual_scan_subject(str(website.url))
         emails = [OutgoingEmail(to=email, subject=subject, html_body=report) for email in recipient_emails]
+        website_recipients: set[str] = {recipient.email for recipient in website.recipients}
         try:
-            await asyncio.to_thread(send_notifications, emails, email_sender)
+            await asyncio.to_thread(email_report_once, scan_run.id, emails, website_recipients, email_sender)
         except (smtplib.SMTPException, OSError) as error:
             raise ReportNotEmailedError(str(website.url)) from error
-        record_reports_emailed([scan_run.id])
     return report
