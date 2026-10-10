@@ -4,8 +4,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from httpx2 import AsyncClient
-
+from app.backend.crawler.page_fetcher import new_http_client
 from app.backend.email_service.delivery import EmailSender, get_email_sender
 from app.backend.scanning.scan_queue import scan_queue
 from app.backend.scanning.scan_reports import WebsiteReport, send_reports_awaiting_email, write_report
@@ -233,7 +232,7 @@ async def scan_all_websites(
 
     run_started_at: datetime = datetime.now(UTC)
     reports: list[WebsiteReport] = []
-    async with AsyncClient() as client:
+    async with new_http_client() as client:
         for website in _websites_to_scan(listed_websites, run_started_at, ignore_schedule):
             if run_all and run_all.cancelled:
                 logger.info("Run All Scans was cancelled, so the remaining websites have been skipped.")

@@ -20,6 +20,7 @@ from app.core.errors import (
     NotFoundError,
     ScanAlreadyQueuedError,
     ScanCancelledError,
+    WebsiteAlreadyMonitoredError,
 )
 from app.core.urls import is_same_page, resolve_critical_page_url
 from app.db.services.critical_page_service import CriticalPageService
@@ -36,19 +37,22 @@ RECIPIENT_ADDED_SUBJECT: str = "Email address added to website monitoring"
 def _refuse_website_already_watched(url: HttpUrl) -> None:
     """Stops a website being added twice, which would scan it twice and email every change twice.
 
-    The same website written differently (e.g. with "www." or a trailing "/") counts as the same website. A different
-    part of a website (e.g. example.com/research when example.com is watched) can still be added.
+    The same website written differently (e.g. with "www.", a trailing "/", or http instead of https) counts as the
+    same website, matched the same way as when it is saved, so nobody is emailed about a website that cannot be added.
+    A different part of a website (e.g. example.com/research when example.com is watched) can still be added.
 
     Args:
         url: The URL of the website being added.
 
     Raises:
-        AlreadyWatchedError: If the website is already being watched.
+        WebsiteAlreadyMonitoredError: If the website is already being watched, naming it as it is saved.
     """
     with db_context() as session:
-        watched_urls: list[str] = [str(website.url) for website in WebsiteService(session).get_all(limit=None)]
-    if any(is_same_page(watched_url, str(url)) for watched_url in watched_urls):
-        raise AlreadyWatchedError(str(url))
+        try:
+            watched_website: WebsiteRead = WebsiteService(session).get_by_url(url)
+        except NotFoundError:
+            return
+    raise WebsiteAlreadyMonitoredError(str(watched_website.url))
 
 
 def _discard_website(website_id: uuid.UUID) -> None:
@@ -88,7 +92,7 @@ async def add_website(model_create: WebsiteCreate, email_sender: EmailSender) ->
         The website as it was added.
 
     Raises:
-        AlreadyWatchedError: If the website is already being watched. Nothing is added.
+        WebsiteAlreadyMonitoredError: If the website is already being watched. Nothing is added.
         PageNotLoadedError: If the website or one of its critical pages could not be loaded. Nothing is added.
         UndeliverableEmailError: If an email to one of its recipients could not be delivered. Nothing is added.
         ScanCancelledError: If the first scan was cancelled. The website is not kept.

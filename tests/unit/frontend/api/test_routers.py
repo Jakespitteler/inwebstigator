@@ -1062,7 +1062,7 @@ def test_adding_a_website_already_watched_is_refused(
     response = api_client.post("/scanner/initial_scan", json={"url": url})
 
     assert response.status_code == 409, response.text
-    assert "is already being watched" in response.json()["detail"]
+    assert response.json()["detail"] == f"{test_website.url} is already being monitored."
     mock_check_pages_exist.assert_not_called()
 
 

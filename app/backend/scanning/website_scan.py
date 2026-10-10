@@ -8,7 +8,11 @@ from httpx2 import AsyncClient
 from pydantic import HttpUrl
 from sqlalchemy.orm import Session
 
-from app.backend.scanning.change_detection import get_critical_page_only_updates, get_website_updates
+from app.backend.scanning.change_detection import (
+    CrawlFailedError,
+    get_critical_page_only_updates,
+    get_website_updates,
+)
 from app.backend.scanning.found_changes import changes_found_by
 from app.backend.scanning.scan_queue import scan_queue
 from app.core.config import config
@@ -125,23 +129,103 @@ def record_scan(
 
 
 def _handle_scan_failure(
-    website: WebsiteRead, status: ScanStatus, handle_failure: Callable[[WebsiteService], str]
+    website: WebsiteRead,
+    status: ScanStatus,
+    handle_failure: Callable[[WebsiteService], str],
+    found_before_failing: WebsiteUpdate | None = None,
 ) -> ScanRunRead:
     """Saves how the app responds to a failed scan (e.g. a cooldown), then records the scan with a message saying
     what was done.
+
+    What the scan found before it failed (e.g. changes on the critical pages) is saved and recorded with it, so it is
+    reported now rather than only once a scan succeeds.
 
     Args:
         website: The website whose scan failed.
         status: How the scan failed.
         handle_failure: Makes the response to the failure and describes it, e.g. `WebsiteService.handle_traffic_error`.
+        found_before_failing: What the scan found before it failed, or None if nothing changed.
 
     Returns:
         The recorded scan.
     """
     with db_context() as session:
-        action_message: str = handle_failure(WebsiteService(session))
-        scan_run: ScanRunRead = record_scan(session, website, status, action_message)
+        website_service = WebsiteService(session)
+        if found_before_failing:
+            website_service.update(id=website.id, model_update=found_before_failing)
+        action_message: str = handle_failure(website_service)
+        scan_run: ScanRunRead = record_scan(
+            session, website, status, action_message, changes_found_by(found_before_failing)
+        )
     return scan_run
+
+
+async def _record_failed_crawl(
+    website: WebsiteRead, failure: CrawlFailedError, delay: float | None, concurrent: int | None
+) -> ScanRunRead:
+    """Responds to a crawl that failed, saving what the critical pages' check found and recording the scan.
+
+    A website that rate limits the crawler is throttled and put on cooldown, and an unreachable or partly down
+    website is put on cooldown.
+
+    Args:
+        website: The website whose crawl failed.
+        failure: Why the crawl failed, and what the critical pages' check found before it did.
+        delay: Seconds to wait between requests that the scan was given, or None for the website's own.
+        concurrent: The most requests at once that the scan was given, or None for the website's own.
+
+    Returns:
+        The recorded scan.
+
+    Raises:
+        TrafficError: If the website rate limited a scan that was given its own delay or concurrency.
+    """
+    found_before_failing: WebsiteUpdate | None = failure.critical_page_updates
+    match failure.error:
+        case TrafficError() as error:
+            logger.error("Temporary ban or severe rate limit detected for %s: %s", website.url, error)
+            if delay or concurrent:
+                raise TrafficError(
+                    url=str(website.url),
+                    status_code=error.status_code,
+                    message="Scan aborted, try increasing delay or reducing concurrent (may be banned)",
+                ) from error
+            return await asyncio.to_thread(
+                _handle_scan_failure,
+                website,
+                ScanStatus.TRAFFIC_ERROR,
+                lambda websites: websites.handle_traffic_error(website),
+                found_before_failing,
+            )
+        case WebsiteUnavailableError() as error:
+            logger.error("Home page could not be loaded: %s", error)
+            unavailable_message: str = str(error)
+            return await asyncio.to_thread(
+                _handle_scan_failure,
+                website,
+                ScanStatus.CONNECTION_ERROR,
+                lambda websites: f"{unavailable_message} {websites.handle_connection_error(website.id)}",
+                found_before_failing,
+            )
+        case WebConnectionError() as error:
+            logger.error("Site unreachable: %s", error)
+            return await asyncio.to_thread(
+                _handle_scan_failure,
+                website,
+                ScanStatus.CONNECTION_ERROR,
+                lambda websites: websites.handle_connection_error(website.id),
+                found_before_failing,
+            )
+        case MostPagesMissingError() as error:
+            logger.warning("Most pages missing: %s", error)
+            missing_message: str = f"{error} {MISSING_PAGES_ACCEPTED_AFTER}"
+            return await asyncio.to_thread(
+                _handle_scan_failure,
+                website,
+                ScanStatus.PAGES_MISSING,
+                lambda websites: f"{missing_message} {websites.handle_connection_error(website.id)}",
+                found_before_failing,
+            )
 
 
 async def _deactivate_then_check_critical_pages(
@@ -220,8 +304,8 @@ async def scan_website(
     records the scan in the website's history.
 
     A website that rate limits the crawler is throttled and put on cooldown, an unreachable website is put on
-    cooldown, and a website with more pages than the crawler will scan is deactivated. An inactive website only has
-    its critical pages checked.
+    cooldown, and a website with more pages than the crawler will scan is deactivated. What its critical pages' check
+    found is still saved when the crawl fails. An inactive website only has its critical pages checked.
 
     Args:
         client: The HTTP client for making web requests.
@@ -244,46 +328,8 @@ async def scan_website(
         website_updates: WebsiteUpdate | None = await scan_queue.run(
             str(website.url), lambda: _find_updates(client, website, max_pages, delay, concurrent, init)
         )
-    except TrafficError as error:
-        logger.error("Temporary ban or severe rate limit detected for %s: %s", website.url, error)
-        if delay or concurrent:
-            raise TrafficError(
-                url=str(website.url),
-                status_code=error.status_code,
-                message="Scan aborted, try increasing delay or reducing concurrent (may be banned)",
-            ) from error
-        return await asyncio.to_thread(
-            _handle_scan_failure,
-            website,
-            ScanStatus.TRAFFIC_ERROR,
-            lambda websites: websites.handle_traffic_error(website),
-        )
-    except WebsiteUnavailableError as error:
-        logger.error("Home page could not be loaded: %s", error)
-        unavailable_message: str = str(error)
-        return await asyncio.to_thread(
-            _handle_scan_failure,
-            website,
-            ScanStatus.CONNECTION_ERROR,
-            lambda websites: f"{unavailable_message} {websites.handle_connection_error(website.id)}",
-        )
-    except WebConnectionError as error:
-        logger.error("Site unreachable: %s", error)
-        return await asyncio.to_thread(
-            _handle_scan_failure,
-            website,
-            ScanStatus.CONNECTION_ERROR,
-            lambda websites: websites.handle_connection_error(website.id),
-        )
-    except MostPagesMissingError as error:
-        logger.warning("Most pages missing: %s", error)
-        missing_message: str = f"{error} {MISSING_PAGES_ACCEPTED_AFTER}"
-        return await asyncio.to_thread(
-            _handle_scan_failure,
-            website,
-            ScanStatus.PAGES_MISSING,
-            lambda websites: f"{missing_message} {websites.handle_connection_error(website.id)}",
-        )
+    except CrawlFailedError as failure:
+        return await _record_failed_crawl(website, failure, delay, concurrent)
     except WebsiteTooLargeError as error:
         logger.warning("Website too large to scan: %s", error)
         return await _deactivate_then_check_critical_pages(client, website, error.max_pages, init)

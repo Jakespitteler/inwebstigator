@@ -12,6 +12,7 @@ from app.backend.scanning.change_detection import (
     DEFAULT_MAX_PAGES,
     STAND_IN_FAILURES_BEFORE_ACCEPTING,
     STAND_IN_PAGE_REASON,
+    CrawlFailedError,
     get_critical_page_only_updates,
     get_critical_page_updates,
     get_website_updates,
@@ -329,9 +330,10 @@ async def test_get_website_updates_traffic_error(
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
     rate_limit_handler: RequestHandler,
 ):
-    """Tests that fatal connection/traffic errors cleanly bubble up from the orchestrator."""
+    """Tests that fatal connection/traffic errors cleanly bubble up from the orchestrator, carrying what the critical
+    pages' check found."""
     async with mock_client_factory(rate_limit_handler) as client:
-        with pytest.raises(TrafficError) as exc_info:
+        with pytest.raises(CrawlFailedError) as exc_info:
             await get_website_updates(
                 client=client,
                 stored_website=test_website,
@@ -341,7 +343,8 @@ async def test_get_website_updates_traffic_error(
                 concurrent=2,
             )
 
-    assert exc_info.value.status_code == 429
+    assert isinstance(exc_info.value.error, TrafficError)
+    assert exc_info.value.error.status_code == 429
 
 
 @pytest.mark.anyio
@@ -805,7 +808,7 @@ async def test_a_crawl_missing_most_known_pages_is_treated_as_the_website_being_
     accept_missing_pages: bool,
     is_partly_down: bool,
 ) -> None:
-    """Tests a crawl that cannot find more than the allowed share of a website's known pages raises
+    """Tests a crawl that cannot find more than the allowed share of a website's known pages fails with
     MostPagesMissingError, so they are not saved as removed, unless missing pages are being accepted. Missing no more
     than the allowed share reports the pages as removed."""
     known_pages = [HttpUrl(f"{test_website.url}page-{number}") for number in range(KNOWN_PAGE_COUNT)]
@@ -813,12 +816,15 @@ async def test_a_crawl_missing_most_known_pages_is_treated_as_the_website_being_
     mocker.patch("app.backend.scanning.change_detection.crawl_site", return_value=crawled)
     website = test_website.model_copy(update={"critical_pages": []})
 
-    with pytest.raises(MostPagesMissingError) if is_partly_down else nullcontext():
+    with pytest.raises(CrawlFailedError) if is_partly_down else nullcontext() as failure:
         updates: WebsiteUpdate | None = await get_website_updates(
             mocker.Mock(), website, known_pages, None, None, None, accept_missing_pages=accept_missing_pages
         )
         assert updates is not None
         assert set(updates.recent_removed_internal_links or []) == set(known_pages[:missing_count])
+
+    if failure is not None:
+        assert isinstance(failure.value.error, MostPagesMissingError)
 
 
 @pytest.mark.anyio

@@ -50,6 +50,26 @@ UNREACHABLE_PAGE_ERRORS: tuple[type[UnreachablePageError], ...] = (
     NotAWebPageError,  # The page is now a file (e.g. a PDF), so it can no longer be read as a page
 )
 
+type CrawlFailure = TrafficError | WebConnectionError | MostPagesMissingError
+
+
+class CrawlFailedError(Exception):
+    """Exception raised when a website's crawl fails (e.g. it was rate limited, could not be reached or most of its
+    pages were missing) after its critical pages were checked.
+
+    It carries what the critical pages' check found, so it can still be saved and reported with the failed scan,
+    rather than being thrown away until a scan's crawl succeeds.
+
+    Attributes:
+        error: Why the crawl failed.
+        critical_page_updates: What the critical pages' check found, or None if nothing changed.
+    """
+
+    def __init__(self, error: CrawlFailure, critical_page_updates: WebsiteUpdate | None) -> None:
+        self.error: CrawlFailure = error
+        self.critical_page_updates: WebsiteUpdate | None = critical_page_updates
+        super().__init__(str(error))
+
 
 def _find_url_difference(
     previous_urls: Sequence[HttpUrl], current_urls: Sequence[HttpUrl]
@@ -382,6 +402,21 @@ async def get_critical_page_only_updates(
         WebsiteUpdate | None: The updates to the website's critical pages, or None if nothing changed.
     """
     critical_page_updates = await _gather_critical_page_updates(client, stored_website.critical_pages, init)
+    return _critical_page_only_update(stored_website, critical_page_updates)
+
+
+def _critical_page_only_update(
+    stored_website: WebsiteRead, critical_page_updates: dict[uuid.UUID, CriticalPageUpdate]
+) -> WebsiteUpdate | None:
+    """Wraps what a check of a website's critical pages found as an update of the website.
+
+    Args:
+        stored_website: The current state of the website retrieved from the database.
+        critical_page_updates: The updates for each critical page that changed, saved a baseline, failed or recovered.
+
+    Returns:
+        The update, or None if nothing changed.
+    """
     updates = WebsiteUpdate(url=stored_website.url, critical_page_updates=critical_page_updates or None)
     return updates if _website_has_been_updated(updates) else None
 
@@ -418,8 +453,9 @@ async def get_website_updates(
         differences for internal links (added/removed).
 
     Raises:
-        MostPagesMissingError: If the crawl could not find most of the pages found by the last scan, so the website
-            is probably partly down. Nothing is returned to be saved, so they are not reported as removed.
+        CrawlFailedError: If the crawl was rate limited, could not reach the website, or could not find most of the
+            pages found by the last scan (so the website is probably partly down). It carries what the critical
+            pages' check found, so that can still be saved, but none of the crawl's pages are reported as removed.
     """
     updates = WebsiteUpdate(url=stored_website.url)
     critical_page_updates: dict[uuid.UUID, CriticalPageUpdate] = await _gather_critical_page_updates(
@@ -429,16 +465,21 @@ async def get_website_updates(
     )
     updates.critical_page_updates = critical_page_updates or None
 
-    current_internal_links: list[HttpUrl] = URL_LIST_ADAPTER.validate_python(
-        await crawl_site(
-            client=client,
-            url=str(stored_website.url),
-            delay=delay or stored_website.recommended_delay,
-            max_concurrent=concurrent or stored_website.recommended_concurrent,
-            max_pages=max_pages or DEFAULT_MAX_PAGES,
-            batch_403_threshold=config.web_crawler_batch_403_threshold,
+    try:
+        current_internal_links: list[HttpUrl] = URL_LIST_ADAPTER.validate_python(
+            await crawl_site(
+                client=client,
+                url=str(stored_website.url),
+                delay=delay or stored_website.recommended_delay,
+                max_concurrent=concurrent or stored_website.recommended_concurrent,
+                max_pages=max_pages or DEFAULT_MAX_PAGES,
+                batch_403_threshold=config.web_crawler_batch_403_threshold,
+                batch_403_ratio=config.web_crawler_batch_403_ratio,
+            )
         )
-    )
+    except (TrafficError, WebConnectionError) as error:  # Most pages missing is only found once the crawl is done
+        raise CrawlFailedError(error, _critical_page_only_update(stored_website, critical_page_updates)) from error
+
     if init or not stored_internal_links:
         updates.initial_internal_links = current_internal_links
         logger.info(f"{len(updates.initial_internal_links)=}")
@@ -451,7 +492,10 @@ async def get_website_updates(
         logger.info(f"{updates.recent_removed_internal_links=}")
         missing_count: int = len(updates.recent_removed_internal_links or [])
         if not accept_missing_pages and _has_lost_most_pages(len(stored_internal_links), missing_count):
-            raise MostPagesMissingError(str(stored_website.url), missing_count, len(stored_internal_links))
+            raise CrawlFailedError(
+                MostPagesMissingError(str(stored_website.url), missing_count, len(stored_internal_links)),
+                _critical_page_only_update(stored_website, critical_page_updates),
+            )
 
     if _website_has_been_updated(updates):
         return updates

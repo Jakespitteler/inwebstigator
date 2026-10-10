@@ -122,7 +122,7 @@ async def scan_not_run_handler(
     request: Request, exc: AlreadyWatchedError | ScanAlreadyQueuedError | ScanCancelledError
 ):
     """
-    Handles a website or page that is already watched, or a scan that is already queued or was cancelled, by
+    Handles a critical page that is already watched, or a scan that is already queued or was cancelled, by
     returning a 409 status.
 
     Args:

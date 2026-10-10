@@ -491,6 +491,26 @@ async def test_crawl_site_skips_forbidden_pages_below_the_403_threshold() -> Non
 
 
 @pytest.mark.anyio
+async def test_crawl_site_is_not_blocked_when_forbidden_pages_are_a_small_share_of_the_batch() -> None:
+    """Tests a round with as many forbidden (403) pages as the threshold, but mostly pages that load (e.g. a website
+    with many staff-only links), only leaves the forbidden pages out rather than treating the website as blocking."""
+    forbidden_paths: list[str] = ["/staff-one", "/staff-two"]
+    public_paths: list[str] = ["/one", "/two", "/three"]
+    handler: RequestHandler = _serve_pages(
+        {"/": "".join(f'<a href="{path}">Page</a>' for path in [*forbidden_paths, *public_paths])}
+        | dict.fromkeys(public_paths, "<p>Public page.</p>"),
+        error_statuses=dict.fromkeys(forbidden_paths, 403),
+    )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        visited: set[str] = await crawl_site(
+            client, "https://example.com", max_pages=10, batch_403_threshold=len(forbidden_paths), batch_403_ratio=0.5
+        )
+
+    assert visited == {"https://example.com/", *(f"https://example.com{path}" for path in public_paths)}
+
+
+@pytest.mark.anyio
 async def test_crawl_site_is_not_too_large_when_the_page_left_was_already_reached_by_a_redirect() -> None:
     """Tests a website with exactly the page limit is not refused as too large when the only link left to visit
     goes to a page already visited by following a redirect from another link."""

@@ -13,6 +13,7 @@ from pytest_mock import MockerFixture
 from sqlalchemy.orm import Session
 
 from app.backend.email_service.html_bodies import generate_scan_report_html
+from app.backend.scanning.change_detection import CrawlFailedError
 from app.backend.scanning.scan_queue import ScanQueue
 from app.backend.scanning.website_scan import scan_website
 from app.core.config import config
@@ -277,7 +278,7 @@ async def test_scan_website_traffic_error_handling(
     mock_client = mocker.AsyncMock(spec=httpx2.AsyncClient)
     mocker.patch(
         "app.backend.scanning.website_scan.get_website_updates",
-        side_effect=TrafficError(url=str(populated_website.url), status_code=429),
+        side_effect=CrawlFailedError(TrafficError(url=str(populated_website.url), status_code=429), None),
     )
     mock_handle_traffic = mocker.patch.object(WebsiteService, "handle_traffic_error", return_value="Cooldown applied")
     mock_reset_failed_attempts = mocker.patch.object(WebsiteService, "reset_failed_attempts")
@@ -300,7 +301,7 @@ async def test_scan_website_traffic_error_re_raised_with_params(
     mock_client = mocker.AsyncMock(spec=httpx2.AsyncClient)
     mocker.patch(
         "app.backend.scanning.website_scan.get_website_updates",
-        side_effect=TrafficError(url=str(populated_website.url), status_code=429),
+        side_effect=CrawlFailedError(TrafficError(url=str(populated_website.url), status_code=429), None),
     )
 
     with pytest.raises(TrafficError, match="Scan aborted, try increasing delay or reducing concurrent"):
@@ -321,7 +322,7 @@ async def test_scan_website_connection_error_handling(
     mock_client = mocker.AsyncMock(spec=httpx2.AsyncClient)
     mocker.patch(
         "app.backend.scanning.website_scan.get_website_updates",
-        side_effect=WebConnectionError("Connection timed out"),
+        side_effect=CrawlFailedError(WebConnectionError("Connection timed out"), None),
     )
     mock_handle_conn = mocker.patch.object(WebsiteService, "handle_connection_error", return_value="Site unreachable")
     mock_reset_failed_attempts = mocker.patch.object(WebsiteService, "reset_failed_attempts")
@@ -581,12 +582,12 @@ async def test_a_small_website_can_lose_most_of_its_pages(session: Session, mock
     ],
     ids=["rate-limited", "unreachable"],
 )
-async def test_a_website_that_rate_limits_or_cannot_be_reached_is_put_on_cooldown_and_nothing_is_saved(
+async def test_a_website_that_rate_limits_or_cannot_be_reached_is_put_on_cooldown_and_its_page_changes_kept(
     session: Session, mocker: MockerFixture, crawl_error: Exception, status: ScanStatus, is_throttled: bool
 ) -> None:
-    """Tests a scan stopped by the website rate limiting the crawler (which also slows the crawler down for it) or
-    being unreachable puts the website on cooldown and records the scan with no changes, without saving anything it
-    found, so the change is still found by the next scan."""
+    """Tests a scan whose crawl is stopped by the website rate limiting the crawler (which also slows the crawler down
+    for it) or being unreachable puts the website on cooldown, but still reports and saves the change its critical
+    pages' check found before the crawl failed, rather than leaving it until a scan's crawl succeeds."""
     main_url = "https://example.com"
     old_html = "<html><body><p>The fee is $100.</p></body></html>"
     html = old_html
@@ -606,11 +607,11 @@ async def test_a_website_that_rate_limits_or_cannot_be_reached_is_put_on_cooldow
 
     saved = service.get(website.id)
     assert scan_run.status is status
-    assert scan_run.changes == []
+    assert [change.kind for change in scan_run.changes] == [ChangeKind.TEXT_CHANGED]
     assert saved.on_cooldown_until is not None and saved.on_cooldown_until > datetime.now(UTC)
     crawl_speed = (saved.recommended_delay, saved.recommended_concurrent)
     assert (crawl_speed != (website.recommended_delay, website.recommended_concurrent)) is is_throttled
-    assert saved.critical_pages[0].text_body == old_html
+    assert saved.critical_pages[0].text_body == html
 
 
 @contextmanager

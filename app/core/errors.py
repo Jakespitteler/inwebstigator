@@ -72,10 +72,10 @@ class UndeliverableEmailError(Exception):
 
 
 class AlreadyWatchedError(Exception):
-    """Exception raised when a website or critical page being added is already being watched.
+    """Exception raised when a critical page being added is already being watched.
 
     Attributes:
-        url: The URL of the website or page.
+        url: The URL of the page.
     """
 
     def __init__(self, url: str) -> None:
@@ -171,7 +171,7 @@ class MostPagesMissingError(WebCrawlerError):
         self.known_count: int = known_count
         super().__init__(
             f"{missing_count:,} of the {known_count:,} pages found on {url} by its last scan could not be found, "
-            "so the website may be partly down. Nothing from this scan has been saved."
+            "so the website may be partly down. None of its pages have been reported as removed."
         )
 
 

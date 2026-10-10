@@ -55,6 +55,7 @@ class Config(BaseSettings):
     web_crawler_default_concurrent: int = 5
     web_crawler_min_concurrent: int = 1
     web_crawler_batch_403_threshold: int = 50
+    web_crawler_batch_403_ratio: float = 0.5
     web_crawler_max_failed_attempts_at_min_speed: int = 3
     web_crawler_max_missing_pages_ratio: float = 0.5
     web_crawler_min_known_pages_to_check_missing: int = 20
