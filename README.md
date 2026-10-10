@@ -44,10 +44,12 @@
   only its name (and potentially its link) and a scan button. Clicking anywhere
   in the website's box should expand it to show the additional information.
   This should make the dashboard easier to use with multiple monitored sites.
-- **Improve website name display.** For example, `teqsa.gov.au` should be
-  displayed as `TEQSA` rather than the full domain. Investigate whether a
-  library can reliably extract a readable site name from a URL. Note that
-  simply removing the `.com`/`.gov.au` suffix is not sufficient for all cases.
+- **Website names (decided).** A website is named by its host name without
+  "www.", then its path if it is only part of a website, e.g. `teqsa.gov.au`
+  or `example.gov.au/research`. The emails, the dashboard and the add website
+  form all use this (`website_name` in `app/core/urls.py`, and `displayName`
+  in `add-website.js`), rather than a name guessed from the page, which could
+  change between scans.
 - **Make the latest scan time per-site.** Currently the latest scan time appears
   to be global and is displayed for all websites. Each monitored website
   should display its own latest scan time.

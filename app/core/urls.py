@@ -7,7 +7,7 @@ They do not fetch anything, so the models, the database services and the crawler
 from collections.abc import Iterable
 from functools import lru_cache
 from pathlib import PurePosixPath
-from urllib.parse import ParseResult, parse_qsl, urlencode, urljoin, urlparse
+from urllib.parse import ParseResult, SplitResult, parse_qsl, urlencode, urljoin, urlparse, urlsplit
 
 DEFAULT_PORTS: dict[str, int] = {"http": 80, "https": 443}
 TRACKING_PARAMETER_PREFIXES: tuple[str, ...] = ("utm_",)
@@ -28,6 +28,30 @@ def site_host(netloc: str) -> str:
         The lower-cased network location without a leading "www.".
     """
     return netloc.lower().removeprefix("www.")
+
+
+def website_name(url: str) -> str:
+    """Names a website the same way everywhere (the dashboard, the emails and the add website form): its host name
+    without a leading "www.", followed by its path if it is only part of a website.
+
+    For example "https://www.uwa.edu.au/" is "uwa.edu.au" and "https://example.gov.au/research/" is
+    "example.gov.au/research", so two parts of one website can be told apart. `displayName` in add-website.js
+    follows the same rule.
+
+    Args:
+        url: The website's URL.
+
+    Returns:
+        The website's name, or "Website" if the URL cannot be read or has no host name.
+    """
+    try:
+        parsed: SplitResult = urlsplit(url)
+        host_name: str = (parsed.hostname or "").rstrip(".")
+    except ValueError:
+        return "Website"
+    if not host_name:
+        return "Website"
+    return f"{host_name.removeprefix('www.')}{parsed.path.rstrip('/')}"
 
 
 def add_missing_scheme(url: str) -> str:

@@ -7,6 +7,7 @@ from app.core.urls import (
     page_key,
     remove_repeated_pages,
     resolve_critical_page_url,
+    website_name,
 )
 
 
@@ -147,3 +148,28 @@ def test_resolve_critical_page_url_refuses_a_page_on_another_website(page_url: s
     """Tests a critical page on a different website (or subdomain) is refused, rather than watched."""
     with pytest.raises(ValueError, match="is not a page on https://example.com"):
         resolve_critical_page_url("https://example.com", page_url)
+
+
+@pytest.mark.parametrize(
+    ("url", "expected_name"),
+    [
+        ("https://www.teqsa.gov.au/", "teqsa.gov.au"),
+        ("https://WWW.Example.COM/", "example.com"),
+        ("https://example.com./", "example.com"),
+        ("https://user:password@example.com:8080/", "example.com"),
+        ("https://news.example.com/", "news.example.com"),
+        ("https://www.example.gov.au/research/", "example.gov.au/research"),
+        ("https://example.com/au/news?page=2#top", "example.com/au/news"),
+    ],
+    ids=["www-dropped", "lower-cased", "trailing-dot", "login-and-port", "subdomain-kept", "path-kept", "path-only"],
+)
+def test_website_name_is_the_host_without_www_then_the_path(url: str, expected_name: str) -> None:
+    """Tests a website is named by its host name, without a leading "www.", followed by its path (without a
+    trailing "/", query or #section), so two parts of one website can be told apart."""
+    assert website_name(url) == expected_name
+
+
+@pytest.mark.parametrize("url", ["https://[not-closed/page", "not a url", ""], ids=["unreadable", "no-host", "empty"])
+def test_website_name_falls_back_to_website_for_a_url_without_a_host(url: str) -> None:
+    """Tests a URL that cannot be read, or has no host name, is shown as "Website" rather than breaking the page."""
+    assert website_name(url) == "Website"

@@ -7,7 +7,6 @@ from app.backend.crawler.links import (
     is_document,
     is_internal_web_page,
     separate_document_links,
-    website_name,
 )
 
 
@@ -307,25 +306,3 @@ def test_extract_links_from_html_resolves_links_from_the_page_but_keeps_to_the_b
     )
 
     assert links == ["https://example.com/au/contact", "https://example.com/au/news/story"]
-
-
-@pytest.mark.parametrize(
-    ("url", "expected_name"),
-    [
-        ("https://www.teqsa.gov.au/", "teqsa.gov.au"),
-        ("https://WWW.Example.COM/news", "example.com"),
-        ("https://example.com./about", "example.com"),
-        ("https://user:password@example.com:8080/page", "example.com"),
-        ("https://news.example.com/", "news.example.com"),
-    ],
-    ids=["www-dropped", "lower-cased", "trailing-dot", "login-and-port", "subdomain-kept"],
-)
-def test_website_name_is_the_host_without_www(url: str, expected_name: str) -> None:
-    """Tests a website is named by its host name, including its domain ending, without a leading "www."."""
-    assert website_name(url) == expected_name
-
-
-@pytest.mark.parametrize("url", ["https://[not-closed/page", "not a url", ""], ids=["unreadable", "no-host", "empty"])
-def test_website_name_falls_back_to_website_for_a_url_without_a_host(url: str) -> None:
-    """Tests a URL that cannot be read, or has no host name, is shown as "Website" rather than breaking the page."""
-    assert website_name(url) == "Website"

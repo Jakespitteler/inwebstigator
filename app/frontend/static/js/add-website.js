@@ -11,10 +11,12 @@ const addWebsiteProgressTemplate = document.getElementById("add-website-progress
 // The URLs of the websites whose first scan is running, so the same website isn't added twice at once
 const websitesBeingAdded = new Set();
 
-// The name a website is shown by, e.g. "https://www.uwa.edu.au/" -> "uwa.edu.au"
+// The name a website is shown by, the same as website_name in app/core/urls.py: its host name without "www.",
+// then its path, e.g. "https://www.uwa.edu.au/" -> "uwa.edu.au" and "https://example.com/au/" -> "example.com/au"
 function displayName(url) {
     try {
-        return new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, "");
+        const parsed = new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`);
+        return parsed.hostname.replace(/\.$/, "").replace(/^www\./, "") + parsed.pathname.replace(/\/+$/, "");
     } catch (error) {
         return url;
     }

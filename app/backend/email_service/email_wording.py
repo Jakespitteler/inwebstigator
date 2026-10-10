@@ -6,8 +6,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import HttpUrl
 
-from app.backend.crawler.links import website_name
 from app.core.config import config
+from app.core.urls import website_name
 from app.models.website_models import DeactivationReason, WebsiteRead
 
 logger: logging.Logger = logging.getLogger(__name__)

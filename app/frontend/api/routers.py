@@ -20,6 +20,7 @@ from app.backend.websites.website_setup import (
 )
 from app.core.config import config
 from app.core.paths import resource_path
+from app.core.urls import website_name
 from app.db.services.critical_page_service import CriticalPageService
 from app.db.services.crud_protocol import CRUDOperation
 from app.db.services.recipient_service import RecipientService
@@ -34,7 +35,6 @@ from app.frontend.api.utils import (
     newest_first,
     scan_time,
     website_history_record,
-    website_name,
 )
 from app.models.critical_page_models import (
     CriticalPageCreate,
@@ -63,15 +63,7 @@ templates.env.filters["scan_time"] = scan_time  # pyright: ignore[reportUnknownM
 @ROOT_ROUTER.get("/")
 def get_dashboard(session: SessionDep, request: Request):
     websites: Sequence[WebsiteRead] = WebsiteService(session).get_all(limit=None)
-
-    website_names: dict[str, str] = {}
-    for website in websites:
-        saved_html: str | None = next(
-            (page.text_body for page in website.critical_pages if page.url == website.url and page.text_body),
-            None,
-        )
-        if saved_html or str(website.url) not in website_names:
-            website_names[str(website.url)] = website_name(str(website.url), saved_html)
+    website_names: dict[str, str] = {str(website.url): website_name(str(website.url)) for website in websites}
 
     scan_run_service = ScanRunService(session)
     website_records: list[WebsiteHistoryRecord] = [

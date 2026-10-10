@@ -418,9 +418,9 @@ def test_updates_show_only_the_latest_scans_and_which_are_waiting_to_be_emailed(
     assert "too-old-to-show" not in updates_panel.get_text()
 
 
-def test_hosted_names_are_used_in_compact_cards_and_updates(api_client: TestClient, session: Session) -> None:
-    """Tests a website's name is read from its saved home page, including for sites on a hosting provider's
-    subdomain, and is shown on both its card and its updates."""
+def test_the_same_website_name_is_used_in_compact_cards_and_updates(api_client: TestClient, session: Session) -> None:
+    """Tests a website is named by its host name and path on both its card and its updates, the same as in its
+    emails, rather than by a name guessed from its saved home page."""
     url = "https://webloom-two.vercel.app/test-site"
     session.add(
         DBWebsite(
@@ -444,9 +444,9 @@ def test_hosted_names_are_used_in_compact_cards_and_updates(api_client: TestClie
     last_scan = card.select_one(".website-meta .last-scan")
     assert card_name is not None and update_name is not None
     assert website_link is not None and last_scan is not None
-    assert card_name.get_text(strip=True) == "Webloom Two - Test Site"
-    assert update_name.get_text(strip=True) == "Webloom Two - Test Site"
-    assert card["data-website-name"] == "Webloom Two - Test Site"
+    assert card_name.get_text(strip=True) == "webloom-two.vercel.app/test-site"
+    assert update_name.get_text(strip=True) == "webloom-two.vercel.app/test-site"
+    assert card["data-website-name"] == "webloom-two.vercel.app/test-site"
     assert website_link["href"] == url
     assert website_link.get_text(strip=True) == "/test-site"
     assert last_scan.get_text(strip=True) == "Not scanned yet"

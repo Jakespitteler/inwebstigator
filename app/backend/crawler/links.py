@@ -1,6 +1,6 @@
 import logging
 from pathlib import PurePosixPath
-from urllib.parse import ParseResult, urljoin, urlparse, urlsplit
+from urllib.parse import ParseResult, urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
@@ -214,15 +214,3 @@ def extract_links_from_html(
         links.add(normalise_url(absolute_url))
 
     return remove_repeated_pages(sorted(links))
-
-
-def website_name(url: str) -> str:
-    """Display the hostname, including its domain ending, without a leading www."""
-    try:
-        hostname = (urlsplit(url).hostname or "").rstrip(".")
-    except ValueError:
-        return "Website"
-    if not hostname:
-        return "Website"
-
-    return hostname.removeprefix("www.")
