@@ -36,7 +36,7 @@ class Config(BaseSettings):
     api_token: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
     api_token_required: bool = True
 
-    log_file_max_bytes: int = 1_000_000
+    log_file_max_bytes: int = 5_000_000
     log_file_backup_count: int = 3
 
     email: str = ""

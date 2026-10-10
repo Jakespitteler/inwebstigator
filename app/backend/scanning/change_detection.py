@@ -302,8 +302,13 @@ async def get_critical_page_updates(
     if not updates.has_changes:
         # Links that moved out of the main content are dropped from the saved page without being reported
         return updates if updates.links is not None or updates.documents is not None else None
-    recent_changes = updates.model_dump(exclude_unset=True, exclude={"url", "links", "documents", "text_body"})
-    logger.info(f"Changes found on {stored_page.url}: {recent_changes}")
+    # Only how many of each change are logged, as a redesigned page can have hundreds of blocks of text
+    change_counts: dict[str, int] = {
+        kind: len(changes)
+        for kind in CriticalPageUpdate.model_fields
+        if kind.startswith("recent_") and (changes := getattr(updates, kind))
+    }
+    logger.info(f"Changes found on {stored_page.url}: {change_counts}")
     return updates
 
 
