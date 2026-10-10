@@ -175,6 +175,27 @@ def test_add_missing_indexes_adds_new_indexes_to_existing_tables_only(
     assert inspect(old_database).get_table_names() == ["websites"]
 
 
+def test_prepare_database_indexes_the_website_of_each_link_and_critical_page_in_an_older_database(
+    tmp_path: Path,
+) -> None:
+    """Tests a database made before links and critical pages were indexed by website gains those indexes, so
+    counting or loading one website's pages does not read every website's."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE internal_links (id CHAR(32) PRIMARY KEY, url VARCHAR, website_id CHAR(32))"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE critical_pages (id CHAR(32) PRIMARY KEY, url VARCHAR NOT NULL, website_id CHAR(32) NOT NULL)"
+        )
+
+    prepare_database(engine)
+
+    assert "ix_internal_links_website_id" in _index_names(engine, "internal_links")
+    assert "ix_critical_pages_website_id" in _index_names(engine, "critical_pages")
+    engine.dispose()
+
+
 def test_prepare_database_adds_new_columns_to_an_older_database_keeping_its_rows(tmp_path: Path) -> None:
     """Tests a critical pages table made before the failure columns existed gains them, with the existing page given
     the column's default of 0 failures and no failure reason."""

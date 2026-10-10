@@ -166,7 +166,10 @@ class DBInternalLink(Base):
     __table_args__ = (Index("uq_internal_link_url_website", "url", "website_id", unique=True),)
 
     url: Mapped[str] = mapped_column(URLText, nullable=False, index=True)
-    website_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("websites.id", ondelete="CASCADE"), nullable=False)
+    # Indexed on its own, as the unique index starts with the URL so cannot find a website's links (e.g. to count them)
+    website_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("websites.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     website: Mapped["DBWebsite"] = relationship(back_populates="internal_links")
 
 
@@ -180,7 +183,9 @@ class DBCriticalPage(Base):
     text_body: Mapped[str] = mapped_column(String, nullable=True)
     ignore_rules: Mapped[list[str]] = mapped_column(TextList, nullable=True)
 
-    website_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("websites.id", ondelete="CASCADE"), nullable=False)
+    website_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("websites.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     website: Mapped["DBWebsite"] = relationship(back_populates="critical_pages")
 
     consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))

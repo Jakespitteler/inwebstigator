@@ -484,9 +484,10 @@ async def get_website_updates(
         updates.initial_internal_links = current_internal_links
         logger.info(f"{len(updates.initial_internal_links)=}")
     else:
-        updates.recent_added_internal_links, updates.recent_removed_internal_links = _find_url_difference(
-            previous_urls=stored_internal_links,
-            current_urls=current_internal_links,
+        # Comparing tens of thousands of pages takes about a second, so it is done in a thread, keeping the dashboard
+        # responsive
+        updates.recent_added_internal_links, updates.recent_removed_internal_links = await asyncio.to_thread(
+            _find_url_difference, stored_internal_links, current_internal_links
         )
         # Only the counts are logged, as a website can have thousands of pages
         added_count: int = len(updates.recent_added_internal_links or [])

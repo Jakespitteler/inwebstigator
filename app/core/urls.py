@@ -5,12 +5,14 @@ They do not fetch anything, so the models, the database services and the crawler
 """
 
 from collections.abc import Iterable
+from functools import lru_cache
 from pathlib import PurePosixPath
 from urllib.parse import ParseResult, parse_qsl, urlencode, urljoin, urlparse
 
 DEFAULT_PORTS: dict[str, int] = {"http": 80, "https": 443}
 TRACKING_PARAMETER_PREFIXES: tuple[str, ...] = ("utm_",)
 TRACKING_PARAMETERS: frozenset[str] = frozenset({"fbclid", "gclid", "msclkid", "mc_cid", "mc_eid", "_ga"})
+PAGE_KEY_CACHE_SIZE: int = 100_000
 
 
 def site_host(netloc: str) -> str:
@@ -166,12 +168,16 @@ def _rebuild_url(parsed: ParseResult, netloc: str) -> str:
     return parsed._replace(netloc=netloc, fragment="", path=path, query=query).geturl()
 
 
+@lru_cache(maxsize=PAGE_KEY_CACHE_SIZE)
 def page_key(url: str) -> str:
     """Returns what identifies the page a URL goes to, so URLs written differently for the same page match.
 
     The same page can be written with or without a trailing slash, fragment, leading "www.", default port or
     tracking parameters, and with capitals in the domain. This is only for comparing URLs: a URL is still fetched
     as it was written, as some websites only answer on one of example.com and www.example.com.
+
+    The keys are cached, as the crawler works out the key of every link on every page, and most of those are the
+    same menu links again. Working them all out afresh held up the dashboard while a large website was crawled.
 
     Args:
         url: A full URL.
