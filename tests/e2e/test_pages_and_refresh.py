@@ -53,9 +53,10 @@ def test_the_about_page_has_no_refresh_button(open_dashboard: Callable[..., Page
 
 
 def test_every_way_back_to_the_dashboard_works(open_dashboard: Callable[..., Page], app_server: RunningApp) -> None:
-    """Tests the app name in the header, the footer's Dashboard link and the About page's back link all go back to
-    the dashboard."""
+    """Tests the logo and the app name in the header, the footer's Dashboard link and the About page's back link all
+    go back to the dashboard."""
     links: tuple[Callable[[Page], Locator], ...] = (
+        lambda page: page.locator(".brand-logo-link"),
         lambda page: page.locator(".home-link"),
         lambda page: page.locator(".site-footer").get_by_role("link", name="Dashboard"),
         lambda page: page.locator(".back-link"),

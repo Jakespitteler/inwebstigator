@@ -1,21 +1,30 @@
-        {# Shared page header. The app name links back to the dashboard from any page. #}
+        {# Shared page header. The logo and the app name link back to the dashboard from any page. #}
         {# Set `current_page` before including it; the Refresh button only shows on the dashboard. #}
         <div class="dashboard-header">
             <div class="dashboard-brand">
-                <img
-                    src="{{ url_for('static', path='logo.png') }}"
-                    alt=""
-                    class="brand-logo brand-logo-light"
-                    width="72"
-                    height="72"
+                <!-- The app name beside it is the same link, so this one is skipped by the keyboard and screen readers -->
+                <a
+                    href="{{ url_for('get_dashboard') }}"
+                    class="brand-logo-link"
+                    title="Go to the dashboard"
+                    tabindex="-1"
+                    aria-hidden="true"
                 >
-                <img
-                    src="{{ url_for('static', path='logo-dark.png') }}"
-                    alt=""
-                    class="brand-logo brand-logo-dark"
-                    width="72"
-                    height="72"
-                >
+                    <img
+                        src="{{ url_for('static', path='logo.png') }}"
+                        alt=""
+                        class="brand-logo brand-logo-light"
+                        width="72"
+                        height="72"
+                    >
+                    <img
+                        src="{{ url_for('static', path='logo-dark.png') }}"
+                        alt=""
+                        class="brand-logo brand-logo-dark"
+                        width="72"
+                        height="72"
+                    >
+                </a>
                 <h1>
                     <a href="{{ url_for('get_dashboard') }}" class="home-link" title="Go to the dashboard">Inwebstigator</a>
                 </h1>
