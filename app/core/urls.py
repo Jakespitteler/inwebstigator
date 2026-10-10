@@ -172,9 +172,11 @@ def _rebuild_url(parsed: ParseResult, netloc: str) -> str:
 def page_key(url: str) -> str:
     """Returns what identifies the page a URL goes to, so URLs written differently for the same page match.
 
-    The same page can be written with or without a trailing slash, fragment, leading "www.", default port or
-    tracking parameters, and with capitals in the domain. This is only for comparing URLs: a URL is still fetched
-    as it was written, as some websites only answer on one of example.com and www.example.com.
+    The same page can be written with http or https, with or without a trailing slash, fragment, leading "www.",
+    default port or tracking parameters, and with capitals in the domain. This is only for comparing URLs: a URL is
+    still fetched as it was written, as some websites only answer on one of example.com and www.example.com.
+
+    It is the app's one rule for when two URLs are the same page, used for websites, critical pages and crawled pages.
 
     The keys are cached, as the crawler works out the key of every link on every page, and most of those are the
     same menu links again. Working them all out afresh held up the dashboard while a large website was crawled.
@@ -183,14 +185,17 @@ def page_key(url: str) -> str:
         url: A full URL.
 
     Returns:
-        The URL without those differences, e.g. "https://www.Example.com/news/" becomes "https://example.com/news".
+        The URL without those differences, e.g. "http://www.Example.com/news/" becomes "https://example.com/news".
     """
     parsed: ParseResult = urlparse(url)
-    return _rebuild_url(parsed, netloc=site_host(_without_default_port(parsed)))
+    netloc: str = site_host(_without_default_port(parsed))
+    # Websites serve the same pages over http and https (usually redirecting one to the other)
+    scheme: str = "https" if parsed.scheme == "http" else parsed.scheme
+    return _rebuild_url(parsed._replace(scheme=scheme), netloc=netloc)
 
 
 def is_same_page(url: str, other_url: str) -> bool:
-    """Checks whether two URLs are the same page, e.g. "https://example.com/news" and "https://www.Example.com/news/".
+    """Checks whether two URLs are the same page, e.g. "https://example.com/news" and "http://www.Example.com/news/".
 
     Args:
         url: A full URL.
@@ -202,34 +207,35 @@ def is_same_page(url: str, other_url: str) -> bool:
     return page_key(url) == page_key(other_url)
 
 
-def same_page_key(url: str) -> tuple[str, str, str]:
-    """Returns what identifies a web page, however its address is written.
-
-    Addresses for the same page match whether they use http or https, have "www." or not,
-    use upper or lower case in the domain, or end with a "/".
+def _is_http_version_of(kept_url: str, url: str) -> bool:
+    """Checks whether a URL kept for a page is its http address, and another URL is its https address.
 
     Args:
-        url: The address of the page.
+        kept_url: The URL kept for the page so far.
+        url: Another URL for the same page.
 
     Returns:
-        The page's website, path and query, to compare with another page's key.
+        True if the https address should be kept instead.
     """
-    parsed: ParseResult = urlparse(normalise_url(url.strip()))
-    return site_host(parsed.netloc), parsed.path, parsed.query
+    return urlparse(kept_url).scheme == "http" and urlparse(url).scheme == "https"
 
 
 def remove_repeated_pages(urls: Iterable[str]) -> list[str]:
-    """Removes URLs that are the same page as an earlier URL, keeping the first as it was written.
+    """Removes URLs that are the same page as an earlier URL, keeping the first as it was written, except that a
+    page's https address is kept over its http address.
 
-    For example "https://www.example.com/news/" is removed when it follows "https://example.com/news".
+    For example "https://www.example.com/news/" is removed when it follows "https://example.com/news", and
+    "http://example.com/news" is replaced by "https://example.com/news" when that follows it.
 
     Args:
         urls: Full URLs.
 
     Returns:
-        The URLs in their original order, with each page only once.
+        The URLs in the order each page first appeared, with each page only once.
     """
-    first_url_by_page: dict[str, str] = {}
+    url_by_page: dict[str, str] = {}
     for url in urls:
-        first_url_by_page.setdefault(page_key(url), url)
-    return list(first_url_by_page.values())
+        key: str = page_key(url)
+        if key not in url_by_page or _is_http_version_of(url_by_page[key], url):
+            url_by_page[key] = url
+    return list(url_by_page.values())

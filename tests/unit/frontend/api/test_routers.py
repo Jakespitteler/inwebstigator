@@ -948,6 +948,7 @@ def test_a_website_cannot_be_set_to_make_no_requests_at_once(
         "/test_critical_page/",
         "https://www.test_website.com/test_critical_page",
         "https://TEST_WEBSITE.com/test_critical_page",
+        "http://test_website.com/test_critical_page",
     ],
 )
 def test_adding_a_critical_page_already_watched_is_refused(
@@ -958,7 +959,8 @@ def test_adding_a_critical_page_already_watched_is_refused(
     typed_url: str,
 ) -> None:
     """Tests a critical page that is already watched is refused, including when it is written differently (a
-    trailing slash, no "www." or capitals in the domain), so the same page is not watched (and reported) twice."""
+    trailing slash, no "www.", capitals in the domain or http instead of https), so the same page is not watched
+    (and reported) twice."""
     mock_check_pages_exist = mocker.patch("app.backend.websites.website_setup.check_pages_exist")
 
     response = api_client.post(

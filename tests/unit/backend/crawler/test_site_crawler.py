@@ -251,9 +251,12 @@ async def test_crawl_site_visits_a_page_linked_with_and_without_www_once(
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
 ):
     """Tests a website that answers on both example.com and www.example.com without redirecting, and links to
-    both (and with capitals in the domain), has each page visited and returned once."""
+    both (and with capitals in the domain, or with http), has each page visited and returned once."""
     page_paths: dict[str, str] = {
-        "/": '<a href="https://www.example.com/about">About</a><a href="https://EXAMPLE.com/about/">About</a>',
+        "/": (
+            '<a href="https://www.example.com/about">About</a><a href="https://EXAMPLE.com/about/">About</a>'
+            '<a href="http://example.com/about">About</a>'
+        ),
         "/about": '<a href="https://example.com/">Home</a><a href="https://www.example.com/">Home</a>',
     }
     requested_urls: list[str] = []

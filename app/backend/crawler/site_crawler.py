@@ -173,7 +173,7 @@ async def crawl_site(
     a different partial crawl each scan would report pages being added and removed that never were.
 
     Pages are tracked by their `page_key` (visited maps each page's key to the URL it was visited at),
-    so a page linked as both example.com/a and www.example.com/a is only visited once.
+    so a page linked as both example.com/a and www.example.com/a (or with http and https) is only visited once.
 
     Args:
         client: The HTTP client instance used to execute network requests.

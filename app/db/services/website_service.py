@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from app.core.config import config
 from app.core.errors import NotFoundError, WebsiteAlreadyMonitoredError
-from app.core.urls import remove_repeated_pages, same_page_key
+from app.core.urls import page_key, remove_repeated_pages
 from app.db import repository
 from app.db.schema import DBWebsite
 from app.db.services.base_crud_service import BaseCRUDService
@@ -65,10 +65,10 @@ class WebsiteService(BaseCRUDService[DBWebsite, WebsiteRead, WebsiteCreate, Webs
         Raises:
             NotFoundError: If no matching website record exists for the provided URL.
         """
-        url_key: tuple[str, str, str] = same_page_key(str(url))
+        url_key: str = page_key(str(url))
         # Only the ids and URLs are loaded to search, as a website's internal links can number thousands
         for website_id, website_url in self._db.execute(select(DBWebsite.id, DBWebsite.url)).all():
-            if same_page_key(website_url) == url_key:
+            if page_key(website_url) == url_key:
                 return self.get(website_id)
 
         raise NotFoundError(attributes={"url": url})

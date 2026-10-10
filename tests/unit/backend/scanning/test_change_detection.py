@@ -273,6 +273,22 @@ async def test_get_website_updates_returns_none_when_nothing_changed(
 
 
 @pytest.mark.anyio
+async def test_a_page_saved_with_https_and_crawled_with_http_is_not_reported_as_changed(
+    test_website: WebsiteRead, mocker: MockerFixture
+) -> None:
+    """Tests a page crawled at its http address, after an earlier scan saved it at its https address (or the other
+    way round), is the same page, so it is reported as neither removed nor added."""
+    saved_pages = [HttpUrl("https://example.com/"), HttpUrl("http://example.com/about")]
+    mocker.patch(
+        "app.backend.scanning.change_detection.crawl_site",
+        return_value={"http://example.com/", "https://example.com/about"},
+    )
+    website = test_website.model_copy(update={"critical_pages": []})
+
+    assert await get_website_updates(mocker.Mock(), website, saved_pages, None, None, None) is None
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("init", [False, True], ids=["no-saved-links", "init-over-saved-links"])
 async def test_get_website_updates_saves_internal_link_baseline(
     test_website: WebsiteRead,

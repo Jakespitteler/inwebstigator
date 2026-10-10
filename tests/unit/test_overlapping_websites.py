@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.errors import IntegrityError, WebsiteAlreadyMonitoredError
-from app.core.urls import same_page_key
+from app.core.urls import page_key
 from app.db.schema import DBInternalLink, DBWebsite
 from app.db.services.internal_link_service import InternalLinkService
 from app.db.services.website_service import WebsiteService
@@ -76,9 +76,9 @@ def test_deleting_an_overlapping_websites_link_leaves_the_other_websites_copy(se
         "https://www.test_website.com/#top",
     ],
 )
-def test_same_page_key_matches_however_the_address_is_written(written_differently: str) -> None:
+def test_page_key_matches_however_the_address_is_written(written_differently: str) -> None:
     """Tests addresses for the same page match with or without "www.", "/" or a #section, in http or https."""
-    assert same_page_key(written_differently) == same_page_key("https://www.test_website.com/")
+    assert page_key(written_differently) == page_key("https://www.test_website.com/")
 
 
 @pytest.mark.parametrize(
@@ -90,9 +90,9 @@ def test_same_page_key_matches_however_the_address_is_written(written_differentl
         "https://www.test_website.com/?page=2",
     ],
 )
-def test_same_page_key_tells_different_pages_apart(different_page: str) -> None:
+def test_page_key_tells_different_pages_apart(different_page: str) -> None:
     """Tests a different path, subdomain, website or query is a different page."""
-    assert same_page_key(different_page) != same_page_key("https://www.test_website.com/")
+    assert page_key(different_page) != page_key("https://www.test_website.com/")
 
 
 def test_get_by_url_finds_a_website_however_its_address_is_written(session: Session, test_website: WebsiteRead) -> None:

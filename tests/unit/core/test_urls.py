@@ -19,6 +19,7 @@ from app.core.urls import (
         ("https://www.example.com/news", "https://example.com/news", True),
         ("https://Example.COM/news", "https://example.com/news", True),
         ("https://WWW.Example.com/news/", "https://example.com/news", True),
+        ("http://example.com/news", "https://example.com/news", True),
         ("https://example.com/News", "https://example.com/news", False),
         ("https://example.com/news", "https://example.com/sport", False),
         ("https://example.com/news?page=2", "https://example.com/news", False),
@@ -26,8 +27,9 @@ from app.core.urls import (
     ],
 )
 def test_is_same_page_ignores_differences_that_do_not_change_the_page(url: str, other_url: str, expected: bool) -> None:
-    """Test URLs that only differ by a trailing slash, fragment, leading "www." or capitals in the domain are the
-    same page, while a different path (including its capitals), query or subdomain is a different page."""
+    """Test URLs that only differ by a trailing slash, fragment, leading "www.", capitals in the domain or http
+    instead of https are the same page, while a different path (including its capitals), query or subdomain is a
+    different page."""
     assert is_same_page(url, other_url) is expected
 
 
@@ -44,11 +46,20 @@ def test_remove_repeated_pages_keeps_the_first_of_each_page() -> None:
     assert remove_repeated_pages(urls) == ["https://example.com", "https://example.com/news/"]
 
 
+def test_remove_repeated_pages_keeps_a_pages_https_address_over_its_http_one() -> None:
+    """Test a page written with http and then https is kept once, at its https address, in the place it first
+    appeared."""
+    urls = ["http://example.com/news", "https://example.com/", "https://example.com/news/"]
+
+    assert remove_repeated_pages(urls) == ["https://example.com/news/", "https://example.com/"]
+
+
 def test_page_key_only_removes_differences_that_do_not_change_the_page() -> None:
-    """Test the page key drops a leading "www.", capitals in the domain, a trailing slash and a fragment, but keeps
-    the path's capitals and the query, which can change the page."""
+    """Test the page key drops a leading "www.", capitals in the domain, a trailing slash and a fragment, and writes
+    http as https, but keeps the path's capitals and the query, which can change the page."""
     assert page_key("https://WWW.Example.com/News/?id=1#top") == "https://example.com/News?id=1"
     assert page_key("https://www.example.com") == "https://example.com/"
+    assert page_key("http://example.com:80/news") == "https://example.com/news"
 
 
 @pytest.mark.parametrize(
