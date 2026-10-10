@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from app.core.config import config
 from app.core.errors import NotFoundError, WebsiteAlreadyMonitoredError
-from app.core.urls import page_key, remove_repeated_pages
+from app.core.urls import is_same_page, page_key, remove_repeated_pages
 from app.db import repository
 from app.db.schema import DBWebsite
 from app.db.services.base_crud_service import BaseCRUDService
@@ -97,8 +97,15 @@ class WebsiteService(BaseCRUDService[DBWebsite, WebsiteRead, WebsiteCreate, Webs
         repository.add(self._db, record=website_record)
 
         critical_page_service = CriticalPageService(self._db)
-        # Each page is created once, even if written twice (e.g. "/news" and "/news/")
-        for critical_page_url in remove_repeated_pages([str(model_create.url), *model_create.critical_pages]):
+        # Each page is created once, even if written twice (e.g. "/news" and "/news/"). The home page is always the
+        # website's own address, so the dashboard and the scans can tell which page it is.
+        website_url: str = str(model_create.url)
+        other_pages: list[str] = [
+            page_url
+            for page_url in remove_repeated_pages(model_create.critical_pages)
+            if not is_same_page(page_url, website_url)
+        ]
+        for critical_page_url in [website_url, *other_pages]:
             critical_page_service.create(
                 CriticalPageCreate(website_id=website_record.id, url=HttpUrl(critical_page_url))
             )

@@ -606,6 +606,16 @@ def test_create_monitors_main_url_once(session: Session) -> None:
     assert payload.critical_pages == ["https://example.com/fees", "https://example.com/"]  # caller's model untouched
 
 
+def test_create_keeps_the_websites_own_address_as_its_home_page(session: Session) -> None:
+    """Tests a website added with http, with its home page also typed as a critical page with https, keeps its own
+    address as its home page, so the dashboard and the scans can still tell which page is the home page."""
+    payload = WebsiteCreate(url=HttpUrl("http://example.com"), critical_pages=["https://example.com/"])
+
+    website = WebsiteService(session).create(payload)
+
+    assert [page.url for page in website.critical_pages] == [website.url]
+
+
 def test_create_links_an_email_given_twice_once(session: Session) -> None:
     """Tests the same email typed twice in the wizard adds one recipient, rather than failing part way through."""
     website = WebsiteService(session).create(
