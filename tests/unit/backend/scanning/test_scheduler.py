@@ -1,14 +1,17 @@
 import asyncio
 from collections.abc import Callable
 from datetime import UTC, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 from apscheduler.schedulers.asyncio import AsyncIOScheduler  # pyright: ignore[reportMissingTypeStubs]
 from fastapi import FastAPI
 from pytest_mock import MockerFixture
 
+from app.backend.scanning import scheduler as scheduler_module
 from app.backend.scanning.all_websites_scan import latest_check_time
 from app.backend.scanning.scheduler import (
+    SCAN_JOB_ID,
     next_scheduled_check,
     scan_then_send_health_checks,
     schedule_scans,
@@ -72,6 +75,8 @@ async def test_scheduled_checks_are_at_the_scan_time_whenever_the_app_started(mo
 async def test_schedule_scans_lifespan(mocker: MockerFixture) -> None:
     """Tests lifespan initialisation: one job for the scans and health checks at the scheduled checks, one more
     shortly after startup to catch up on a check missed while the app was closed, and the scheduler's lifecycle."""
+    mocker.patch.object(config, "scheduler_scan_time", time(8, 0))
+    mocker.patch.object(config, "scheduler_minimum_days_between_scans", 0.5)
     mock_add_job = mocker.patch.object(scheduler, "add_job")
     mock_start = mocker.patch.object(scheduler, "start")
     mock_shutdown = mocker.patch.object(scheduler, "shutdown")
@@ -81,12 +86,12 @@ async def test_schedule_scans_lifespan(mocker: MockerFixture) -> None:
         scheduled_checks, catch_up = mock_add_job.call_args_list
         assert scheduled_checks.args == catch_up.args == ()
 
-        scheduled_options = dict(scheduled_checks.kwargs)
-        assert scheduled_options.pop("start_date") == latest_check_time(started_at)  # Lined up with the scan time
-        assert scheduled_options == {
+        assert scheduled_checks.kwargs == {
             "func": scan_then_send_health_checks,
-            "trigger": "interval",
-            "days": config.scheduler_minimum_days_between_scans,
+            "trigger": "cron",  # By the clock, so the checks stay at 8am and 8pm when daylight saving changes
+            "hour": "8,20",
+            "minute": 0,
+            "second": 0,
             "misfire_grace_time": None,  # a late run (e.g. after the computer slept) still happens
             "id": "scan_then_send_health_checks",
             "replace_existing": True,  # a restarted lifespan does not add a duplicate job
@@ -106,6 +111,46 @@ async def test_schedule_scans_lifespan(mocker: MockerFixture) -> None:
         mock_shutdown.assert_not_called()
 
     mock_shutdown.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_scheduled_checks_stay_at_the_scan_time_when_daylight_saving_starts(mocker: MockerFixture) -> None:
+    """Tests the checks stay at 8am and 8pm on the computer's clock after daylight saving starts (Sydney's clocks go
+    forward on 4 October 2026), rather than moving to 9am and 9pm until the app is next started."""
+    sydney = ZoneInfo("Australia/Sydney")
+    mocker.patch.object(config, "scheduler_scan_time", time(8, 0))
+    mocker.patch.object(config, "scheduler_minimum_days_between_scans", 0.5)
+    mocker.patch("app.backend.scanning.scheduler.scheduler", AsyncIOScheduler(timezone=sydney))
+    mocker.patch("app.backend.scanning.scheduler.scan_then_send_health_checks", _do_nothing)
+
+    async with schedule_scans(FastAPI()):
+        trigger = scheduler_module.scheduler.get_job(SCAN_JOB_ID).trigger  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType, reportOptionalMemberAccess]
+
+    fire_times: list[str] = []
+    fire_time: datetime = datetime(2026, 10, 3, 7, 0, tzinfo=sydney)
+    for _ in range(4):
+        fire_time = trigger.get_next_fire_time(None, fire_time + timedelta(seconds=1))  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+        fire_times.append(f"{fire_time:%d %H:%M}")
+    assert fire_times == ["03 08:00", "03 20:00", "04 08:00", "04 20:00"]
+
+
+@pytest.mark.anyio
+async def test_checks_that_do_not_fall_on_the_same_hours_each_day_are_counted_from_the_scan_time(
+    mocker: MockerFixture,
+) -> None:
+    """Tests checks 1.5 days apart, which cannot be set by the clock, are counted on from the scan time instead."""
+    mocker.patch.object(config, "scheduler_scan_time", time(8, 0))
+    mocker.patch.object(config, "scheduler_minimum_days_between_scans", 1.5)
+    mock_add_job = mocker.patch.object(scheduler, "add_job")
+    mocker.patch.object(scheduler, "start")
+    mocker.patch.object(scheduler, "shutdown")
+    started_at = datetime.now(UTC)
+
+    async with schedule_scans(FastAPI()):
+        scheduled_checks = mock_add_job.call_args_list[0]
+
+    assert (scheduled_checks.kwargs["trigger"], scheduled_checks.kwargs["days"]) == ("interval", 1.5)
+    assert scheduled_checks.kwargs["start_date"] == latest_check_time(started_at)
 
 
 @pytest.mark.anyio
