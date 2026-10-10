@@ -131,7 +131,7 @@ Each website has its own box. Click it to open or close it. In the box you can:
 - **Add Email** to send this website's reports to another address, or
   **Delete** one.
 - **Delete Website** to stop watching it. This also removes its saved
-  history, so you'll be asked to type the website's name to confirm.
+  history, so you'll be asked to type `CONFIRM` first.
 
 **Run All Scans** at the top scans every website straight away.
 

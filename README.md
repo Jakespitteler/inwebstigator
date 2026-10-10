@@ -237,7 +237,9 @@ cp .env.example .env      # then fill it in
 ```
 
 `app/core/config.py` reads `.env` for the whole project on import, so there is
-nothing to `source`. Anything already exported wins over the file, so you can
+nothing to `source`. It is read from the project's folder, or in the packaged
+app from the folder `inwebstigator.exe` is in, whichever folder the app was
+started from. Anything already exported wins over the file, so you can
 still override a setting for one run
 (`EMAIL_TIME_ZONE=UTC uv run python inwebstigator.py`). Every field of `Config`
 can be set this way, by its name in capitals. `.env` is gitignored — never

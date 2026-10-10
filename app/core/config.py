@@ -6,7 +6,9 @@ from dotenv import load_dotenv
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings
 
-load_dotenv()
+from app.core.paths import app_folder
+
+load_dotenv(app_folder() / ".env")
 
 
 class Config(BaseSettings):
