@@ -100,6 +100,18 @@ class AlreadyWatchedError(Exception):
         super().__init__(f"{url} is already being watched.")
 
 
+class MainPageNotDeletableError(Exception):
+    """Exception raised when deleting a website's main page, which is always watched while the website is.
+
+    Attributes:
+        url: The URL of the main page.
+    """
+
+    def __init__(self, url: str) -> None:
+        self.url: str = url
+        super().__init__(f"{url} is the website's main page, which is always watched, so it cannot be deleted.")
+
+
 class InvalidPageError(ValueError):
     """Exception raised when a critical page being added is not a valid URL, or is on a different website."""
 

@@ -17,6 +17,7 @@ from app.core.config import config
 from app.core.errors import (
     AlreadyWatchedError,
     InvalidPageError,
+    MainPageNotDeletableError,
     NotFoundError,
     ScanAlreadyQueuedError,
     ScanCancelledError,
@@ -194,6 +195,27 @@ async def add_critical_page(website_id: uuid.UUID, page_url: str) -> CriticalPag
         with db_context() as session:
             CriticalPageService(session).update(id=critical_page.id, model_update=baseline)
     return critical_page
+
+
+def delete_critical_page(critical_page_id: uuid.UUID) -> None:
+    """Stops watching a critical page.
+
+    A website's main page is always watched while the website is, so it cannot be deleted on its own.
+
+    Args:
+        critical_page_id: The ID of the critical page to delete.
+
+    Raises:
+        NotFoundError: If the critical page does not exist.
+        MainPageNotDeletableError: If the page is its website's main page.
+    """
+    with db_context() as session:
+        critical_page_service = CriticalPageService(session)
+        critical_page: CriticalPageRead = critical_page_service.get(critical_page_id)
+        website: WebsiteRead = WebsiteService(session).get(critical_page.website_id)
+        if critical_page.url == website.url:  # The same rule the dashboard uses to show the main page
+            raise MainPageNotDeletableError(str(website.url))
+        critical_page_service.delete(critical_page_id)
 
 
 def _not_yet_recipients(website: WebsiteRead, emails: Sequence[str]) -> list[str]:

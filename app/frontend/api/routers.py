@@ -15,6 +15,7 @@ from app.backend.scanning.scheduler import next_scheduled_check
 from app.backend.websites.website_setup import (
     add_critical_page,
     add_website,
+    delete_critical_page,
     delete_website,
     update_website_settings,
 )
@@ -250,6 +251,9 @@ RECIPIENT_ROUTER: APIRouter = create_crud_router(
     service_class=RecipientService,
     create_class=RecipientCreate,
     update_class=RecipientUpdate,
+    # Recipients are only added and removed through their websites (PATCH /websites/{id}), which emails each added
+    # address to confirm it, so they can only be read here
+    exclude={CRUDOperation.CREATE, CRUDOperation.UPDATE, CRUDOperation.DELETE},
 )
 
 CRITICAL_PAGE_ROUTER: APIRouter = create_crud_router(
@@ -258,8 +262,9 @@ CRITICAL_PAGE_ROUTER: APIRouter = create_crud_router(
     create_class=CriticalPageCreate,
     update_class=CriticalPageUpdate,
     # Critical pages are only added through /scanner/initial_critical_page_scan, which checks the page is on the
-    # website and loads, and saves its baseline. Updating is replaced below, so only the page's settings can change.
-    exclude={CRUDOperation.CREATE, CRUDOperation.UPDATE},
+    # website and loads, and saves its baseline. Updating and deleting are replaced below, so only the page's settings
+    # can change and a website's main page cannot be deleted.
+    exclude={CRUDOperation.CREATE, CRUDOperation.UPDATE, CRUDOperation.DELETE},
 )
 WEBSITE_ROUTER: APIRouter = create_crud_router(
     prefix="/websites",
@@ -290,6 +295,19 @@ async def update_critical_page(
         NotFoundError: If no critical page has the ID.
     """
     return CriticalPageService(session).update(id, settings.as_critical_page_update())
+
+
+@CRITICAL_PAGE_ROUTER.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_critical_page(id: uuid.UUID) -> None:
+    """Stops watching a critical page. A website's main page fails with a 422 status, as it is always watched.
+
+    Args:
+        id (uuid.UUID): The ID of the critical page to delete.
+
+    Raises:
+        NotFoundError: If no critical page has the ID.
+    """
+    delete_critical_page(id)
 
 
 @WEBSITE_ROUTER.patch("/{id}", response_model=WebsiteRead)

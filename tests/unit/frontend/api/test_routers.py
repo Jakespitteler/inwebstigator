@@ -11,7 +11,7 @@ import pytest
 from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 from httpx2 import ASGITransport, AsyncClient, MockTransport, Response
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, HttpUrl, ValidationError
 from pytest_mock import MockerFixture
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -171,6 +171,30 @@ class TestRecipientRouter(TestCRUDRouters):
     model_create = recipient_models.RecipientCreate(email="test_recipient@gmail.com")
     model_update = recipient_models.RecipientUpdate(email="test_recipient_update@gmail.com")
     fixture_name = "test_recipient"
+    # Recipients are only added, changed and removed through their websites (PATCH /websites/{id}), which emails each
+    # added address to confirm it can receive email, so they can only be read here
+    expected_create_status = 405
+
+    def test_update_record(self, api_client: TestClient, api_record: Base) -> None:
+        """Tests a recipient's address cannot be changed on its own, which would skip confirming the new address."""
+        response: Response = api_client.patch(url=f"{self.prefix}/{api_record.id}", json={"email": "new@example.com"})
+        assert response.status_code == 405, response.text
+
+    def test_update_record_not_found(self, api_client: TestClient) -> None:
+        """Tests changing a recipient is refused before looking for it, as recipients cannot be changed here."""
+        response: Response = api_client.patch(url=f"{self.prefix}/{uuid.uuid4()}", json={"email": "new@example.com"})
+        assert response.status_code == 405, response.text
+
+    def test_delete_record(self, api_client: TestClient, api_record: Base) -> None:
+        """Tests a recipient cannot be deleted on its own; it is removed from each website instead."""
+        response: Response = api_client.delete(url=f"{self.prefix}/{api_record.id}")
+        assert response.status_code == 405, response.text
+        assert api_client.get(url=f"{self.prefix}/{api_record.id}").status_code == 200
+
+    def test_delete_record_not_found(self, api_client: TestClient) -> None:
+        """Tests deleting a recipient is refused before looking for it, as recipients cannot be deleted here."""
+        response: Response = api_client.delete(url=f"{self.prefix}/{uuid.uuid4()}")
+        assert response.status_code == 405, response.text
 
 
 class TestWebsiteRouter(TestCRUDRouters):
@@ -1162,10 +1186,27 @@ def test_adding_a_website_with_the_same_email_twice_adds_it_once(
     assert [recipient.email for recipient in website.recipients] == ["jj@example.com"]
 
 
-def test_a_recipient_time_without_a_time_zone_is_refused(
-    api_client: TestClient, test_recipient: recipient_models.RecipientRead
-) -> None:
-    """Tests a time without a time zone is refused with a 422, as it cannot be saved as UTC."""
-    response = api_client.patch(f"/recipients/{test_recipient.id}", json={"last_email_at": "2026-10-08T10:00:00"})
+def test_a_recipient_time_without_a_time_zone_is_refused() -> None:
+    """Tests a time without a time zone is refused, as it cannot be saved as UTC."""
+    with pytest.raises(ValidationError):
+        recipient_models.RecipientUpdate.model_validate({"last_email_at": "2026-10-08T10:00:00"})
 
-    assert response.status_code == 422, response.text
+
+def test_a_websites_main_page_cannot_be_deleted(
+    api_client: TestClient, session: Session, test_website: website_models.WebsiteRead
+) -> None:
+    """Tests deleting a website's main page is refused with a 422 saying why, as it is always watched, while its
+    other critical pages can still be deleted."""
+    main_page = DBCriticalPage(website_id=test_website.id, url=str(test_website.url))
+    other_page = DBCriticalPage(website_id=test_website.id, url=f"{test_website.url}fees")
+    session.add_all([main_page, other_page])
+    session.flush()
+
+    main_page_response = api_client.delete(f"/critical_pages/{main_page.id}")
+    other_page_response = api_client.delete(f"/critical_pages/{other_page.id}")
+
+    assert main_page_response.status_code == 422, main_page_response.text
+    assert "always watched" in main_page_response.json()["detail"]
+    assert other_page_response.status_code == 204, other_page_response.text
+    remaining = session.scalars(select(DBCriticalPage.id).where(DBCriticalPage.website_id == test_website.id)).all()
+    assert remaining == [main_page.id]

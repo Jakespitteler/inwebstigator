@@ -11,6 +11,7 @@ from app.core.errors import (
     AlreadyWatchedError,
     IntegrityError,
     InvalidPageError,
+    MainPageNotDeletableError,
     NotFoundError,
     PageNotLoadedError,
     ReportNotEmailedError,
@@ -160,14 +161,18 @@ async def scan_not_run_handler(
 
 @app.exception_handler(InvalidPageError)
 @app.exception_handler(PageNotLoadedError)
-async def page_not_added_handler(request: Request, exc: InvalidPageError | PageNotLoadedError):
+@app.exception_handler(MainPageNotDeletableError)
+async def page_not_added_handler(
+    request: Request, exc: InvalidPageError | PageNotLoadedError | MainPageNotDeletableError
+):
     """
-    Handles a website or critical page that cannot be added, because it is not a valid page or cannot be loaded, by
-    returning a 422 status.
+    Handles a website or critical page that cannot be added, because it is not a valid page or cannot be loaded, or a
+    website's main page that cannot be deleted, by returning a 422 status.
 
     Args:
         request: The incoming request.
-        exc: The InvalidPageError or PageNotLoadedError exception, whose message says what is wrong.
+        exc: The InvalidPageError, PageNotLoadedError or MainPageNotDeletableError exception, whose message says what
+            is wrong.
 
     Returns:
         A JSONResponse with a 422 status.
