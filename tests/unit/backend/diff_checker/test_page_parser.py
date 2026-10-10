@@ -298,6 +298,27 @@ def test_the_body_is_read_when_there_is_no_main() -> None:
     assert blocks_of(html) == [(HTMLBlockType.PARAGRAPH, "Fee is $50.")]
 
 
+def test_the_pages_own_header_and_footer_are_not_read_when_there_is_no_main() -> None:
+    """Tests a page without a <main> does not have its site header or footer read (e.g. a copyright year that changes
+    every January), while the header of an article, which holds the article's own title, is still read."""
+    html = (
+        "<body><header><p>Site banner</p></header>"
+        "<article><header><h2>Fees</h2></header><p>Fee is $50.</p></article>"
+        "<footer><p>Copyright 2026</p></footer></body>"
+    )
+
+    assert blocks_of(html) == [(HTMLBlockType.HEADING_2, "Fees"), (HTMLBlockType.PARAGRAPH, "Fee is $50.")]
+
+
+def test_links_in_the_pages_own_header_and_footer_are_not_watched_when_there_is_no_main() -> None:
+    """Tests a page without a <main> does not have the links in its site header or footer watched, as they are the
+    same on every page."""
+    html = '<body><header><a href="/home">Home</a></header><p><a href="/fees">Fees</a></p></body>'
+
+    assert 'href="/home"' not in main_content_html(html)
+    assert 'href="/fees"' in main_content_html(html)
+
+
 def test_tables_are_read_row_by_row_with_cells_joined_by_pipes() -> None:
     """Tests a table's caption is one block and each row is one block, with its cells joined by pipes."""
     html = (
