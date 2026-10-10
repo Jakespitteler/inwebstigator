@@ -7,7 +7,7 @@ from typing import NamedTuple
 from httpx2 import AsyncClient, HTTPStatusError, RequestError
 from pydantic import HttpUrl
 
-from app.backend.crawler.links import extract_links_from_html, separate_document_links
+from app.backend.crawler.links import extract_links_from_html, page_link_base, separate_document_links
 from app.backend.crawler.page_fetcher import fetch_content_from_url
 from app.backend.crawler.site_crawler import crawl_site
 from app.backend.diff_checker.content_diff import (
@@ -142,17 +142,26 @@ class PageLinks(NamedTuple):
     links: list[HttpUrl]
 
 
-def _links_on_page(page_url: str, html: str) -> PageLinks:
-    """Finds the web links in some of a page's HTML, split into documents and other links.
+def _links_on_page(page_url: str, html: str, main_content_only: bool = False) -> PageLinks:
+    """Finds the web links on a page, split into documents and other links.
+
+    Relative links are resolved against the page's `<base href>` if it has one, which is in its `<head>`, so the
+    whole page is always given.
 
     Args:
-        page_url: The page's URL after any redirects, which relative links are resolved against.
-        html: The HTML to look for links in.
+        page_url: The page's URL after any redirects.
+        html: The page's whole HTML.
+        main_content_only: Only look in the page's main content (see `main_content_html`), leaving out its
+            navigation and side panels. Defaults to the whole page.
 
     Returns:
         The page's documents and links.
     """
-    document_urls, link_urls = separate_document_links(links=extract_links_from_html(url=page_url, html_content=html))
+    link_base: str = page_link_base(page_url, html)
+    searched_html: str = main_content_html(html) if main_content_only else html
+    document_urls, link_urls = separate_document_links(
+        links=extract_links_from_html(url=link_base, html_content=searched_html)
+    )
     return PageLinks(URL_LIST_ADAPTER.validate_python(document_urls), URL_LIST_ADAPTER.validate_python(link_urls))
 
 
@@ -244,7 +253,7 @@ async def get_critical_page_updates(
     """
 
     text_body, page_url = await fetch_content_from_url(client, url=str(stored_page.url))
-    main_links: PageLinks = await asyncio.to_thread(_links_on_page, page_url, main_content_html(text_body))
+    main_links: PageLinks = await asyncio.to_thread(_links_on_page, page_url, text_body, True)
 
     if init or stored_page.text_body is None:
         return CriticalPageUpdate(

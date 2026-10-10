@@ -67,6 +67,23 @@ async def test_get_critical_page_updates_with_changes(
 
 
 @pytest.mark.anyio
+async def test_a_watched_pages_links_are_resolved_against_its_base(
+    test_critical_page: CriticalPageRead, mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient]
+):
+    """Tests the links in a watched page's main content are resolved against the page's <base href>, which is in its
+    <head>, rather than against the page's own address."""
+    html = (
+        '<html><head><base href="https://www.test_website.com/au/"></head><body><a href="fees">Fees</a></body></html>'
+    )
+
+    async with mock_client_factory(lambda request: httpx2.Response(200, html=html)) as client:
+        updates: CriticalPageUpdate | None = await get_critical_page_updates(client, test_critical_page, init=True)
+
+    assert updates is not None
+    assert updates.links == [HttpUrl("https://www.test_website.com/au/fees")]
+
+
+@pytest.mark.anyio
 async def test_get_critical_page_updates_no_changes(
     test_critical_page: CriticalPageRead,
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],

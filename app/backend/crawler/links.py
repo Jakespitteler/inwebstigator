@@ -2,7 +2,8 @@ import logging
 from pathlib import PurePosixPath
 from urllib.parse import ParseResult, urljoin, urlparse
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
+from bs4.filter import SoupStrainer
 
 from app.core.urls import normalise_url, page_key, remove_repeated_pages, site_host
 
@@ -165,6 +166,35 @@ def is_internal_web_page(base_url: str, check_url: str) -> bool:
     return base_url_path == check_url_path or base_url_path in check_url_path.parents
 
 
+def _base_href(url: str, soup: BeautifulSoup) -> str:
+    """Works out the URL a page's relative links are resolved against: its `<base href>` if it has one, otherwise
+    the page's own URL.
+
+    Args:
+        url: The page's URL, after any redirects.
+        soup: The parsed page.
+
+    Returns:
+        The URL to resolve relative links against.
+    """
+    base_tag = soup.find("base", href=True)
+    return urljoin(url, str(base_tag["href"]).strip()) if isinstance(base_tag, Tag) else url
+
+
+def page_link_base(url: str, html_content: str) -> str:
+    """Works out the URL a page's relative links are resolved against, from its whole HTML (`<base href>` is in its
+    `<head>`), for when the links are then read from only part of the page.
+
+    Args:
+        url: The page's URL, after any redirects.
+        html_content: The page's whole HTML.
+
+    Returns:
+        The page's `<base href>` if it has one, otherwise the page's own URL.
+    """
+    return _base_href(url, BeautifulSoup(html_content, "html.parser", parse_only=SoupStrainer("base")))
+
+
 def extract_links_from_html(
     url: str,
     html_content: str,
@@ -174,7 +204,7 @@ def extract_links_from_html(
     """Extracts, resolves, and normalises unique links from HTML content.
 
     Args:
-        url: The URL of the page, used to resolve relative paths.
+        url: The URL of the page, used to resolve relative paths, unless the page has a `<base href>`.
         html_content: The raw HTML string to be parsed for links.
         internal_only: If True, filters links to only those sharing the base domain and path scope.
         base_url: Optional override URL string used to evaluate domain boundaries when
@@ -194,8 +224,10 @@ def extract_links_from_html(
     if not parsed_base.netloc:
         raise ValueError(f"Invalid url provided: {url}")
 
+    soup = BeautifulSoup(html_content, "html.parser")
+    link_base: str = _base_href(url, soup)
     links: set[str] = set()
-    for tag in BeautifulSoup(html_content, "html.parser").find_all("a", href=True):
+    for tag in soup.find_all("a", href=True):
         href: str = str(tag["href"]).strip()
 
         # Skip empty links and links to a part of the same page
@@ -203,7 +235,7 @@ def extract_links_from_html(
             continue
 
         # Resolve relative links into absolute URLs, keeping only links to web pages
-        absolute_url: str = urljoin(url, href)
+        absolute_url: str = urljoin(link_base, href)
         if urlparse(absolute_url).scheme not in WEB_SCHEMES:
             continue
 

@@ -306,3 +306,13 @@ def test_extract_links_from_html_resolves_links_from_the_page_but_keeps_to_the_b
     )
 
     assert links == ["https://example.com/au/contact", "https://example.com/au/news/story"]
+
+
+def test_extract_links_from_html_resolves_relative_links_against_the_pages_base() -> None:
+    """Tests a page with a <base href> has its relative links resolved against it, as a browser does, rather than
+    against the page's own address."""
+    html = '<html><head><base href="/au/"></head><body><a href="news">News</a></body></html>'
+
+    links: list[str] = extract_links_from_html(url="https://example.com/campaigns/spring", html_content=html)
+
+    assert links == ["https://example.com/au/news"]
