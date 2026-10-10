@@ -2,10 +2,27 @@ import logging
 from datetime import UTC, datetime, tzinfo
 from typing import Any
 
-from sqlalchemy import Column, Connection, DateTime, Engine, MetaData, Table, column, inspect, select, table, update
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Connection,
+    DateTime,
+    Engine,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    column,
+    inspect,
+    select,
+    table,
+    update,
+)
 from sqlalchemy.schema import CreateColumn
 
+from app.core.config import config
 from app.db.schema import Base
+from app.models.website_models import DeactivationReason
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -20,6 +37,8 @@ COLUMNS_SAVED_IN_LOCAL_TIME: dict[str, tuple[str, ...]] = {
 }
 # The database version (SQLite's `user_version`) from which every time is saved in UTC
 UTC_TIMES_VERSION: int = 1
+# The database version from which a website switched off for rate limiting the crawler has that reason saved
+RATE_LIMITED_REASON_VERSION: int = 2
 
 
 def _missing_columns(connection: Connection, table: Table) -> list[Column[Any]]:
@@ -190,6 +209,45 @@ def convert_local_times_to_utc(
         logger.info("Any times saved in this computer's time zone were converted to UTC.")
 
 
+def record_why_rate_limited_websites_were_switched_off(engine: Engine, max_failed_attempts: int) -> None:
+    """Saves that websites were switched off for rate limiting the crawler, for those an older version of the app
+    switched off without saving why, once.
+
+    Without a reason they are described as switched off on the dashboard. They are the inactive websites with no
+    reason that had failed the most times allowed at the slowest crawl speed, which only the app does. The database's
+    version is then set, so a website switched off later is never changed.
+
+    Args:
+        engine: The engine of the database to update.
+        max_failed_attempts: The most failed attempts at the slowest crawl speed before a website is switched off.
+    """
+    with engine.begin() as connection:
+        if _database_version(connection) >= RATE_LIMITED_REASON_VERSION:
+            return
+        if inspect(connection).has_table("websites"):
+            websites = table(
+                "websites",
+                column("active", Boolean()),
+                column("deactivated_reason", String()),
+                column("failed_attempts_at_min_speed", Integer()),
+            )
+            switched_off_for_rate_limiting = connection.execute(
+                update(websites)
+                .where(
+                    websites.c.active.is_(False),
+                    websites.c.deactivated_reason.is_(None),
+                    websites.c.failed_attempts_at_min_speed >= max_failed_attempts,
+                )
+                .values(deactivated_reason=DeactivationReason.RATE_LIMITED.value)
+            )
+            if switched_off_for_rate_limiting.rowcount:
+                logger.info(
+                    "Saved why %d websites were switched off: they kept rate limiting the crawler.",
+                    switched_off_for_rate_limiting.rowcount,
+                )
+        connection.exec_driver_sql(f"PRAGMA user_version = {RATE_LIMITED_REASON_VERSION}")
+
+
 def prepare_database(engine: Engine) -> None:
     """Creates any tables the database is missing, then brings a database made by an older version of the app up
     to date.
@@ -202,3 +260,4 @@ def prepare_database(engine: Engine) -> None:
     drop_outdated_unique_indexes(engine, OUTDATED_UNIQUE_INDEXES)
     add_missing_indexes(engine, Base.metadata)
     convert_local_times_to_utc(engine, COLUMNS_SAVED_IN_LOCAL_TIME)
+    record_why_rate_limited_websites_were_switched_off(engine, config.web_crawler_max_failed_attempts_at_min_speed)
