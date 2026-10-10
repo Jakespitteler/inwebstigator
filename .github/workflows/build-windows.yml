@@ -1,0 +1,56 @@
+# Builds the Windows app and its installer with scripts/build_installer.ps1 on GitHub's Windows machines, then checks
+# the packaged app starts, whenever the files the build uses change. It uses .env.example in place of the real email
+# settings, so its installer cannot send email and is only for checking the build. Build the installer to send
+# testers locally (see "build the Windows app" in README.md).
+name: Build Windows app
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "inwebstigator.py"
+      - "inwebstigator.spec"
+      - "inwebstigator_installer_script.iss"
+      - "scripts/build_installer.ps1"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/build-windows.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Use the example email settings
+        run: Copy-Item .env.example .env
+
+      - name: Build the app and its installer
+        run: ./scripts/build_installer.ps1
+
+      - name: Check the packaged app starts
+        run: |
+          $log = Join-Path $env:LOCALAPPDATA "inwebstigator\logs\inwebstigator.log"
+          $app = Start-Process "dist\inwebstigator\inwebstigator.exe" -PassThru
+          $deadline = (Get-Date).AddSeconds(120)
+          do {
+            Start-Sleep -Seconds 2
+            $started = (Test-Path $log) -and (Select-String -Path $log -Pattern "Application startup complete" -Quiet)
+          } until ($started -or $app.HasExited -or (Get-Date) -gt $deadline)
+          Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+          if (Test-Path $log) { Get-Content $log }
+          if (-not $started) { throw "The packaged app did not start its web server." }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-for-checking-only
+          path: dist/Inwebstigator Installer.exe
+          retention-days: 7

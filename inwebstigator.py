@@ -182,6 +182,19 @@ def quit_on_ctrl_c(console_event: int) -> bool:
     return True
 
 
+def ensure_output_streams() -> None:
+    """Give the app somewhere to write its console output when it is built without a console window.
+
+    A windowed build has no stdout or stderr, and the web server cannot set up its logging without them, so it
+    would not start. The output is thrown away; the log file in AppData still records everything.
+    """
+    # Kept open for as long as the app runs, as the logging writes to them until it exits
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w", encoding="utf-8")  # noqa: SIM115
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, "w", encoding="utf-8")  # noqa: SIM115
+
+
 def find_free_port() -> int:
     """Ask the OS for an unused port so the app never clashes with another server."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -377,5 +390,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    ensure_output_streams()
     if ensure_single_instance():
         main()

@@ -211,6 +211,40 @@ The app logs to `%LOCALAPPDATA%\inwebstigator\logs\inwebstigator.log`, as well
 as the terminal, keeping the last few files (`LOG_FILE_MAX_BYTES`,
 `LOG_FILE_BACKUP_COUNT`), so a tester can send it to the team.
 
+### build the Windows app
+
+The installer testers are sent is built on Windows in two steps: PyInstaller
+packages the app (`inwebstigator.spec`) into `dist\inwebstigator\`, then
+Inno Setup wraps that folder into one installer
+(`inwebstigator_installer_script.iss`). One script does both:
+
+```powershell
+copy .env.example .env    # then fill in the email settings
+powershell -ExecutionPolicy Bypass -File scripts\build_installer.ps1
+```
+
+It needs [uv](https://docs.astral.sh/uv/) and
+[Inno Setup](https://jrsoftware.org/isdl.php) 6.5 or later, and builds
+`dist\Inwebstigator Installer.exe`. It cannot be built on macOS or Linux, as
+PyInstaller only builds for the system it runs on.
+
+- `.env` is put in the installer, next to `inwebstigator.exe`, which is where
+  the installed app reads its settings from. It holds the email account's
+  password, so only send the installer to people who should have it.
+- The installer installs for the person running it (in
+  `%LOCALAPPDATA%\Programs\Inwebstigator`), so it needs no administrator
+  access. It adds a Start menu shortcut, an optional desktop shortcut and a
+  shortcut that starts the app at sign-in, and asks for the app to be quit
+  first if it is running. Uninstalling also deletes the app's data in
+  `%LOCALAPPDATA%\inwebstigator`.
+- The app is built without a console window, as it runs in the system tray.
+  Its log file (above) records what a console would have shown.
+- Change `MyAppVersion` in the installer script for each version sent out.
+- The "Build Windows app" GitHub Actions workflow runs the same script on
+  GitHub's Windows machines whenever the build files change, and checks the
+  packaged app starts. It uses `.env.example`, so its installer cannot send
+  email and is only for checking the build.
+
 ### The dashboard's files
 
 The dashboard is one page, `app/frontend/templates/index.html`, built from
