@@ -423,6 +423,27 @@ async def test_a_scan_saves_the_websites_card_title_from_its_home_page(session: 
 
 
 @pytest.mark.anyio
+async def test_a_card_title_that_cannot_be_worked_out_does_not_lose_the_scan(session: Session, mocker: MockerFixture):
+    """Tests a scan whose website's card title cannot be worked out still saves and records what it found, as the
+    title is only for show."""
+    main_url = "https://example.com"
+    mocker.patch("app.backend.scanning.website_scan.db_context", side_effect=lambda: nullcontext(session))
+    mocker.patch("app.backend.scanning.change_detection.crawl_site", return_value={main_url})
+    mocker.patch("app.backend.scanning.website_scan.website_card_title", side_effect=ValueError("Unreadable page"))
+    service = WebsiteService(session)
+    website = service.create(WebsiteCreate(url=HttpUrl(main_url)))
+
+    async with httpx2.AsyncClient(
+        transport=httpx2.MockTransport(lambda request: httpx2.Response(200, text="<p>Home page.</p>"))
+    ) as client:
+        scan_run = await scan_website(client, website)
+
+    saved = service.get(website.id)
+    assert ScanRunService(session).get_latest_for_website(website.id, limit=1) == [scan_run]
+    assert (saved.critical_pages[0].text_body, saved.card_title) == ("<p>Home page.</p>", None)
+
+
+@pytest.mark.anyio
 async def test_inactive_website_only_has_its_critical_pages_scanned(session: Session, mocker: MockerFixture):
     """Tests an inactive website is not crawled, but changes on its critical pages are still found and reported."""
     main_url = "https://example.com"

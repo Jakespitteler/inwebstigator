@@ -133,14 +133,19 @@ def _save_card_title(website_service: WebsiteService, website_id: uuid.UUID) -> 
     """Works out a website's dashboard card title from its saved home page, saving it if it has changed.
 
     Reading a large home page is slow, so it is done once per scan, after the scan has saved the home page, rather
-    than every time the dashboard loads.
+    than every time the dashboard loads. The title is only for show, so a page it cannot be read from is logged and
+    the website keeps its old title, rather than the scan's results being lost with it.
 
     Args:
         website_service: Reads and saves the website, in the scan's database session.
         website_id: The website that was scanned.
     """
     saved_website: WebsiteRead = website_service.get(website_id)
-    card_title: str = website_card_title(str(saved_website.url), saved_home_page_html(saved_website))
+    try:
+        card_title: str = website_card_title(str(saved_website.url), saved_home_page_html(saved_website))
+    except Exception:
+        logger.exception("Could not work out the card title of %s, so it keeps its old one.", saved_website.url)
+        return
     if card_title != saved_website.card_title:
         website_service.update(id=website_id, model_update=WebsiteUpdate(card_title=card_title))
 
