@@ -91,6 +91,15 @@
         </p>
     {% endif %}
 
+    <!-- Nobody would hear about this website's changes, so say so where it cannot be missed -->
+    {% if not website.recipients %}
+        <p class="no-recipients-notice">
+            <strong>No notification emails.</strong>
+            Nobody is emailed this website's reports. Open it and add an email under
+            Notification emails to receive them.
+        </p>
+    {% endif %}
+
     <!-- Everything below is hidden until the card is expanded -->
     <div
         class="card-body"

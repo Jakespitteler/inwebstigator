@@ -823,6 +823,29 @@ def _website_notice(api_client: TestClient, url: str) -> str | None:
     return " ".join(notice.get_text().split()) if notice else None
 
 
+def test_a_website_nobody_is_emailed_about_says_so(
+    api_client: TestClient, session: Session, test_recipient: recipient_models.RecipientRead
+) -> None:
+    """Tests a website with no notification emails says nobody is emailed its reports, while one with an email
+    does not."""
+    recipient = session.get_one(DBRecipient, test_recipient.id)
+    session.add_all(
+        [
+            DBWebsite(url="https://unheard.example.com"),
+            DBWebsite(url="https://heard.example.com", recipients=[recipient]),
+        ]
+    )
+    session.flush()
+
+    dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
+
+    notices = {
+        str(card.get("data-website-name")): card.select_one(".no-recipients-notice") is not None
+        for card in dashboard.select(".website-card")
+    }
+    assert notices == {"Example Unheard": True, "Example Heard": False}
+
+
 def _run_scan_button_text(api_client: TestClient, url: str) -> str:
     """Returns the text of a website's run scan button on the dashboard."""
     dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
