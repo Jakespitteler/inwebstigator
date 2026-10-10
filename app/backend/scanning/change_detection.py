@@ -25,6 +25,7 @@ from app.core.errors import (
     StandInPageError,
     TrafficError,
     WebConnectionError,
+    WebsiteTooLargeError,
 )
 from app.models.critical_page_models import CriticalPageRead, CriticalPageUpdate
 from app.models.website_models import URL_LIST_ADAPTER, WebsiteRead, WebsiteUpdate
@@ -50,15 +51,15 @@ UNREACHABLE_PAGE_ERRORS: tuple[type[UnreachablePageError], ...] = (
     NotAWebPageError,  # The page is now a file (e.g. a PDF), so it can no longer be read as a page
 )
 
-type CrawlFailure = TrafficError | WebConnectionError | MostPagesMissingError
+type CrawlFailure = TrafficError | WebConnectionError | MostPagesMissingError | WebsiteTooLargeError
 
 
 class CrawlFailedError(Exception):
-    """Exception raised when a website's crawl fails (e.g. it was rate limited, could not be reached or most of its
-    pages were missing) after its critical pages were checked.
+    """Exception raised when a website's crawl fails (e.g. it was rate limited, could not be reached, most of its
+    pages were missing or it had too many pages) after its critical pages were checked.
 
     It carries what the critical pages' check found, so it can still be saved and reported with the failed scan,
-    rather than being thrown away until a scan's crawl succeeds.
+    rather than being thrown away until a scan's crawl succeeds, or the pages being loaded again.
 
     Attributes:
         error: Why the crawl failed.
@@ -405,6 +406,24 @@ async def get_critical_page_only_updates(
     return _critical_page_only_update(stored_website, critical_page_updates)
 
 
+def _without_failed_checks(
+    critical_page_updates: dict[uuid.UUID, CriticalPageUpdate],
+) -> dict[uuid.UUID, CriticalPageUpdate]:
+    """Leaves out the critical pages that could not be checked, keeping changes, baselines and pages back after failing.
+
+    When a crawl fails because the website rate limited it, could not be reached or was partly down, its critical
+    pages failing too is the same problem, which the scan already reports. Counting those failures as well would
+    report the pages as unreachable after a couple of such scans.
+
+    Args:
+        critical_page_updates: The updates for each critical page that changed, saved a baseline, failed or recovered.
+
+    Returns:
+        The updates of the pages that were checked.
+    """
+    return {page_id: update for page_id, update in critical_page_updates.items() if not update.consecutive_failures}
+
+
 def _critical_page_only_update(
     stored_website: WebsiteRead, critical_page_updates: dict[uuid.UUID, CriticalPageUpdate]
 ) -> WebsiteUpdate | None:
@@ -453,9 +472,11 @@ async def get_website_updates(
         differences for internal links (added/removed).
 
     Raises:
-        CrawlFailedError: If the crawl was rate limited, could not reach the website, or could not find most of the
-            pages found by the last scan (so the website is probably partly down). It carries what the critical
-            pages' check found, so that can still be saved, but none of the crawl's pages are reported as removed.
+        CrawlFailedError: If the crawl was rate limited, could not reach the website, could not find most of the
+            pages found by the last scan (so the website is probably partly down), or found the website has more pages
+            than the crawler will scan. It carries what the critical pages' check found, so that can still be saved,
+            but none of the crawl's pages are reported as removed. Critical pages that could not be checked are left
+            out, unless the website was too large, as then the website did answer.
     """
     updates = WebsiteUpdate(url=stored_website.url)
     critical_page_updates: dict[uuid.UUID, CriticalPageUpdate] = await _gather_critical_page_updates(
@@ -477,8 +498,11 @@ async def get_website_updates(
                 batch_403_ratio=config.web_crawler_batch_403_ratio,
             )
         )
-    except (TrafficError, WebConnectionError) as error:  # Most pages missing is only found once the crawl is done
+    except WebsiteTooLargeError as error:
         raise CrawlFailedError(error, _critical_page_only_update(stored_website, critical_page_updates)) from error
+    except (TrafficError, WebConnectionError) as error:  # Most pages missing is only found once the crawl is done
+        checked_pages: dict[uuid.UUID, CriticalPageUpdate] = _without_failed_checks(critical_page_updates)
+        raise CrawlFailedError(error, _critical_page_only_update(stored_website, checked_pages)) from error
 
     if init or not stored_internal_links:
         updates.initial_internal_links = current_internal_links
@@ -496,7 +520,7 @@ async def get_website_updates(
         if not accept_missing_pages and _has_lost_most_pages(len(stored_internal_links), missing_count):
             raise CrawlFailedError(
                 MostPagesMissingError(str(stored_website.url), missing_count, len(stored_internal_links)),
-                _critical_page_only_update(stored_website, critical_page_updates),
+                _critical_page_only_update(stored_website, _without_failed_checks(critical_page_updates)),
             )
 
     if _website_has_been_updated(updates):

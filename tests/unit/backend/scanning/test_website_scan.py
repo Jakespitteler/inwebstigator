@@ -370,15 +370,18 @@ async def test_scan_website_deactivates_a_website_too_large_to_scan(session: Ses
 async def test_changes_found_when_a_website_becomes_too_large_are_still_reported(
     session: Session, mocker: MockerFixture
 ):
-    """Tests the scan that finds a website has grown too large still reports changes on its critical pages."""
+    """Tests the scan that finds a website has grown too large still reports changes on its critical pages, using
+    the check made before the crawl rather than loading the pages a second time."""
     main_url = "https://example.com"
     html = "<html><body><p>The fee is $100.</p></body></html>"
     mocker.patch("app.backend.scanning.website_scan.db_context", side_effect=lambda: nullcontext(session))
     crawl = mocker.patch("app.backend.scanning.change_detection.crawl_site", return_value={main_url})
     service = WebsiteService(session)
     website = service.create(WebsiteCreate(url=HttpUrl(main_url)))
+    requested_urls: list[str] = []
 
     def respond(request: httpx2.Request) -> httpx2.Response:
+        requested_urls.append(str(request.url))
         return httpx2.Response(200, text=html)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
@@ -386,11 +389,12 @@ async def test_changes_found_when_a_website_becomes_too_large_are_still_reported
 
         html = html.replace("$100", "$120")
         crawl.side_effect = WebsiteTooLargeError(main_url, max_pages=50_000)
+        requested_urls.clear()
         report = _report(await scan_website(client, service.get(website.id)))
 
     assert "Website Too Large" in report
     assert "$120" in report
-    assert crawl.call_count == 2  # The critical pages were checked again without crawling the website
+    assert requested_urls == [f"{main_url}/"]  # The critical page was only loaded once
 
 
 @pytest.mark.anyio
@@ -612,6 +616,38 @@ async def test_a_website_that_rate_limits_or_cannot_be_reached_is_put_on_cooldow
     crawl_speed = (saved.recommended_delay, saved.recommended_concurrent)
     assert (crawl_speed != (website.recommended_delay, website.recommended_concurrent)) is is_throttled
     assert saved.critical_pages[0].text_body == html
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "crawl_error",
+    [TrafficError("https://example.com", status_code=429), WebConnectionError("https://example.com")],
+    ids=["rate-limited", "unreachable"],
+)
+async def test_critical_pages_failing_while_the_crawl_fails_are_not_counted_as_unreachable(
+    session: Session, mocker: MockerFixture, crawl_error: Exception
+) -> None:
+    """Tests a critical page that cannot be loaded while the website rate limits or cannot be reached is not counted
+    towards reporting it as unreachable, as the scan already reports that problem, so a website that keeps rate
+    limiting does not also have its pages reported as unreachable."""
+    main_url = "https://example.com"
+    status_code = 200
+    mocker.patch("app.backend.scanning.website_scan.db_context", side_effect=lambda: nullcontext(session))
+    crawl = mocker.patch("app.backend.scanning.change_detection.crawl_site", return_value={main_url})
+    service = WebsiteService(session)
+    website = service.create(WebsiteCreate(url=HttpUrl(main_url)))
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(status_code, text="<html><body><p>Welcome.</p></body></html>")
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
+        await scan_website(client, website)  # baseline
+        status_code = 404
+        crawl.side_effect = crawl_error
+        scan_runs = [await scan_website(client, service.get(website.id)) for _ in range(config.scans_kept_per_website)]
+
+    assert all(change.kind is not ChangeKind.PAGE_UNREACHABLE for scan_run in scan_runs for change in scan_run.changes)
+    assert service.get(website.id).critical_pages[0].consecutive_failures == 0
 
 
 @contextmanager

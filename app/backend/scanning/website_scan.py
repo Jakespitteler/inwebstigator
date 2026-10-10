@@ -165,8 +165,8 @@ async def _record_failed_crawl(
 ) -> ScanRunRead:
     """Responds to a crawl that failed, saving what the critical pages' check found and recording the scan.
 
-    A website that rate limits the crawler is throttled and put on cooldown, and an unreachable or partly down
-    website is put on cooldown.
+    A website that rate limits the crawler is throttled and put on cooldown, an unreachable or partly down website
+    is put on cooldown, and a website with more pages than the crawler will scan is deactivated.
 
     Args:
         website: The website whose crawl failed.
@@ -226,41 +226,33 @@ async def _record_failed_crawl(
                 lambda websites: f"{missing_message} {websites.handle_connection_error(website.id)}",
                 found_before_failing,
             )
+        case WebsiteTooLargeError() as error:
+            logger.warning("Website too large to scan: %s", error)
+            return await asyncio.to_thread(
+                _deactivate_too_large_website, website, error.max_pages, found_before_failing
+            )
 
 
-async def _deactivate_then_check_critical_pages(
-    client: AsyncClient, website: WebsiteRead, max_pages: int, init: bool
+def _deactivate_too_large_website(
+    website: WebsiteRead, max_pages: int, critical_page_updates: WebsiteUpdate | None
 ) -> ScanRunRead:
-    """Deactivates a website with more pages than the crawler will scan, then checks its critical pages,
-    which are still watched while it is inactive, rather than leaving them until its next scan.
+    """Deactivates a website with more pages than the crawler will scan, then saves what its critical pages' check
+    found, as they are still watched while it is inactive.
 
-    The website is inactive by the time its critical pages are checked, so that check cannot find it too large again.
-    Both are recorded as one scan, whose report says the website was deactivated and lists any changes found on its
-    critical pages.
+    The critical pages were already checked before the crawl, so they are not loaded again. Both are recorded as one
+    scan, whose report says the website was deactivated and lists any changes found on its critical pages.
 
     Args:
-        client: The HTTP client for making web requests.
         website: The website found to be too large.
         max_pages: The most pages the crawler would scan.
-        init: Re-save the critical pages' current state as their baseline.
+        critical_page_updates: What the critical pages' check found, or None if nothing changed.
 
     Returns:
         The recorded scan.
-
-    Raises:
-        ScanCancelledError: If the check of the critical pages was cancelled before it finished.
     """
     with db_context() as session:
-        website_service = WebsiteService(session)
-        too_large_message: str = website_service.handle_too_large(website.id, max_pages)
-        inactive_website: WebsiteRead = website_service.get(website.id)
-
-    website_updates: WebsiteUpdate | None = await scan_queue.run(
-        str(website.url), lambda: _find_updates(client, inactive_website, None, None, None, init)
-    )
-    return await asyncio.to_thread(
-        _save_updates, inactive_website, website_updates, ScanStatus.TOO_LARGE, too_large_message
-    )
+        too_large_message: str = WebsiteService(session).handle_too_large(website.id, max_pages)
+    return _save_updates(website, critical_page_updates, ScanStatus.TOO_LARGE, too_large_message)
 
 
 def _save_updates(
@@ -330,9 +322,6 @@ async def scan_website(
         )
     except CrawlFailedError as failure:
         return await _record_failed_crawl(website, failure, delay, concurrent)
-    except WebsiteTooLargeError as error:
-        logger.warning("Website too large to scan: %s", error)
-        return await _deactivate_then_check_critical_pages(client, website, error.max_pages, init)
 
     # Saving a large website's links can take a few seconds, so it is done in a thread, keeping the dashboard responsive
     scan_run: ScanRunRead = await asyncio.to_thread(_save_updates, website, website_updates)
