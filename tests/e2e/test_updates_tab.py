@@ -135,7 +135,7 @@ def test_a_scan_shows_every_kind_of_change(open_dashboard: Callable[..., Page], 
     website_card = page.locator(".website-change-record")
     expect(website_card).to_have_count(1)
     expect(website_card.locator(".website-url")).to_have_text(f"{WEBSITE_URL}/")
-    expect(website_card.locator(".website-name")).to_have_text("example.com")  # Its display name
+    expect(website_card.locator(".website-name")).to_have_text("Example")  # Its display name
     expect(website_card.locator(":scope > .card-header .change-summary")).to_contain_text("1 of 1 scan found changes")
 
     scan_card = _open(website_card).locator(".scan-change-record").first  # The latest scan
