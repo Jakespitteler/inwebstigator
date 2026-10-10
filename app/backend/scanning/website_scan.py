@@ -15,6 +15,7 @@ from app.backend.scanning.change_detection import (
 )
 from app.backend.scanning.found_changes import changes_found_by
 from app.backend.scanning.scan_queue import scan_queue
+from app.backend.websites.website_titles import saved_home_page_html, website_card_title
 from app.core.config import config
 from app.core.errors import (
     MostPagesMissingError,
@@ -128,6 +129,22 @@ def record_scan(
     return scan_run
 
 
+def _save_card_title(website_service: WebsiteService, website_id: uuid.UUID) -> None:
+    """Works out a website's dashboard card title from its saved home page, saving it if it has changed.
+
+    Reading a large home page is slow, so it is done once per scan, after the scan has saved the home page, rather
+    than every time the dashboard loads.
+
+    Args:
+        website_service: Reads and saves the website, in the scan's database session.
+        website_id: The website that was scanned.
+    """
+    saved_website: WebsiteRead = website_service.get(website_id)
+    card_title: str = website_card_title(str(saved_website.url), saved_home_page_html(saved_website))
+    if card_title != saved_website.card_title:
+        website_service.update(id=website_id, model_update=WebsiteUpdate(card_title=card_title))
+
+
 def _handle_scan_failure(
     website: WebsiteRead,
     status: ScanStatus,
@@ -154,6 +171,7 @@ def _handle_scan_failure(
         if found_before_failing:
             website_service.update(id=website.id, model_update=found_before_failing)
         action_message: str = handle_failure(website_service)
+        _save_card_title(website_service, website.id)
         scan_run: ScanRunRead = record_scan(
             session, website, status, action_message, changes_found_by(found_before_failing)
         )
@@ -261,8 +279,8 @@ def _save_updates(
     status: ScanStatus = ScanStatus.SUCCESS,
     message: str | None = None,
 ) -> ScanRunRead:
-    """Saves what a scan found, including any new baselines, clears the website's failed attempts and records the
-    scan in the website's history.
+    """Saves what a scan found, including any new baselines, clears the website's failed attempts, saves its card
+    title and records the scan in the website's history.
 
     It is all saved together, so a change never becomes the new baseline without also being recorded.
 
@@ -280,6 +298,7 @@ def _save_updates(
         if website_updates:
             website_service.update(id=website.id, model_update=website_updates)
         website_service.reset_failed_attempts(website.id)
+        _save_card_title(website_service, website.id)
         scan_run: ScanRunRead = record_scan(session, website, status, message, changes_found_by(website_updates))
     return scan_run
 

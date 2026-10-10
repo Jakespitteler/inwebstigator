@@ -18,6 +18,7 @@ from app.backend.websites.website_setup import (
     delete_website,
     update_website_settings,
 )
+from app.backend.websites.website_titles import saved_home_page_html, website_card_title
 from app.core.config import config
 from app.core.paths import resource_path
 from app.core.urls import website_name
@@ -33,9 +34,7 @@ from app.frontend.api.utils import (
     WebsiteHistoryRecord,
     format_timestamp,
     newest_first,
-    saved_home_page_html,
     scan_time,
-    website_card_title,
     website_history_record,
 )
 from app.models.critical_page_models import (
@@ -65,9 +64,11 @@ templates.env.filters["scan_time"] = scan_time  # pyright: ignore[reportUnknownM
 @ROOT_ROUTER.get("/")
 def get_dashboard(session: SessionDep, request: Request):
     websites: Sequence[WebsiteRead] = WebsiteService(session).get_all(limit=None)
-    # The cards show a friendlier title than the emails, read from each website's saved home page
+    # Each scan saves its website's card title. One not saved yet (e.g. before the website's first scan since the
+    # app was updated) is read from the saved home page until then.
     website_names: dict[str, str] = {
-        str(website.url): website_card_title(str(website.url), saved_home_page_html(website)) for website in websites
+        str(website.url): website.card_title or website_card_title(str(website.url), saved_home_page_html(website))
+        for website in websites
     }
 
     scan_run_service = ScanRunService(session)

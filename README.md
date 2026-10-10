@@ -49,7 +49,10 @@
   a website, e.g. `teqsa.gov.au` or `example.gov.au/research` (`website_name`
   in `app/core/urls.py`, and `displayName` in `add-website.js`). The
   dashboard's cards show a friendlier title read from the saved home page,
-  e.g. `TEQSA` (`website_card_title` in `app/frontend/api/utils.py`).
+  e.g. `TEQSA`, `Education NSW` or `Example News` for news.example.com
+  (`website_card_title` in `app/backend/websites/website_titles.py`). Each
+  scan works the title out once and saves it, so the dashboard does not read
+  every home page each time it loads.
 - **Make the latest scan time per-site.** Currently the latest scan time appears
   to be global and is displayed for all websites. Each monitored website
   should display its own latest scan time.

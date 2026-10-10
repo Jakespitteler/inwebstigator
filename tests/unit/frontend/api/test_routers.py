@@ -452,6 +452,30 @@ def test_hosted_names_are_used_in_compact_cards_and_updates(api_client: TestClie
     assert last_scan.get_text(strip=True) == "Not scanned yet"
 
 
+def test_the_dashboard_shows_the_card_title_saved_by_the_last_scan(
+    api_client: TestClient, session: Session, mocker: MockerFixture
+) -> None:
+    """Tests the dashboard shows the card title the last scan saved, without reading the website's saved home page
+    again, which is slow for a large page."""
+    url = "https://www.uwa.edu.au/"
+    session.add(
+        DBWebsite(
+            url=url,
+            card_title="UWA",
+            critical_pages=[DBCriticalPage(url=url, text_body="<title>UWA</title>")],
+        )
+    )
+    session.flush()
+    mock_card_title = mocker.patch("app.frontend.api.routers.website_card_title")
+
+    response = api_client.get("/")
+
+    assert response.status_code == 200
+    card = BeautifulSoup(response.text, "html.parser").select_one(".website-card .website-name")
+    assert card is not None and card.get_text(strip=True) == "UWA"
+    mock_card_title.assert_not_called()
+
+
 def test_run_all_scans_every_website(
     api_client: TestClient, mocker: MockerFixture, email_sender: FakeEmailSender
 ) -> None:

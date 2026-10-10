@@ -255,6 +255,7 @@ class DBWebsite(Base):
 
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     deactivated_reason: Mapped[str | None] = mapped_column(String, nullable=True)  # A DeactivationReason
+    card_title: Mapped[str | None] = mapped_column(String, nullable=True)  # Saved by each scan, see website_titles.py
     failed_attempts_at_min_speed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     on_cooldown_until: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 

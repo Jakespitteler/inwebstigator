@@ -83,6 +83,7 @@ class WebsiteRead(BaseModel):
     deactivated_reason: DeactivationReason | None = None
     failed_attempts_at_min_speed: int
     on_cooldown_until: datetime | None = None
+    card_title: str | None = None
 
     critical_pages: list[CriticalPageRead]
     internal_link_count: int
@@ -103,6 +104,7 @@ class WebsiteUpdate(BaseModel):
     deactivated_reason: DeactivationReason | None = None
     failed_attempts_at_min_speed: int | None = None
     on_cooldown_until: datetime | None = None
+    card_title: str | None = None
 
     critical_page_updates: dict[uuid.UUID, CriticalPageUpdate] | None = None
 

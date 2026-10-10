@@ -265,7 +265,8 @@ async def test_scan_website_without_changes_has_no_report(
     assert not scan_run.has_report
     assert scan_run.status is ScanStatus.SUCCESS
     assert ScanRunService(session).get_latest_for_website(populated_website.id, limit=10) == [scan_run]
-    assert mock_update.called is (website_updates is not None)  # baselines are still saved
+    saved_updates = [call.kwargs["model_update"] for call in mock_update.call_args_list]
+    assert any(update is website_updates for update in saved_updates) is (website_updates is not None)  # baselines
     mock_reset_failed_attempts.assert_called_once_with(populated_website.id)
 
 
@@ -395,6 +396,30 @@ async def test_changes_found_when_a_website_becomes_too_large_are_still_reported
     assert "Website Too Large" in report
     assert "$120" in report
     assert requested_urls == [f"{main_url}/"]  # The critical page was only loaded once
+
+
+@pytest.mark.anyio
+async def test_a_scan_saves_the_websites_card_title_from_its_home_page(session: Session, mocker: MockerFixture):
+    """Tests a scan saves the title the website's dashboard cards show, read from its home page, so the dashboard
+    does not have to read the page each time it loads, and updates it when the website renames itself."""
+    main_url = "https://www.uwa.edu.au"
+    html = "<html><head><title>UWA</title></head><body><p>Welcome to UWA.</p></body></html>"
+    mocker.patch("app.backend.scanning.website_scan.db_context", side_effect=lambda: nullcontext(session))
+    mocker.patch("app.backend.scanning.change_detection.crawl_site", return_value={main_url})
+    service = WebsiteService(session)
+    website = service.create(WebsiteCreate(url=HttpUrl(main_url)))
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, text=html)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
+        await scan_website(client, website)
+        assert service.get(website.id).card_title == "UWA"
+
+        html = html.replace("UWA", "UWa")
+        await scan_website(client, service.get(website.id))
+
+    assert service.get(website.id).card_title == "UWa"
 
 
 @pytest.mark.anyio
