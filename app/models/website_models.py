@@ -143,7 +143,9 @@ class WebsiteSettingsUpdate(BaseModel):
     def as_website_update(self) -> WebsiteUpdate:
         """Turns the settings into an update of the website, changing only the settings that were given.
 
+        A setting given as null is left as it is, as none of them can be empty.
+
         Returns:
             The update.
         """
-        return WebsiteUpdate(**self.model_dump(exclude_unset=True))
+        return WebsiteUpdate(**self.model_dump(exclude_unset=True, exclude_none=True))

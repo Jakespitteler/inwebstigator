@@ -980,6 +980,20 @@ def test_adding_an_email_to_a_website_counts_as_emailing_it(
     assert recipient.last_email_at is not None
 
 
+def test_a_website_setting_sent_as_null_is_left_as_it_is(
+    api_client: TestClient, session: Session, test_website: website_models.WebsiteRead
+) -> None:
+    """Tests a setting sent as null (e.g. an empty number field) is ignored rather than failing with a database
+    error, while the other settings sent are still saved."""
+    response = api_client.patch(
+        f"/websites/{test_website.id}", json={"recommended_delay": None, "days_between_scans": 2}
+    )
+
+    assert response.status_code == 200, response.text
+    saved = session.get_one(DBWebsite, test_website.id)
+    assert (saved.recommended_delay, saved.days_between_scans) == (test_website.recommended_delay, 2)
+
+
 def test_a_website_cannot_be_set_to_make_no_requests_at_once(
     api_client: TestClient, session: Session, test_website: website_models.WebsiteRead
 ) -> None:
