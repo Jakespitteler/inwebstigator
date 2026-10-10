@@ -581,14 +581,16 @@ def test_manual_scan_keeps_its_report_when_the_email_fails(
     mocker: MockerFixture,
     email_sender: FakeEmailSender,
 ) -> None:
-    """Tests a "Run Scan Now" report that could not be emailed is kept, so the next scheduled run sends it."""
+    """Tests a "Run Scan Now" report that could not be emailed is kept, so the next scheduled run sends it, and the
+    dashboard is told the scan finished but the email failed, rather than that the scan failed."""
     scan_run: ScanRunRead = _scan_finding_a_new_page(session, test_website)
     mocker.patch("app.backend.scanning.manual_scan.scan_website", return_value=scan_run)
     mocker.patch.object(email_sender, "send", side_effect=ConnectionError("No internet"))
 
-    with pytest.raises(ConnectionError):
-        api_client.post("/scanner/run", data={"url": str(test_website.url)})
+    response = api_client.post("/scanner/run", data={"url": str(test_website.url)})
 
+    assert response.status_code == 502, response.text
+    assert "finished, but its report could not be emailed" in response.json()["detail"]
     assert [waiting.id for waiting in ScanRunService(session).get_awaiting_email()] == [scan_run.id]
 
 
@@ -928,6 +930,16 @@ def test_adding_an_email_to_a_website_counts_as_emailing_it(
     assert response.status_code == 200, response.text
     recipient = session.scalars(select(DBRecipient).where(DBRecipient.email == "new@example.com")).one()
     assert recipient.last_email_at is not None
+
+
+def test_a_website_cannot_be_set_to_make_no_requests_at_once(
+    api_client: TestClient, session: Session, test_website: website_models.WebsiteRead
+) -> None:
+    """Tests a concurrency of 0 is refused, as it would leave every scan of the website waiting forever."""
+    response = api_client.patch(f"/websites/{test_website.id}", json={"recommended_concurrent": 0})
+
+    assert response.status_code == 422, response.text
+    assert session.get_one(DBWebsite, test_website.id).recommended_concurrent == test_website.recommended_concurrent
 
 
 @pytest.mark.parametrize(

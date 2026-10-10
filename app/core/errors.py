@@ -71,6 +71,23 @@ class UndeliverableEmailError(Exception):
         super().__init__(f"An email to {address} could not be delivered.")
 
 
+class ReportNotEmailedError(Exception):
+    """Exception raised when a scan finished but its report could not be emailed (e.g. the mail server was down).
+
+    The scan and its report are kept, and the report is sent with the next scheduled scan.
+
+    Attributes:
+        url: The URL of the website that was scanned.
+    """
+
+    def __init__(self, url: str) -> None:
+        self.url: str = url
+        super().__init__(
+            f"The scan of {url} finished, but its report could not be emailed. "
+            "It will be sent with the next scheduled scan."
+        )
+
+
 class AlreadyWatchedError(Exception):
     """Exception raised when a critical page being added is already being watched.
 

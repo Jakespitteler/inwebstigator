@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.backend.scanning.manual_scan import scan_website_now
 from app.backend.scanning.scan_queue import ScanQueue
-from app.core.errors import NotFoundError, ScanAlreadyQueuedError
+from app.core.errors import NotFoundError, ReportNotEmailedError, ScanAlreadyQueuedError
 from app.db.services.recipient_service import RecipientService
 from app.db.services.scan_run_service import ScanRunService
 from app.db.services.website_service import WebsiteService
@@ -120,7 +120,7 @@ async def test_manual_scan_keeps_its_report_when_the_email_fails(
     scan_run = _scan_finds(session, mocker, website, ["https://example.com/new"])
     mocker.patch.object(email_sender, "send", side_effect=ConnectionError("No internet"))
 
-    with pytest.raises(ConnectionError):
+    with pytest.raises(ReportNotEmailedError):
         await scan_website_now(website.url, email_sender)
 
     assert [waiting.id for waiting in ScanRunService(session).get_awaiting_email()] == [scan_run.id]

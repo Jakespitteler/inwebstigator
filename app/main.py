@@ -13,6 +13,7 @@ from app.core.errors import (
     InvalidPageError,
     NotFoundError,
     PageNotLoadedError,
+    ReportNotEmailedError,
     ScanAlreadyQueuedError,
     ScanCancelledError,
     UndeliverableEmailError,
@@ -87,6 +88,25 @@ async def web_connection_exception_handler(request: Request, exc: WebConnectionE
     Args:
         request: The incoming request.
         exc: The WebConnectionError exception.
+
+    Returns:
+        A JSONResponse with a 502 status.
+    """
+    return JSONResponse(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        content={"detail": str(exc)},
+    )
+
+
+@app.exception_handler(ReportNotEmailedError)
+async def report_not_emailed_handler(request: Request, exc: ReportNotEmailedError):
+    """
+    Handles a scan that finished but whose report could not be emailed by returning a 502 status, with a message
+    the dashboard shows, so the user is not told the scan itself failed.
+
+    Args:
+        request: The incoming request.
+        exc: The ReportNotEmailedError exception.
 
     Returns:
         A JSONResponse with a 502 status.

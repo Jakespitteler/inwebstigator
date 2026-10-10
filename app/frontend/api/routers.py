@@ -209,7 +209,7 @@ async def manually_scan_website(
     recipient_email: Annotated[str | None, Form()] = None,
     max_pages: Annotated[int | None, Form()] = None,
     delay: Annotated[float | None, Form()] = None,
-    concurrent: Annotated[int | None, Form()] = None,
+    concurrent: Annotated[int | None, Form(ge=config.web_crawler_min_concurrent)] = None,
 ) -> str | None:
     """Scans a monitored website straight away for "Run Scan Now", and emails its report (see `scan_website_now`).
 

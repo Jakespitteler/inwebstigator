@@ -12,6 +12,7 @@ from app.models.recipient_models import RecipientRead
 
 DEFAULT_DELAY: float = config.web_crawler_default_delay
 DEFAULT_CONCURRENT: int = config.web_crawler_default_concurrent
+MIN_CONCURRENT: int = config.web_crawler_min_concurrent
 DEFAULT_DAYS_BETWEEN_SCANS: float = config.scheduler_default_days_between_scans
 MINIMUM_DAYS_BETWEEN_SCANS: float = config.scheduler_minimum_days_between_scans
 
@@ -49,7 +50,8 @@ class WebsiteCreate(BaseModel):
     critical_pages: list[str] = Field(default_factory=list[str], examples=[[""]])
     recipient_emails: list[EmailStr] = Field(default_factory=list[EmailStr], examples=[[""]])
     recommended_delay: float = DEFAULT_DELAY
-    recommended_concurrent: int = DEFAULT_CONCURRENT
+    # Fewer than one request at a time would leave every scan waiting forever
+    recommended_concurrent: int = Field(default=DEFAULT_CONCURRENT, ge=MIN_CONCURRENT)
     days_between_scans: float = Field(default=DEFAULT_DAYS_BETWEEN_SCANS, ge=MINIMUM_DAYS_BETWEEN_SCANS)
 
     @model_validator(mode="after")
@@ -129,7 +131,7 @@ class WebsiteSettingsUpdate(BaseModel):
     """
 
     recommended_delay: float | None = None
-    recommended_concurrent: int | None = None
+    recommended_concurrent: int | None = Field(default=None, ge=MIN_CONCURRENT)
     days_between_scans: float | None = Field(default=None, ge=MINIMUM_DAYS_BETWEEN_SCANS)
     active: bool | None = None
 
