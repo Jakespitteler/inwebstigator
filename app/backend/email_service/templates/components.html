@@ -16,12 +16,17 @@
 <span class="badge {{ kind }}">{{ SYMBOLS[kind] }} {{ text }}</span>
 {%- endmacro %}
 
-{% macro badge_list(kind, items) -%}
+{# Lists links, showing at most `limit` of them so a large change keeps the email small enough to arrive whole #}
+{% macro badge_list(kind, items, limit=none) -%}
+{% set shown = items[:limit] if limit else items %}
 <ul class="change-list">
-{% for item in items %}
+{% for item in shown %}
 <li class="change-item">{{ badge(kind, item) }}</li>
 {% endfor %}
 </ul>
+{% if items | length > shown | length %}
+<p class="header-meta">&hellip;and {{ "{:,}".format(items | length - shown | length) }} more, all listed on the dashboard's Updates tab.</p>
+{% endif %}
 {%- endmacro %}
 
 {% macro heading_label(heading) -%}

@@ -11,6 +11,7 @@ from pydantic import HttpUrl
 
 from app.backend.diff_checker.word_diff import diff_words
 from app.backend.email_service.email_wording import WebsiteHealth, format_email_time
+from app.core.config import config
 from app.core.paths import resource_path
 from app.core.urls import remove_repeated_pages
 from app.models.scan_run_models import PageChanges, ScanRunRead, ScanStatus
@@ -85,6 +86,9 @@ def _render(template_name: str, **values: object) -> str:
 def generate_scan_report_html(website_url: HttpUrl | str, scan_run: ScanRunRead) -> str:
     """Generates the inline-styled HTML report card for one scan of a website, for any scan status.
 
+    Long lists of links are cut short (see `config.email_max_listed_links`), as a scan that finds thousands of new
+    pages would otherwise make an email too large to arrive whole. The dashboard lists them all.
+
     Args:
         website_url: The website that was scanned.
         scan_run: The scan, with only the changes it found.
@@ -107,6 +111,7 @@ def generate_scan_report_html(website_url: HttpUrl | str, scan_run: ScanRunRead)
         unreachable_pages=[page for page in pages if page.is_unreachable],
         changed_pages=[page for page in pages if not page.is_unreachable],
         diff_words=diff_words,
+        max_listed_links=config.email_max_listed_links,
     )
 
 

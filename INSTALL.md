@@ -81,7 +81,8 @@ from a person):
 - **Website update:** something changed. The email shows what's changed. It's
   also sent if a website couldn't be scanned properly, e.g. it couldn't be
   reached. If the email can't be sent at the time, it is sent with the next
-  scan.
+  scan. A long list of new or removed pages is cut short in the email; the
+  **Updates** tab lists them all.
 - **Manual scan:** the report from a **Run Scan Now**, sent if it found
   anything.
 - **Health check:** sent about once a week, so you know Inwebstigator is still

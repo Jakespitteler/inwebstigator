@@ -3,6 +3,7 @@ from datetime import datetime
 import pytest
 from bs4 import BeautifulSoup
 from pydantic import HttpUrl
+from pytest_mock import MockerFixture
 
 from app.backend.email_service.email_wording import WebsiteHealth
 from app.backend.email_service.html_bodies import (
@@ -14,6 +15,7 @@ from app.backend.email_service.html_bodies import (
     recipient_added_html,
     report_divider,
 )
+from app.core.config import config
 from app.models.scan_run_models import ChangeCreate, ChangeKind, ScanStatus
 from app.models.website_models import WebsiteCreate
 from tests.unit.backend.email_service.builders import PAGE_URL, WEBSITE_URL, make_block, make_change, make_scan_run
@@ -119,6 +121,22 @@ def test_report_lists_new_and_removed_internal_links() -> None:
     assert "Removed Internal Links (1)" in visible_text(report)
     assert list_items(report) == ["+ https://example.gov.au/new", "- https://example.gov.au/old"]
     assert "Watched Pages Changed" not in visible_text(report)
+
+
+def test_report_lists_only_the_first_internal_links_when_there_are_many(mocker: MockerFixture) -> None:
+    """Tests a scan that finds more new pages than an email lists only lists the first of them, with how many more
+    there are, so the email stays small enough to arrive whole (the dashboard lists them all)."""
+    mocker.patch.object(config, "email_max_listed_links", 2)
+    changes = [
+        ChangeCreate(kind=ChangeKind.INTERNAL_LINK_ADDED, url=HttpUrl(f"https://example.gov.au/new-{number}"))
+        for number in range(1, 6)
+    ]
+
+    report: str = generate_scan_report_html(WEBSITE_URL, make_scan_run(changes=changes))
+
+    assert "New Internal Links (5)" in visible_text(report)
+    assert list_items(report) == ["+ https://example.gov.au/new-1", "+ https://example.gov.au/new-2"]
+    assert "…and 3 more, all listed on the dashboard's Updates tab." in visible_text(report)
 
 
 def test_report_highlights_only_the_words_that_changed() -> None:

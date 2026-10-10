@@ -49,6 +49,7 @@ class Config(BaseSettings):
     email_bounce_wait_seconds: int = 30
     email_bounce_poll_seconds: int = 3
     email_time_zone: str = ""
+    email_max_listed_links: int = 100
 
     web_crawler_user_agent: str = "Mozilla/5.0 (compatible; Inwebstigator/0.1; website change monitor)"
     web_crawler_default_max_pages: int = 50_000
