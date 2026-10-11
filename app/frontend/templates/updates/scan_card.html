@@ -1,0 +1,155 @@
+{# One scan in a website's history: what it found, with a card for each critical page that changed. #}
+{# Needs `scan`, `website_record`, `website_index` and `scan_index`. #}
+
+{% set scan_key = website_record.website_url ~ "@" ~ scan.scanned_at.isoformat() %}
+{% set unreachable_page_count = scan.pages | selectattr("failure_reason") | list | length %}
+{% set page_count = scan.pages | length - unreachable_page_count %}
+{% set internal_link_count = scan.internal_links_added | length
+    + scan.internal_links_removed | length %}
+
+<!-- One card per scan. A scan that found nothing has no details to open. -->
+<section
+    class="change-record scan-change-record"
+    {% if scan.has_details %}
+        data-collapsible
+        data-card-key="scan:{{ scan_key }}"
+        data-card-name="the scan of {{ scan.scanned_at | format_timestamp }}"
+    {% endif %}
+>
+
+    <!-- Only a scan with details has a card header, as clicking a card header closes the card it belongs to -->
+    <div class="change-record-header{{ " card-header" if scan.has_details }}">
+        <div class="change-record-identity">
+            <p class="change-summary">
+                <time class="change-time" datetime="{{ scan.scanned_at.isoformat() }}">
+                    Scanned {{ scan.scanned_at | format_timestamp }}
+                </time>
+                {% if scan.is_problem %}
+                    <span class="scan-problem">{{ scan.status_label }}</span>
+                {% endif %}
+                {% if internal_link_count %}
+                    <span>{{ internal_link_count }} internal link{{ "s" if internal_link_count != 1 }}</span>
+                {% endif %}
+                {% if page_count %}
+                    <span>{{ page_count }} critical page{{ "s" if page_count != 1 }} changed</span>
+                {% endif %}
+                {% if unreachable_page_count %}
+                    <span class="scan-problem">{{ unreachable_page_count }} critical page{{ "s" if unreachable_page_count != 1 }} unreachable</span>
+                {% endif %}
+                {% if not scan.has_details %}
+                    <span>No changes</span>
+                {% endif %}
+                {% if scan.is_awaiting_email %}
+                    <span class="scan-awaiting-email">Email not sent yet</span>
+                {% endif %}
+            </p>
+        </div>
+
+        {% if scan.has_details %}
+            <button
+                type="button"
+                class="card-toggle"
+                aria-expanded="false"
+                aria-controls="scan-details-{{ website_index }}-{{ scan_index }}"
+                aria-label="Show details for the scan of {{ scan.scanned_at | format_timestamp }}"
+            >
+                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                    <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
+        {% endif %}
+    </div>
+
+    {% if scan.has_details %}
+
+    <!-- What the scan found is hidden until the scan is expanded -->
+    <div class="card-body" id="scan-details-{{ website_index }}-{{ scan_index }}" hidden>
+
+        <!-- What the app did about a scan that did not go normally -->
+        {% if scan.message %}
+            <p class="website-notice{{ " website-notice-warning" if scan.is_problem }}">
+                {{ scan.message }}
+            </p>
+        {% endif %}
+
+        <!-- Pages added to or removed from the website since its previous scan -->
+        {% if internal_link_count %}
+
+            <div class="change-section">
+
+                <h2>Internal links</h2>
+
+                <ul class="change-list">
+
+                    {% for link in scan.internal_links_added %}
+
+                        <li class="change-item change-item-added">
+
+                            <a
+                                class="change-item-text"
+                                href="{{ link }}"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                {{ link }}
+                            </a>
+
+                            <span class="change-badge added-label">
+                                Added
+                            </span>
+
+                        </li>
+
+                    {% endfor %}
+
+                    {% for link in scan.internal_links_removed %}
+
+                        <li class="change-item change-item-removed">
+
+                            <a
+                                class="change-item-text"
+                                href="{{ link }}"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                {{ link }}
+                            </a>
+
+                            <span class="change-badge removed-label">
+                                Removed
+                            </span>
+
+                        </li>
+
+                    {% endfor %}
+
+                </ul>
+
+            </div>
+
+        {% endif %}
+
+        <!-- Each critical page that changed, in its own card -->
+        {% if scan.pages %}
+
+            <div class="change-section">
+
+                <h2>Critical pages</h2>
+
+            {% for record in scan.pages %}
+
+            {% set page_index = loop.index %}
+            {% include "updates/page_changes_card.html" %}
+
+            {% endfor %}
+
+            </div>
+
+        {% endif %}
+
+    </div>
+
+    {% endif %}
+
+</section>

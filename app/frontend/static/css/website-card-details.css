@@ -1,0 +1,141 @@
+/* Inside an open website card: its critical pages, notification emails and scan settings. */
+
+
+/* EXISTING CRITICAL PAGES */
+
+.critical-page-list,
+.recipient-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.critical-page-list li,
+.recipient-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 15px;
+    padding: 6px 8px 6px 14px;
+    background: var(--content-bg);
+    border: 1px solid var(--content-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--content-shadow);
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.critical-page-list li:hover,
+.recipient-list li:hover {
+    background: var(--control-bg);
+    border-color: var(--focus-border);
+}
+
+.critical-page-list a,
+.recipient-list span {
+    overflow-wrap: anywhere;
+    font-size: 14px;
+}
+
+
+/* COMPACT WEBSITE CARD */
+
+/* "None yet" reads as plain text in a website card, not a boxed empty state */
+.website-card .empty-state {
+    margin: 0 0 8px;
+    padding: 0;
+    font-size: 14px;
+    color: var(--text-tertiary);
+    background: none;
+    border: none;
+}
+
+/* Delete buttons in a card's lists are a plain cross that only turns red on hover */
+.website-card .icon-button {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    color: var(--text-tertiary);
+    background: none;
+    border: 1px solid transparent;
+}
+
+.website-card .icon-button:hover {
+    color: var(--danger-text);
+    background: var(--danger-bg);
+    border-color: var(--danger-border);
+}
+
+/* Add a critical page or email: a "+" button beside the input, on one line */
+.inline-add-form {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: 6px 10px;
+    margin-top: 0;
+}
+
+.inline-add-form button {
+    width: 42px;
+    height: 42px;
+    margin-top: 0;
+    padding: 0;
+    color: var(--text-primary);
+    background: var(--control-bg);
+    border: 1px solid var(--control-border);
+    box-shadow: var(--control-shadow);
+}
+
+.inline-add-form button:hover {
+    background: var(--control-bg-hover);
+    transform: translateY(-1px);
+    box-shadow: var(--control-shadow);
+}
+
+.inline-add-form p {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.inline-add-form p:empty {
+    display: none;
+}
+
+
+/* SCAN SETTINGS */
+
+.scan-settings {
+    margin-top: 24px;
+    border-top: 1px solid var(--border-md);
+    padding-top: 14px;
+}
+
+.scan-settings summary {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 8px 0;
+    border-radius: var(--radius-sm);
+}
+
+.scan-settings summary:hover {
+    color: var(--accent);
+}
+
+[data-theme="dark"] .scan-settings summary:hover {
+    color: var(--link);
+}
+
+.scan-settings-form {
+    margin-top: 12px;
+    padding: 18px;
+    background: var(--content-bg);
+    border: 1px solid var(--content-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--content-shadow);
+}

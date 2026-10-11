@@ -1,0 +1,132 @@
+/* The step by step form for adding a website. */
+
+
+/* ADD WEBSITE WIZARD */
+
+.websites-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px 20px;
+    margin-bottom: 16px;
+}
+
+.websites-header .section-title {
+    margin: 0;
+}
+
+.websites-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.guide-section {
+    margin-bottom: 20px;
+}
+
+/* Shown above the wizard on first use, before any website has been added */
+.guide-intro {
+    margin: 0 0 12px;
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.guide-step h2 {
+    margin: 0 0 8px;
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-weight: 700;
+}
+
+.guide-help {
+    margin: 0 0 20px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+
+.guide-settings {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0 20px;
+}
+
+.guide-review {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 10px 24px;
+    margin: 0;
+    padding: 14px 16px;
+    background: var(--content-bg);
+    border: 1px solid var(--content-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--content-shadow);
+}
+
+.guide-review dt {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.guide-review dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    color: var(--text-primary);
+}
+
+.guide-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-top: 24px;
+}
+
+.guide-dots {
+    display: flex;
+    gap: 8px;
+}
+
+.guide-dot {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    font-family: var(--font);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: var(--control-bg);
+    border: 1px solid var(--control-border);
+    box-shadow: var(--control-shadow);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.guide-dot:hover {
+    color: var(--text-primary);
+    background: var(--control-bg-hover);
+}
+
+.guide-dot.active {
+    color: #fff;
+    background: linear-gradient(145deg, rgba(104, 96, 208, 0.92) 0%, rgba(74, 66, 176, 0.88) 100%);
+    border-color: rgba(180, 160, 255, 0.45);
+    box-shadow:
+        0 4px 18px rgba(83, 74, 183, 0.40),
+        inset 0 1px 0 rgba(255, 255, 255, 0.40);
+}
+
+.guide-nav {
+    display: flex;
+    gap: 10px;
+}
+
+#add-critical-page-input,
+#add-recipient-email-input {
+    padding: 8px 14px;
+    font-size: 13px;
+}

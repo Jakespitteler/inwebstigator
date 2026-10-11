@@ -1,0 +1,73 @@
+{# The emails a website's reports are sent to, with a button to remove each one and a form to add another. #}
+{# Needs `website`. #}
+
+<!-- Notification recipients -->
+<h4>Notification emails ({{ website.recipients | length }})</h4>
+
+{% if website.recipients %}
+
+    <ul class="recipient-list">
+
+        {% for recipient in website.recipients %}
+
+            <li>
+
+                <span>
+                    {{ recipient.email }}
+                </span>
+
+                <button
+                    type="button"
+                    class="delete-recipient-button icon-button"
+                    data-website-id="{{ website.id }}"
+                    data-recipient-email="{{ recipient.email }}"
+                    aria-label="Remove {{ recipient.email }}"
+                    title="Remove notification email"
+                >
+                    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                        <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                </button>
+
+            </li>
+
+        {% endfor %}
+
+    </ul>
+
+{% else %}
+
+    <p class="empty-state">None yet</p>
+
+{% endif %}
+
+
+<form
+    class="add-recipient-form inline-add-form"
+    data-website-id="{{ website.id }}"
+>
+
+    <button type="submit" aria-label="Add notification email" title="Add notification email">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round"/>
+        </svg>
+    </button>
+
+    <input
+        type="email"
+        class="new-recipient-email"
+        data-saved-email-input
+        autocomplete="off"
+        placeholder="name@example.com"
+        aria-label="Add notification email"
+        required
+    >
+
+    <p
+        class="recipient-message"
+        aria-live="polite"
+    ></p>
+
+</form>

@@ -1,0 +1,48 @@
+/* The footer at the bottom of every page. */
+
+
+/* FOOTER */
+
+.site-footer {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px 24px;
+    width: 90%;
+    max-width: 1100px;
+    margin: 0 auto 28px;
+    padding: 14px 20px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    background: var(--surface);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--card-shadow);
+}
+
+.site-footer-copyright {
+    margin: 0;
+}
+
+.site-footer-links {
+    display: flex;
+    gap: 18px;
+}
+
+.site-footer-links a[aria-current="page"] {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+@media (max-width: 700px) {
+    .site-footer {
+        width: 94%;
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}

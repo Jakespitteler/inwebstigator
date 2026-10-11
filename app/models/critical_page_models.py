@@ -1,70 +1,55 @@
+import re
 import uuid
-from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
-
-from app.backend.diff_checker import ChangedBlock, ContentBlock
-from app.core.config import config
-from app.db.utils.field_types import URLString
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
 class CriticalPageCreate(BaseModel):
-    url: URLString
+    url: HttpUrl
     website_id: uuid.UUID | None = Field(default=None, examples=[""])
+    ignore_rules: list[re.Pattern[str]] = Field(default_factory=list[re.Pattern[str]])
 
 
 class CriticalPageRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
     website_id: uuid.UUID
-    url: URLString
-    links: list[URLString] | None = None
-    documents: list[URLString] | None = None
+    url: HttpUrl
+    links: list[HttpUrl] | None = None
+    documents: list[HttpUrl] | None = None
     text_body: str | None = None
-
-    recent_links_added: list[URLString] | None = None
-    recent_links_removed: list[URLString] | None = None
-    recent_documents_added: list[URLString] | None = None
-    recent_documents_removed: list[URLString] | None = None
-    recent_text_added: list[ContentBlock] | None = None
-    recent_text_removed: list[ContentBlock] | None = None
-    recent_text_changed: list[ChangedBlock] | None = None
-    last_changed_at: datetime | None = None
+    ignore_rules: list[str] | None = None
 
     consecutive_failures: int = 0
     last_failure_reason: str | None = None
 
 
 class CriticalPageUpdate(BaseModel):
-    url: URLString | None = None
-    links: list[URLString] | None = None
-    documents: list[URLString] | None = None
-    text_body: str | None = None
+    """The values saved for a critical page: its settings, and the copy of the page the scanner saves."""
 
-    recent_links_added: list[URLString] | None = None
-    recent_links_removed: list[URLString] | None = None
-    recent_documents_added: list[URLString] | None = None
-    recent_documents_removed: list[URLString] | None = None
-    recent_text_added: list[ContentBlock] | None = None
-    recent_text_removed: list[ContentBlock] | None = None
-    recent_text_changed: list[ChangedBlock] | None = None
-    last_changed_at: datetime | None = None
+    url: HttpUrl | None = None
+    links: list[HttpUrl] | None = None
+    documents: list[HttpUrl] | None = None
+    text_body: str | None = None
+    ignore_rules: list[re.Pattern[str]] | None = None
 
     consecutive_failures: int | None = None
     last_failure_reason: str | None = None
 
-    @property
-    def has_changes(self) -> bool:
-        return any(
-            (
-                self.recent_links_added,
-                self.recent_links_removed,
-                self.recent_documents_added,
-                self.recent_documents_removed,
-                self.recent_text_added,
-                self.recent_text_removed,
-                self.recent_text_changed,
-                # Reported once, on the scan the page reaches the failure limit
-                self.consecutive_failures == config.critical_page_alert_after_failures,
-            )
-        )
+
+class CriticalPageSettingsUpdate(BaseModel):
+    """The critical page settings that can be changed through the API.
+
+    The rest of `CriticalPageUpdate` is only for the scanner to save what it found (e.g. the page's saved copy), so it
+    is not accepted from requests.
+    """
+
+    ignore_rules: list[re.Pattern[str]] | None = None
+
+    def as_critical_page_update(self) -> CriticalPageUpdate:
+        """Turns the settings into an update of the critical page, changing only the settings that were given.
+
+        Returns:
+            The update.
+        """
+        return CriticalPageUpdate(**self.model_dump(exclude_unset=True))

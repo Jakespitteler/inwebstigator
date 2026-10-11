@@ -1,0 +1,46 @@
+{# Asks before deleting anything (see static/js/confirm-dialog.js). #}
+
+<!-- Confirmation for deleting things. Cancel is the default, so Enter or Escape never deletes. -->
+<dialog
+    id="confirm-dialog"
+    class="confirm-dialog"
+    aria-labelledby="confirm-dialog-title"
+    aria-describedby="confirm-dialog-message"
+>
+    <form method="dialog">
+        <h2 id="confirm-dialog-title"></h2>
+        <p id="confirm-dialog-message"></p>
+
+        <div id="confirm-dialog-type-row" class="confirm-dialog-type-row" hidden>
+            <label for="confirm-dialog-input">
+                Type <strong id="confirm-dialog-expected"></strong> to confirm
+            </label>
+            <input
+                type="text"
+                id="confirm-dialog-input"
+                autocomplete="off"
+                spellcheck="false"
+            >
+
+            <p
+                id="confirm-dialog-error"
+                class="confirm-dialog-error"
+                aria-live="polite"
+                hidden
+            >
+                Confirmation text does not match.
+            </p>
+
+        </div>
+
+        <div class="confirm-dialog-actions">
+            <!-- First submit button, so pressing Enter cancels -->
+            <button type="submit" value="cancel" id="confirm-dialog-cancel" class="confirm-dialog-cancel">
+                Cancel
+            </button>
+            <button type="submit" value="confirm" id="confirm-dialog-confirm" class="confirm-dialog-confirm">
+                Delete
+            </button>
+        </div>
+    </form>
+</dialog>

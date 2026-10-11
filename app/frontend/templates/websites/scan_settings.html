@@ -1,0 +1,100 @@
+{# A website's scan settings: whether it is active, how gently it is crawled and how often. #}
+{# Needs `website`. #}
+
+<!-- Scan settings -->
+<details class="scan-settings">
+
+    <summary>
+        Scan Settings
+    </summary>
+
+    <form
+        class="scan-settings-form"
+        data-website-id="{{ website.id }}"
+    >
+
+        <div class="scan-setting-row">
+
+            <label>
+                <input
+                    type="checkbox"
+                    class="scan-active"
+                    {% if website.active %}checked{% endif %}
+                >
+                Crawler Active
+            </label>
+
+            <p class="scan-setting-help">
+                Inactive websites only have their critical pages checked.
+                The rest of the website is not crawled for new or removed pages.
+            </p>
+
+        </div>
+
+
+        <div class="scan-setting-row">
+
+            <label>
+                Request delay (seconds)
+            </label>
+
+            <input
+                type="number"
+                class="scan-delay"
+                value="{{ website.recommended_delay }}"
+                min="0"
+                max="{{ max_delay }}"
+                step="0.1"
+                required
+            >
+
+        </div>
+
+
+        <div class="scan-setting-row">
+
+            <label>
+                Concurrent requests
+            </label>
+
+            <input
+                type="number"
+                class="scan-concurrent"
+                value="{{ website.recommended_concurrent }}"
+                min="{{ min_concurrent }}"
+                step="1"
+                required
+            >
+
+        </div>
+
+        <div class="scan-setting-row">
+
+            <label>
+                Days between scans
+            </label>
+
+            <input
+                type="number"
+                class="days-between-scans"
+                value="{{ website.days_between_scans }}"
+                min="{{ minimum_days_between_scans }}"
+                step="any"
+                required
+            >
+
+        </div>
+
+        <button type="submit">
+            Save Settings
+        </button>
+
+        <p
+            class="scan-settings-message"
+            aria-live="polite"
+        ></p>
+
+
+    </form>
+
+</details>

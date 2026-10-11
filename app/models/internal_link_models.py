@@ -1,21 +1,19 @@
 import uuid
 
-from pydantic import BaseModel, ConfigDict
-
-from app.db.utils.field_types import URLString
+from pydantic import BaseModel, ConfigDict, HttpUrl
 
 
 class InternalLinkCreate(BaseModel):
-    url: URLString
+    url: HttpUrl
     website_id: uuid.UUID
 
 
 class InternalLinkRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
-    url: URLString
+    url: HttpUrl
     website_id: uuid.UUID
 
 
 class InternalLinkUpdate(BaseModel):
-    url: URLString | None = None
+    url: HttpUrl | None = None

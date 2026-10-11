@@ -1,11 +1,15 @@
 import uuid
 from collections.abc import Sequence
+from typing import Any
 
 import pytest
-from sqlalchemy.orm import Session
+from sqlalchemy import inspect
+from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from app.core.errors import IntegrityError, NotFoundError
 from app.db import repository
+from app.db.schema import DBWebsite
+from app.models.website_models import WebsiteRead
 from tests.conftest import DBTestTable
 
 
@@ -68,6 +72,19 @@ def test_get_list_with_limit(session: Session) -> None:
     # Retrieving with limit
     records = repository.get_list(session, table=DBTestTable, skip=0, limit=2)
     assert len(records) == 2
+
+
+def test_get_list_without_a_limit_returns_every_record(session: Session) -> None:
+    """
+    Tests a limit of None returns every record, rather than the default first 100.
+
+    Args:
+        session: The database session fixture.
+    """
+    repository.bulk_insert(session, table=DBTestTable, rows=[{"name": f"Record {number}"} for number in range(101)])
+
+    assert len(repository.get_list(session, table=DBTestTable)) == 100
+    assert len(repository.get_list(session, table=DBTestTable, limit=None)) == 101
 
 
 def test_get_list_invalid_limits(session: Session) -> None:
@@ -135,42 +152,39 @@ def test_add_raises_integrity_error(session: Session, test_record: DBTestTable) 
     assert "unique constraint" in str(e.value)
 
 
-def test_batch_add(session: Session) -> None:
+def test_bulk_insert(session: Session) -> None:
     """
-    Tests adding multiple records in batch.
+    Tests many rows are inserted at once, with their defaults (such as the ID) filled in.
 
     Args:
         session: The database session fixture.
     """
-    records = [
-        DBTestTable(name="Batch Record 1"),
-        DBTestTable(name="Batch Record 2"),
-        DBTestTable(name="Batch Record 3"),
-    ]
+    repository.bulk_insert(session, table=DBTestTable, rows=[{"name": f"Bulk {number}"} for number in range(1_000)])
 
-    repository.batch_add(session, records)
-
-    for record in records:
-        assert record.id is not None
-        fetched_record: DBTestTable = repository.get(session, table=DBTestTable, id=record.id)
-        assert fetched_record.name == record.name
+    records = repository.get_list(session, table=DBTestTable, limit=None)
+    assert {record.name for record in records} == {f"Bulk {number}" for number in range(1_000)}
+    assert all(record.id is not None for record in records)
 
 
-def test_batch_add_raises_integrity_error(session: Session, test_record: DBTestTable) -> None:
+def test_bulk_insert_with_no_rows_inserts_nothing(session: Session) -> None:
+    """Tests inserting no rows does nothing, rather than failing or inserting an empty row."""
+    repository.bulk_insert(session, table=DBTestTable, rows=[])
+
+    assert repository.get_list(session, table=DBTestTable, limit=None) == []
+
+
+def test_bulk_insert_raises_integrity_error(session: Session, test_record: DBTestTable) -> None:
     """
-    Tests that batch_add raises IntegrityError if unique constraints are violated.
+    Tests that bulk_insert raises IntegrityError if unique constraints are violated.
 
     Args:
         session: The database session fixture.
         test_record: The test record.
     """
-    records = [
-        DBTestTable(name="Valid Batch Record"),
-        DBTestTable(name=test_record.name),  # Duplicate name
-    ]
+    rows = [{"name": "Valid Bulk Row"}, {"name": test_record.name}]  # Duplicate name
 
     with pytest.raises(IntegrityError) as e:
-        repository.batch_add(session, records)
+        repository.bulk_insert(session, table=DBTestTable, rows=rows)
     assert "unique constraint" in str(e.value)
 
 
@@ -224,127 +238,14 @@ def test_delete(session: Session, test_record: DBTestTable) -> None:
         repository.get(session, table=DBTestTable, id=test_record.id)
 
 
-def test_batch_delete_by_ids(session: Session) -> None:
-    """
-    Tests deleting multiple records in batch using IDs.
+@pytest.mark.parametrize("relations", [[DBWebsite.critical_pages], None], ids=["asked-for", "not-asked-for"])
+def test_get_list_loads_the_relations_asked_for(
+    session: Session, test_website: WebsiteRead, relations: list[InstrumentedAttribute[Any]] | None
+) -> None:
+    """Tests the relations asked for are loaded with the records, so reading them does not query each record again,
+    while relations not asked for are left to load when they are read."""
+    session.expire_all()
 
-    Args:
-        session: The database session fixture.
-    """
-    records = [
-        DBTestTable(name="Batch Delete 1"),
-        DBTestTable(name="Batch Delete 2"),
-        DBTestTable(name="Batch Delete 3"),
-    ]
-    repository.batch_add(session, records)
-    ids = [record.id for record in records]
+    [website] = repository.get_list(session, table=DBWebsite, attributes={"id": test_website.id}, relations=relations)
 
-    repository.batch_delete(session, table=DBTestTable, ids=ids)
-
-    # Confirm all are deleted
-    for record_id in ids:
-        with pytest.raises(NotFoundError):
-            repository.get(session, table=DBTestTable, id=record_id)
-
-
-def test_batch_delete_by_attributes(session: Session) -> None:
-    """
-    Tests deleting records matching a given set of attribute criteria.
-
-    Args:
-        session: The database session fixture.
-    """
-    record1 = DBTestTable(name="Target Record")
-    record2 = DBTestTable(name="Keep Record")
-    repository.batch_add(session, [record1, record2])
-
-    repository.batch_delete(
-        session,
-        table=DBTestTable,
-        attributes={DBTestTable.name.key: "Target Record"},
-    )
-
-    # Target deleted
-    with pytest.raises(NotFoundError):
-        repository.get(session, table=DBTestTable, id=record1.id)
-
-    # Unmatched record remains
-    fetched = repository.get(session, table=DBTestTable, id=record2.id)
-    assert fetched.id == record2.id
-
-
-def test_batch_delete_by_ids_and_attributes(session: Session) -> None:
-    """
-    Tests deleting records matching both explicit IDs and attribute filters.
-
-    Args:
-        session: The database session fixture.
-    """
-    record1 = DBTestTable(name="Matching Record")
-    record2 = DBTestTable(name="Other Record")
-    repository.batch_add(session, [record1, record2])
-
-    repository.batch_delete(
-        session,
-        table=DBTestTable,
-        ids=[record1.id],
-        attributes={DBTestTable.name.key: "Matching Record"},
-    )
-
-    with pytest.raises(NotFoundError):
-        repository.get(session, table=DBTestTable, id=record1.id)
-
-
-def test_batch_delete_no_params_raises_value_error(session: Session) -> None:
-    """
-    Tests that calling batch_delete with neither IDs nor attributes raises ValueError.
-
-    Args:
-        session: The database session fixture.
-    """
-    with pytest.raises(ValueError, match="At least one search parameter"):
-        repository.batch_delete(session, table=DBTestTable)
-
-
-def test_batch_delete_unmatched_attributes_noop(session: Session) -> None:
-    """
-    Tests that batch_delete with non-matching attributes succeeds without error or deleting records.
-
-    Args:
-        session: The database session fixture.
-    """
-    record = DBTestTable(name="Existing Record")
-    repository.add(session, record)
-
-    repository.batch_delete(
-        session,
-        table=DBTestTable,
-        attributes={DBTestTable.name.key: "Non-existent Record"},
-    )
-
-    # Confirm record still exists
-    fetched = repository.get(session, table=DBTestTable, id=record.id)
-    assert fetched.id == record.id
-
-
-def test_batch_delete_raises_not_found_error(session: Session) -> None:
-    """
-    Tests that batch_delete raises NotFoundError if an explicitly passed ID does not exist.
-
-    Args:
-        session: The database session fixture.
-    """
-    record = DBTestTable(name="Valid Delete Record")
-    repository.add(session, record)
-
-    missing_id = uuid.uuid4()
-    ids = [record.id, missing_id]
-
-    with pytest.raises(NotFoundError) as e:
-        repository.batch_delete(session, table=DBTestTable, ids=ids)
-
-    assert str(missing_id) in str(e.value)
-
-    # Confirm atomic rollback (valid record was not deleted)
-    fetched = repository.get(session, table=DBTestTable, id=record.id)
-    assert fetched.id == record.id
+    assert ("critical_pages" in inspect(website).unloaded) is (relations is None)

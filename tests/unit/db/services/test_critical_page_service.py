@@ -1,10 +1,12 @@
+import re
+import uuid
 from collections.abc import Sequence
 
 import pytest
+from pydantic import HttpUrl
 from sqlalchemy.orm import Session
 
-from app.backend.utils.html_parser import ChangedBlock, ContentBlock, HTMLBlockType
-from app.core.errors import NotFoundError
+from app.core.errors import IntegrityError, NotFoundError
 from app.db.services.critical_page_service import CriticalPageService
 from app.models.critical_page_models import (
     CriticalPageCreate,
@@ -51,7 +53,7 @@ def test_create_critical_page(session: Session, test_website: WebsiteRead) -> No
         session: The database session fixture.
     """
     critical_page_details = CriticalPageCreate(
-        url="https://www.test_website.com/test_critical_page",
+        url=HttpUrl("https://www.test_website.com/test_critical_page"),
         website_id=test_website.id,
     )
 
@@ -71,7 +73,7 @@ def test_update_critical_page(session: Session, test_critical_page: CriticalPage
         session: The database session fixture.
         test_critical_page: The test critical page record.
     """
-    model_update = CriticalPageUpdate(links=["https://www.test_website.com/updated_critical_page_link"])
+    model_update = CriticalPageUpdate(links=[HttpUrl("https://www.test_website.com/updated_critical_page_link")])
 
     updated_critical_page: CriticalPageRead = CriticalPageService(session).update(
         id=test_critical_page.id, model_update=model_update
@@ -98,58 +100,35 @@ def test_delete_critical_page(session: Session, test_critical_page: CriticalPage
         CriticalPageService(session).get(id=test_critical_page.id)
 
 
-def test_create_critical_page_with_recent_changes(session: Session, test_website: WebsiteRead) -> None:
-    """Tests creating a critical page populated with recent change attributes."""
-    sample_block = ContentBlock(
-        parent_heading="Introduction",
-        block_type=HTMLBlockType.PARAGRAPH,
-        text="Sample text content",
+def test_a_website_cannot_watch_the_same_critical_page_twice(
+    session: Session, test_critical_page: CriticalPageRead
+) -> None:
+    """Tests a critical page already watched on a website cannot be added to it again."""
+    with pytest.raises(IntegrityError):
+        CriticalPageService(session).create(
+            CriticalPageCreate(url=test_critical_page.url, website_id=test_critical_page.website_id)
+        )
+
+
+def test_a_critical_page_of_a_website_that_does_not_exist_is_refused(session: Session) -> None:
+    """Tests a critical page cannot be saved for a website that does not exist, as foreign keys are checked."""
+    with pytest.raises(IntegrityError):
+        CriticalPageService(session).create(
+            CriticalPageCreate(url=HttpUrl("https://www.test_website.com/fees"), website_id=uuid.uuid4())
+        )
+
+
+def test_ignore_rules_are_read_back_as_the_patterns_they_were_written_as(
+    session: Session, test_website: WebsiteRead
+) -> None:
+    """Tests a critical page's ignore rules are saved as their pattern text, not as Python's "re.compile(...)"."""
+    created_page: CriticalPageRead = CriticalPageService(session).create(
+        CriticalPageCreate(
+            url=HttpUrl("https://www.test_website.com/fees"),
+            website_id=test_website.id,
+            ignore_rules=[re.compile(r"Last updated \d+")],
+        )
     )
+    session.expire_all()
 
-    critical_page_details = CriticalPageCreate(
-        url="https://www.test_website.com/test_recent_changes",
-        website_id=test_website.id,
-    )
-
-    created_page: CriticalPageRead = CriticalPageService(session).create(critical_page_details)
-
-    update_data: CriticalPageUpdate = CriticalPageUpdate(
-        recent_links_added=["https://www.test_website.com/new-link"],
-        recent_text_added=[sample_block],
-    )
-
-    updated_page: CriticalPageRead = CriticalPageService(session).update(id=created_page.id, model_update=update_data)
-
-    assert updated_page.recent_links_added == ["https://www.test_website.com/new-link"]
-    assert updated_page.recent_text_added
-    assert len(updated_page.recent_text_added) == 1
-    assert updated_page.recent_text_added[0].text == "Sample text content"
-    assert updated_page.recent_text_added[0].block_type == HTMLBlockType.PARAGRAPH
-
-
-def test_update_critical_page_complex_diff_fields(session: Session, test_critical_page: CriticalPageRead) -> None:
-    """Tests updating and retrieving complex nested objects like ChangedBlock."""
-    old_block = ContentBlock(parent_heading="Header", block_type=HTMLBlockType.PARAGRAPH, text="Old version")
-    new_block = ContentBlock(parent_heading="Header", block_type=HTMLBlockType.PARAGRAPH, text="New version")
-    changed_block_item = ChangedBlock(old_block=old_block, new_block=new_block, similarity=0.85)
-
-    model_update: CriticalPageUpdate = CriticalPageUpdate(
-        recent_text_changed=[changed_block_item],
-        recent_documents_removed=["https://www.test_website.com/doc-v1.pdf"],
-    )
-
-    updated_critical_page: CriticalPageRead = CriticalPageService(session).update(
-        id=test_critical_page.id, model_update=model_update
-    )
-    assert updated_critical_page.recent_text_changed
-    assert len(updated_critical_page.recent_text_changed) == 1
-    assert updated_critical_page.recent_text_changed[0].similarity == 0.85
-    assert updated_critical_page.recent_text_changed[0].old_block.text == "Old version"
-    assert updated_critical_page.recent_text_changed[0].new_block.text == "New version"
-    assert updated_critical_page.recent_documents_removed == ["https://www.test_website.com/doc-v1.pdf"]
-
-    fetched_page: CriticalPageRead = CriticalPageService(session).get(id=test_critical_page.id)
-    assert fetched_page.recent_text_changed
-    assert fetched_page.recent_text_changed[0].similarity == 0.85
-    assert fetched_page.recent_documents_removed
-    assert fetched_page.recent_documents_removed[0] == "https://www.test_website.com/doc-v1.pdf"
+    assert CriticalPageService(session).get(created_page.id).ignore_rules == [r"Last updated \d+"]

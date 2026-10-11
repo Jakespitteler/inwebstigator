@@ -1,4 +1,5 @@
 from contextlib import nullcontext
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from bs4 import BeautifulSoup
@@ -6,11 +7,11 @@ from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
 from sqlalchemy.orm import Session
 
-from app import scanner
+from app.backend.scanning.health_checks import send_due_health_checks
 from app.db.schema import DBRecipient, DBWebsite
 from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
-from app.scheduler import _scan_then_send_health_checks  # pyright: ignore[reportPrivateUsage]
+from tests.fakes import FakeEmailSender
 
 # More than the API's default page size of 100, which the dashboard, scheduled scans and
 # health checks used to stop at without saying so
@@ -55,27 +56,24 @@ def test_dashboard_shows_every_website(api_client: TestClient, session: Session)
 
 
 @pytest.mark.anyio
-async def test_scheduled_scan_checks_every_website(session: Session, mocker: MockerFixture) -> None:
-    """Tests a scheduled scan goes through every monitored website, not just the first 100."""
-    urls = _add_websites(session, MORE_THAN_A_PAGE)
-    mocker.patch("app.scanner.db_context", side_effect=lambda: nullcontext(session))
-    mock_scan_website = mocker.patch("app.scanner.scan_website", return_value=None)
-
-    await scanner.scan_all_websites()
-
-    scanned_urls = {call.args[1].url for call in mock_scan_website.call_args_list}
-    assert scanned_urls == set(urls)
-
-
-@pytest.mark.anyio
-async def test_health_checks_go_to_every_recipient(session: Session, mocker: MockerFixture) -> None:
+async def test_health_checks_go_to_every_recipient(
+    session: Session, mocker: MockerFixture, email_sender: FakeEmailSender
+) -> None:
     """Tests the "no changes" health check considers every recipient, not just the first 100."""
-    emails = _add_recipients(session, MORE_THAN_A_PAGE)
-    mocker.patch("app.scheduler.db_context", side_effect=lambda: nullcontext(session))
-    mocker.patch("app.scheduler.scan_all_websites", return_value=None)
-    mock_health_check = mocker.patch("app.scheduler._send_health_check_if_no_change")
+    long_ago = datetime.now(UTC) - timedelta(days=30)
+    emails = [f"person{number:03}@example.com" for number in range(MORE_THAN_A_PAGE)]
+    # Health checks only go to recipients still linked to a website
+    session.add(
+        DBWebsite(
+            url="https://example.com",
+            recipients=[DBRecipient(email=email, last_email_at=long_ago) for email in emails],
+        )
+    )
+    session.flush()
+    mocker.patch("app.backend.scanning.health_checks.db_context", side_effect=lambda: nullcontext(session))
+    mock_send_notification = mocker.patch("app.backend.scanning.notifications.send_notification")
 
-    await _scan_then_send_health_checks()
+    await send_due_health_checks(email_sender)
 
-    checked_emails = {call.args[0].email for call in mock_health_check.call_args_list}
+    checked_emails = {call.args[0].to for call in mock_send_notification.call_args_list}
     assert checked_emails == set(emails)

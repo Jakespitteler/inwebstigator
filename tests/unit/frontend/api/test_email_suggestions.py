@@ -23,12 +23,14 @@ def test_email_suggestions_include_all_saved_addresses_once(api_client: TestClie
     orphan = DBRecipient(email="a&b@example.com")
     # Include more than the standard recipient page size, and an address with no linked website.
     extra = [DBRecipient(email=f"person{number:03}@example.com") for number in range(105)]
-    session.add_all([
-        DBWebsite(url="https://one.example.com", recipients=[shared]),
-        DBWebsite(url="https://two.example.com", recipients=[shared]),
-        orphan,
-        *extra,
-    ])
+    session.add_all(
+        [
+            DBWebsite(url="https://one.example.com", recipients=[shared]),
+            DBWebsite(url="https://two.example.com", recipients=[shared]),
+            orphan,
+            *extra,
+        ]
+    )
     session.flush()
     expected = sorted([shared.email, orphan.email, *(person.email for person in extra)], key=str.casefold)
 

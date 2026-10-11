@@ -5,7 +5,7 @@ a = Analysis(
     ['inwebstigator.py'],
     pathex=[],
     binaries=[],
-    datas=[('app/frontend', 'app/frontend')],
+    datas=[('app/frontend', 'app/frontend'), ('app/backend/email_service/templates', 'app/backend/email_service/templates')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -26,7 +26,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=True,
+    console=False,  # A tray app: no console window, which would quit the app if a tester closed it
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

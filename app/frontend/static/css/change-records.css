@@ -1,0 +1,177 @@
+/* What a scan found: the lists of added and removed items and the Before / After tables. */
+
+
+/* CHANGE RECORDS */
+
+.page-url {
+    display: inline-block;
+    max-width: 100%;
+    margin: 0 0 20px;
+    padding: 6px 12px;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: var(--content-bg);
+    border: 1px solid var(--content-border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--content-shadow);
+    overflow-wrap: anywhere;
+}
+
+.change-section {
+    margin-bottom: 24px;
+}
+
+.change-section:last-child {
+    margin-bottom: 0;
+}
+
+.change-section h2 {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-tertiary);
+    margin: 0 0 10px;
+}
+
+/* Each added/removed item sits in its own box with a coloured edge */
+.change-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.change-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 10px 12px 10px 14px;
+    background: var(--content-bg);
+    border: 1px solid var(--content-border);
+    border-left: 3px solid var(--border-md);
+    border-radius: var(--radius-md);
+    box-shadow: var(--content-shadow);
+}
+
+.change-item-added {
+    border-left-color: var(--success-text);
+}
+
+.change-item-removed {
+    border-left-color: var(--danger-text);
+}
+
+.change-item-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.change-item-section {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-tertiary);
+}
+
+.change-item-text {
+    overflow-wrap: anywhere;
+    color: var(--text-primary);
+}
+
+a.change-item-text {
+    color: var(--link);
+    min-width: 0;
+}
+
+.change-item-removed .change-item-text {
+    color: var(--text-secondary);
+}
+
+.comparison-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    border: 1px solid var(--border-md);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--content-bg);
+    box-shadow: var(--content-shadow);
+}
+
+.comparison-table th,
+.comparison-table td {
+    width: 50%;
+    padding: 12px 14px;
+    text-align: left;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+}
+
+.comparison-table th + th,
+.comparison-table td + td {
+    border-left: 1px solid var(--border-md);
+}
+
+.comparison-table th {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-tertiary);
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border-md);
+}
+
+.added-label,
+.removed-label {
+    font-size: 12.5px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.change-badge {
+    flex-shrink: 0;
+    padding: 2px 9px;
+    border-radius: 20px;
+    font-size: 11.5px;
+}
+
+.change-badge.added-label {
+    background: var(--success-bg);
+}
+
+.change-badge.removed-label {
+    background: var(--danger-bg);
+}
+
+.added-label {
+    color: var(--success-text);
+}
+
+.removed-label {
+    color: var(--danger-text);
+}
+
+.added-word,
+.removed-word {
+    padding: 1px 4px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.added-word {
+    background: var(--success-bg);
+    color: var(--success-text);
+}
+
+.removed-word {
+    background: var(--danger-bg);
+    color: var(--danger-text);
+    text-decoration: line-through;
+}

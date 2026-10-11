@@ -4,7 +4,7 @@ For a team taking Inwebstigator over in a repository of its own. It covers where
 the project is, how to start your own copy, what you need to set up, how to
 release it, what's unfinished, and why it's built the way it is.
 
-Written on 9 October 2026, at the end of the original team's CITS3200 project.
+Written on 11 October 2026, at the end of the original team's CITS3200 project.
 
 Issue and pull request numbers (like #12) are from the
 [original repository](https://github.com/Jakespitteler/inwebstigator), which
@@ -25,19 +25,22 @@ Inwebstigator works, and has been given to the client.
 
 - **It can:** monitor any number of websites; watch critical pages for
   changed text, links and documents; crawl whole websites for added and
-  removed pages; scan on a schedule; email each recipient one report;
-  slow down for or pause websites that struggle; and run as a Windows tray app.
+  removed pages; scan on a schedule; keep each website's last 7 scans; email
+  each recipient one report, and resend reports that couldn't be sent; slow
+  down for or pause websites that struggle; and run as a Windows tray app,
+  installed with an installer that starts it at sign-in.
 - **It's tested by:** unit tests for each module, browser tests of the
-  dashboard, and a [checklist](#release-checklist) for checking the Windows
-  app by hand before each release.
+  dashboard, GitHub Actions workflows that check every push and the Windows
+  build, and a [checklist](#release-checklist) for checking the installed app
+  by hand before each release.
 - **It's documented in:** [INSTALL.md](../INSTALL.md) (users),
   the [README](../README.md) (developers) and
   [ARCHITECTURE.md](ARCHITECTURE.md) (how it works).
 
 The client contact is **Jay Jay** (written "JJ" in some old issues and notes).
 Most of the dashboard's behaviour (collapsible cards, safer deletion,
-per-website scan times, the add-website steps) came from Jay Jay's feedback on
-earlier versions.
+per-website scan times, the add-website steps, scan history) came from Jay
+Jay's feedback on earlier versions.
 
 ---
 
@@ -61,7 +64,8 @@ git push -u origin main
 ```
 
 Only `main` is pushed, and that's everything: no work was left on other
-branches.
+branches. The GitHub Actions workflows in `.github/workflows/` come with it and
+start running in your repository straight away.
 
 Then:
 
@@ -100,13 +104,13 @@ the unit coordinator and the client who owns the code.
 | --- | --- | --- |
 | Code | Your new repository | The [original](https://github.com/Jakespitteler/inwebstigator) is public, so you can always look back at its issues and pull requests. It was once called `Digital-Horizon-Scan-Project`, and that address still redirects. |
 | Sending email account | A Gmail account with an App Password | Make one for your team (see the README's [Email](../README.md#email)). The original team's account isn't handed over. UWA accounts don't work. |
-| `.env` | Your machine, and next to the `.exe` in each build | Never committed. `.env.example` lists only the first few settings; see the README's [Configuration](../README.md#configuration) for the rest. |
-| The client's data | `%LOCALAPPDATA%\inwebstigator` on the client's computer | Their websites and results. Nothing is stored anywhere else, so your new version carries on from it. |
+| `.env` | Your machine, and inside each installer | Never committed. `.env.example` lists the email settings; see the README's [Configuration](../README.md#configuration) for the rest. |
+| The client's data | `%LOCALAPPDATA%\inwebstigator` on the client's computer | Their websites, scan history and logs. Nothing is stored anywhere else. Installing your version over theirs keeps it; uninstalling deletes it. |
 
-**Every build contains the email password.** The `.env` shipped next to the
-`.exe` is plain text, so anyone with the zip can send email from that account.
-Use an account made just for Inwebstigator, and change its App Password if a
-zip goes somewhere it shouldn't.
+**Every installer contains the email password.** The `.env` it installs next
+to `inwebstigator.exe` is plain text, so anyone with the installer can send
+email from that account. Use an account made just for Inwebstigator, and
+change its App Password if an installer goes somewhere it shouldn't.
 
 **Your first build changes the sender.** The client's current copy sends from
 the original team's account until they install yours. Tell Jay Jay the new
@@ -116,33 +120,39 @@ address beforehand, so recipients can mark it as "Not spam".
 
 ## Releasing a new version
 
-There are no GitHub releases or automated builds yet. A release is:
+The **Build Windows app** workflow builds the installer on GitHub whenever the
+build files change, but only to check the build works: it uses `.env.example`,
+so its installer can't send email. A release is built by hand:
 
-1. Merge everything into `main` and check `uv run pytest` passes.
-2. On a Windows computer, follow the README's
-   [Building the Windows app](../README.md#building-the-windows-app): build,
-   copy `.env` next to `inwebstigator.exe`, and zip `dist/inwebstigator`.
-3. Go through the [release checklist](#release-checklist) on a Windows
-   computer that has never run Inwebstigator.
-4. Send the zip with [INSTALL.md](../INSTALL.md) (or a PDF of it).
-   The client quits the old version from the tray and unzips the new one over
-   it. Their data is kept, and the database is upgraded on startup (see the
-   README's [Database](../README.md#database)).
+1. Merge everything into `main`, and check the **Checks** workflow passed.
+2. Change `MyAppVersion` in `inwebstigator_installer_script.iss`.
+3. On a Windows computer, with a `.env` holding the real email settings,
+   follow the README's
+   [Building the Windows app](../README.md#building-the-windows-app). This
+   makes `dist\Inwebstigator Installer.exe`.
+4. Go through the [release checklist](#release-checklist).
+5. Send the installer with [INSTALL.md](../INSTALL.md) (or a PDF of it). The
+   client runs it over the old version. It asks for the app to be quit if it's
+   running, their data is kept, and the database is upgraded on startup (see
+   the README's [Database](../README.md#database)).
 
-The `.exe` isn't code-signed, so Windows SmartScreen warns about it the first
-time. INSTALL.md tells users how to get past this.
+The installer and `.exe` aren't code-signed, so Windows SmartScreen warns about
+them the first time. INSTALL.md tells users how to get past this.
 
 ### Release checklist
 
 The automated tests run the dashboard in a browser, which is the same engine
 as the desktop window (Microsoft Edge's WebView2). They don't cover the window,
-the tray or the build, so check these by hand with the zip you're about to send:
+the tray or the installer, so check these by hand with the installer you're
+about to send, on a Windows computer that has never run Inwebstigator:
 
-- [ ] Unzip it and open `inwebstigator.exe`. "Starting Inwebstigator" shows,
-      then the dashboard, with its logo.
-- [ ] Open the `.exe` again. A message says it's already running.
-- [ ] Add a small website with your own email. The confirmation and "Website
-      monitoring started" emails arrive.
+- [ ] Run the installer. It needs no administrator access, and "Start
+      Inwebstigator when I sign in to Windows" is ticked.
+- [ ] Inwebstigator opens when the installer finishes: "Starting
+      Inwebstigator" shows, then the dashboard, with its logo.
+- [ ] Open it again from the Start menu. A message says it's already running.
+- [ ] Add a small website with your own email. One "Website monitoring
+      started" email arrives.
 - [ ] **Run scan** on it finishes and the dashboard reloads.
 - [ ] **Run All Scans** starts, and its **Cancel** stops it.
 - [ ] The **About** page opens, and the app name leads back to the dashboard.
@@ -150,9 +160,11 @@ the tray or the build, so check these by hand with the zip you're about to send:
       the window back.
 - [ ] Switch to dark mode, choose **Quit** from the tray, and reopen the app.
       It's still dark, and the website is still there.
-- [ ] Unzip the new version over an older one that has websites saved. They're
-      all still there.
-- [ ] The console window shows no errors (tracebacks) throughout.
+- [ ] Sign out of Windows and back in. Inwebstigator starts by itself.
+- [ ] Run the installer again while the app is open. It asks for the app to be
+      closed, and the website is still there afterwards.
+- [ ] `%LOCALAPPDATA%\inwebstigator\logs\inwebstigator.log` shows no errors
+      (tracebacks).
 
 ---
 
@@ -172,21 +184,15 @@ issue was closed except two that were marked out of scope:
 
 ## Known issues
 
-Bugs and rough edges found while writing this. Consider opening an issue for each.
+Bugs and rough edges not yet in an issue. Consider opening one for each.
 
 | Issue | Details |
 | --- | --- |
-| `DB_NAME` is ignored | `db_path` is worked out from `db_name` when `Config` is defined, before `.env` is read, so setting `DB_NAME` still uses `inwebstigator.db`. `USER_DATA_DIR` has the same problem. Use `DB_PATH`. The fix is to make `db_path` a property or a validator. |
-| Websites on different subdomains get the same name | `news.uwa.edu.au` and `uwa.edu.au` can both be shown as "Uwa" if neither page's title gives a better one. |
-| A website paused for being blocked just says "Inactive" | `deactivated_reason` is only ever set to `too_large`. A website deactivated after being blocked 3 times gets no reason, so the dashboard can't explain it. |
-| The launcher's loading and error text are out of date | `inwebstigator.py` says overdue scans run "before the dashboard opens" (they run in the background now) and its error page says to "run desktop.py again" (now `inwebstigator.py`). |
-| Logs only go to the console window | Nothing is written to a log file, so a client can only send a screenshot of the console. Closing that console window also quits the app. |
-| A misnamed setting | `web_crawler_batch_402_threshold_seconds` (50) is really the number of 403 responses in one crawl batch that counts as being blocked. |
-| Scans only run while the app is open | There's no Windows service or start-up entry, so after a restart the user has to open it again. |
-
-`TODO` comments left in the code: `core/config.py` (similarity threshold),
-`backend/utils/links.py` (whether to ignore `<nav>` links),
-`backend/utils/html_parser.py` and `frontend/api/routers.py` (minor).
+| `DB_NAME` is ignored | `db_path` is worked out from `db_name` when `Config` is defined, before the environment is read, so setting `DB_NAME` still uses `inwebstigator.db`. `USER_DATA_DIR` has the same problem. Use `DB_PATH`. The fix is to make `db_path` a property or a validator. |
+| Run scan and adding a website keep the request open | The request waits until the scan finishes, which can take several minutes for a large website. They could start a background job and let the dashboard check on it instead. |
+| `robots.txt` isn't read | The crawler visits every internal page it finds, including ones a website asks crawlers to avoid. |
+| Ignore rules have no dashboard control | A critical page's `ignore_rules` (text to leave out, e.g. a visitor counter) can only be set through the API (`PATCH /critical_pages/{id}`). |
+| No migration tool | `db/migrations.py` adds missing tables, columns and indexes, and runs hand-written one-off updates. Renaming or changing a column needs a one-off update written by hand. Alembic would handle this. |
 
 ---
 
@@ -196,16 +202,19 @@ Why it's built the way it is, and what each choice costs.
 
 | Choice | Why | Cost |
 | --- | --- | --- |
-| A desktop app on the client's computer, not a hosted website | No server to pay for or look after, no logins, and the client's data stays on their computer. | Scans only happen while the app is open and the computer is on. Only one person can use it. |
-| SQLite, with upgrades written by hand | One file, no database server. `add_missing_columns()` covers most changes. | Anything beyond adding columns needs an upgrade step in `db/migrations.py`, written and tested by hand. |
-| Server-rendered pages with inline JavaScript | No build step or JavaScript framework to learn. | `index.html` is long (about 2,500 lines), as it holds the dashboard's HTML and most of its JavaScript. |
+| A desktop app on the client's computer, not a hosted website | No server to pay for or look after, and the client's data stays on their computer. | Scans only happen while the computer is on and the app is running (it starts at sign-in). Only one person can use it. |
+| No login, but a token on every change | Only the person at the computer uses it. The token stops other websites in their browser using the app (see [ARCHITECTURE.md](ARCHITECTURE.md#the-request-guard)). | Calling the API by hand needs `API_TOKEN_REQUIRED=false`. |
+| SQLite, with upgrades written by hand | One file, no database server. `prepare_database()` covers most changes. | Anything beyond adding tables, columns and indexes needs a one-off update in `db/migrations.py`, written and tested by hand. |
+| Server-rendered pages with plain JavaScript files | No build step or JavaScript framework to learn. | The scripts share one scope and their load order matters (see [ARCHITECTURE.md](ARCHITECTURE.md#the-dashboard)). |
 | One scan at a time | Polite to the websites, and simpler (scans never compete for the database). | **Run All Scans** on many large websites takes a long time. |
 | The first scan only saves a baseline | Users want to hear about changes, not everything already on a page. | A change made between adding a website and its first scan is never reported. |
+| Keeping each scan's changes as rows | The Updates tab can show the last 7 scans, and a report whose email failed can be sent later. | The history is capped at 7 scans per website to stop the database growing. |
 | Comparing text block by block | Shows what actually changed, in context, rather than just "this page changed" (which hashing, #9, would give). | Pages whose layout changes but whose wording doesn't can still show as changed. The 60% similarity threshold is a judgement call. |
 | Crawling links rather than sitemaps (#12) | Works on any website, even one with no sitemap or an out-of-date one. | Slower, and pages nothing links to aren't found. |
-| Checking an address with a real email | Mail servers accept any address at first and bounce it later, so this is the only reliable check. | Adding an address takes up to 30 seconds, and needs IMAP to spot bounces. |
-| Data kept outside the app's folder | A new version can be unzipped over an old one without losing anything. | Uninstalling means deleting `%LOCALAPPDATA%\inwebstigator` by hand. |
-| A PyInstaller folder build rather than a single `.exe` | Starts faster, as nothing has to be unpacked each launch. | It's a folder to zip and unzip rather than one file. |
+| Not trusting a sudden drop | A page that loses most of its text, or a website that loses most of its pages, is usually down or showing a stand-in page, not really changed. | A real redesign that cuts most of a page or website is only reported after 3 scans in a row. |
+| Checking an address with a real email | Mail servers accept any address at first and bounce it later, so this is the only reliable check. | Adding an address takes up to 30 seconds, and needs the account's inbox (IMAP) to spot bounces. |
+| A PyInstaller folder build in an Inno Setup installer | Starts faster than a single-file `.exe`, and the installer adds Start menu and sign-in shortcuts without administrator access. | Only builds on Windows, and isn't code-signed. |
+| Data kept outside the app's folder | Installing a new version keeps it. | Uninstalling deletes it, so a reinstall starts from nothing. |
 
 ---
 
@@ -214,13 +223,15 @@ Why it's built the way it is, and what each choice costs.
 Roughly in order of how much they'd help the client:
 
 1. **Fix the known issues above.** Most are small.
-2. **Start automatically with Windows.** A "start Inwebstigator when I log in"
-   option would stop scans silently stopping after a restart.
-3. **Write logs to a file** in the data folder, and add a way to open it from
-   the tray, so the client can send them.
-4. **Automate releases:** a GitHub Actions workflow on Windows that runs the
-   tests and builds the zip (without `.env`, which would be added by hand).
-5. **Sign the `.exe`** so Windows stops warning about it.
+2. **Background scan jobs,** so **Run scan** and adding a website return
+   straight away and the dashboard shows progress.
+3. **Read `robots.txt`,** so the crawler respects what websites ask of it.
+4. **A dashboard control for ignore rules,** so the client can hide text that
+   changes on every scan without help.
+5. **Publish releases:** have the **Build Windows app** workflow attach a
+   versioned installer to a GitHub release, with the real `.env` from a GitHub
+   secret.
+6. **Sign the installer and `.exe`** so Windows stops warning about them.
 
 ---
 

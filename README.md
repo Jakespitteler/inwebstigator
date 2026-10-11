@@ -17,8 +17,8 @@ with scheduled scans while it runs. Everything is stored in a local SQLite datab
 | [docs/HANDOVER.md](docs/HANDOVER.md) | A team taking the project over: status, decisions, known issues and next steps. |
 
 **Contents:** [Setting up](#setting-up) · [Running](#running) ·
-[Configuration](#configuration) · [Email](#email) · [Testing](#testing) ·
-[Building the Windows app](#building-the-windows-app) ·
+[Configuration](#configuration) · [Email](#email) · [Logs](#logs) ·
+[Testing](#testing) · [Building the Windows app](#building-the-windows-app) ·
 [Project layout](#project-layout) · [Database](#database) ·
 [Contributing](#contributing)
 
@@ -37,7 +37,7 @@ cp .env.example .env         # then fill it in (see Configuration)
 ```
 
 The app runs on macOS and Linux for development, but the desktop launcher
-(`inwebstigator.py`) and the built `.exe` are Windows only.
+(`inwebstigator.py`) and the installer are Windows only.
 
 > **macOS:** if the project folder is synced by iCloud (e.g. it's on your
 > Desktop), iCloud can corrupt `.venv`. If imports suddenly fail, run
@@ -46,26 +46,6 @@ The app runs on macOS and Linux for development, but the desktop launcher
 ---
 
 ## Running
-
-### As a web app (any OS)
-
-```bash
-uv run uvicorn app.main:app --reload
-```
-
-Open <http://127.0.0.1:8000> for the dashboard, or <http://127.0.0.1:8000/docs>
-for the API. In VS Code, the **Python Debugger: FastAPI** launch configuration
-does the same with the debugger attached.
-
-Useful while developing:
-
-```bash
-AUTOMATIC_SCANS=false uv run uvicorn app.main:app --reload    # no scheduled scans
-DB_PATH=/tmp/inwebstigator-test.db uv run uvicorn app.main:app  # a separate database
-```
-
-Use `DB_PATH` (not `DB_NAME`) to point at another database. See
-[Database](#database) for where the real one is.
 
 ### As the desktop app (Windows)
 
@@ -78,6 +58,34 @@ window. Closing the window hides it to the system tray, where **Open**, **Hide**
 and **Quit** control it. Only one copy can run at a time. `Ctrl+C` in the
 terminal quits it. Pass `--debug` to open the browser developer tools.
 
+### As a web app (any OS)
+
+```bash
+uv run uvicorn app.main:app --reload
+```
+
+Open <http://127.0.0.1:8000> for the dashboard.
+
+Useful while developing:
+
+```bash
+AUTOMATIC_SCANS=false uv run uvicorn app.main:app --reload       # no scheduled scans
+DB_PATH=/tmp/inwebstigator-test.db uv run uvicorn app.main:app     # a separate database
+API_TOKEN_REQUIRED=false uv run uvicorn app.main:app               # call the API by hand
+```
+
+- **A separate database:** use `DB_PATH`, not `DB_NAME`, which is ignored (see
+  [Database](#database)).
+- **Calling the API:** every request that changes something (POST, PATCH,
+  DELETE) needs the `X-Inwebstigator-Token` header, a random token made each
+  time the app starts and only given to the dashboard page. This stops a
+  website open in the user's normal browser from using the app. To try the API
+  from FastAPI's docs at <http://127.0.0.1:8000/docs>, turn the check off with
+  `API_TOKEN_REQUIRED=false`.
+
+**There's no dry-run mode.** Adding a website really emails its recipients, so
+only add your own addresses while testing.
+
 ---
 
 ## Configuration
@@ -87,37 +95,45 @@ variables or a `.env` file, using the setting's name in capitals (e.g.
 `smtp_host` → `SMTP_HOST`). Variables already set in the environment win over
 `.env`.
 
-| Where `.env` is read from | |
+`.env` is read from the app's folder, whichever folder it was started from:
+
+| | Where `.env` is read from |
 | --- | --- |
-| Development | The folder you run the command from (the project root). |
-| Built app | The folder `inwebstigator.exe` is started from, i.e. next to the `.exe`. |
+| Development | The project's root folder. |
+| Installed app | The folder `inwebstigator.exe` is in, where the installer puts it. |
 
 The settings you're most likely to need:
 
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `EMAIL` / `EMAIL_PASSWORD` | blank | The account emails are sent from. Also the From address. |
-| `SMTP_HOST` / `SMTP_PORT` | blank / `465` | The mail server, over SSL. |
-| `IMAP_HOST` / `IMAP_PORT` | blank / `993` | The same account's inbox, used to spot bounced confirmation emails. If blank, it's worked out from `SMTP_HOST` (`smtp.` → `imap.`). |
+| `SMTP_HOST` / `SMTP_PORT` | blank / `465` | The mail server. Port 465 uses SSL; any other port (e.g. 587) is upgraded with STARTTLS. |
+| `IMAP_HOST` / `IMAP_PORT` | blank / `993` | The same account's inbox, used to spot bounced emails. If blank, it's worked out from `SMTP_HOST` (`smtp.` → `imap.`). |
+| `EMAIL_TIME_ZONE` | blank | The time zone emails show times in, e.g. `Australia/Perth`. Blank uses the computer's own. |
 | `AUTOMATIC_SCANS` | `true` | Run scheduled scans and health check emails. |
 | `DB_PATH` | `<home>/AppData/Local/inwebstigator/inwebstigator.db` | The SQLite database file. |
+| `API_TOKEN_REQUIRED` | `true` | Refuse changes that don't come from the dashboard (see [Running](#running)). |
 | `SERVER_PREFERRED_PORT` | `48731` | The desktop app's port, if free. |
+| `SCHEDULER_SCAN_TIME` | `08:00` | The first scheduled check of the day. |
+| `SCHEDULER_MINIMUM_DAYS_BETWEEN_SCANS` | `0.5` | The shortest allowed scan interval, and the time between scheduled checks (so 8am and 8pm). |
+| `SCHEDULER_DEFAULT_DAYS_BETWEEN_SCANS` | `1` | Default scan interval for new websites. |
+| `SCHEDULER_DEFAULT_DAYS_BETWEEN_HEALTH_CHECKS` | `7` | Days without an email before a recipient gets a health check. |
+| `SCANS_KEPT_PER_WEBSITE` | `7` | How many scans of each website are kept and shown on the Updates tab. |
 | `WEB_CRAWLER_DEFAULT_MAX_PAGES` | `50000` | Websites with more pages are deactivated (critical pages only). |
 | `WEB_CRAWLER_DEFAULT_DELAY` / `WEB_CRAWLER_DEFAULT_CONCURRENT` | `0.5` / `5` | Default crawl speed for new websites. |
-| `SCHEDULER_DEFAULT_DAYS_BETWEEN_SCANS` | `1` | Default scan interval for new websites. |
-| `SCHEDULER_MINIMUM_DAYS_BETWEEN_SCANS` | `0.5` | The shortest allowed interval, and how often the scheduler checks for due websites. |
-| `SCHEDULER_DEFAULT_DAYS_BETWEEN_HEALTH_CHECKS` | `7` | Days without an email before a recipient gets a "Health Check". |
 
-See `app/core/config.py` for the rest (crawler retries, cooldowns, diff
-thresholds). `.env` is gitignored, so never commit real values.
+See `app/core/config.py` for the rest (crawler retries and limits, cooldowns,
+diff thresholds, log size). Email settings default to blank rather than a
+placeholder, so a half-filled `.env` fails loudly. `.env` is gitignored, so
+never commit real values.
 
 ---
 
 ## Email
 
-Without email settings the app still works, but adding a notification email
-fails because the confirmation can't be sent. Websites with no notification
-emails are unaffected.
+Without email settings the app still works, but adding a website with
+notification emails, or adding an email to a website, fails because the email
+can't be sent. Websites with no notification emails are unaffected.
 
 To send real email with a Gmail account:
 
@@ -131,16 +147,31 @@ To send real email with a Gmail account:
    EMAIL_PASSWORD=abcdefghijklmnop   # the 16-character app password
    SMTP_HOST=smtp.gmail.com
    SMTP_PORT=465
+   EMAIL_TIME_ZONE=Australia/Perth
    ```
+
+4. Start the app and add a website with your own address. You should get a
+   "Website monitoring started" email. Check the spam folder if it doesn't
+   arrive, as a new sending address often lands there at first.
 
 When an address is added, the app emails it and watches the sending account's
 inbox for about 30 seconds for a bounce. An address that bounces isn't added.
 The inbox is found from `SMTP_HOST` (`smtp.gmail.com` → `imap.gmail.com`), so
 set `IMAP_HOST` only if your provider's is named differently. If the inbox
-can't be opened, the confirmation is just sent, without checking for a bounce.
+can't be opened, the email is just sent, without checking for a bounce.
 
 UWA accounts won't work: Microsoft has turned off the basic SMTP login the app
 uses. Use a personal or project Gmail account.
+
+---
+
+## Logs
+
+The app logs to the terminal and to
+`<home>/AppData/Local/inwebstigator/logs/inwebstigator.log`
+(`%LOCALAPPDATA%\inwebstigator\logs` on Windows), keeping the last few files
+(`LOG_FILE_MAX_BYTES`, `LOG_FILE_BACKUP_COUNT`). The installed app has no
+console window, so testers can send this file instead.
 
 ---
 
@@ -154,9 +185,12 @@ uv run pytest tests/e2e        # only the browser tests
 
 | Folder | What's in it |
 | --- | --- |
-| `tests/unit/` | Fast tests of each module, using an in-memory database and fake websites. |
+| `tests/unit/` | Fast tests of each module, using an in-memory database, fake websites and a fake email sender (`tests/fakes.py`). |
 | `tests/e2e/` | Browser tests: the real dashboard in Chrome or Edge, driven by [Playwright](https://playwright.dev/python/), against the app running in the background with a throwaway database, fake websites and recorded (unsent) emails. |
 | `tests/integration/` | Manual scripts for crawling real websites. Not run by `pytest`. |
+
+`conftest.py` at the project root gives the tests a temporary data folder and
+turns automatic scans off, so they never touch the real database or log file.
 
 The browser tests use Google Chrome or Microsoft Edge if installed. Otherwise
 run `uv run playwright install chromium`, or skip them with `-m "not e2e"`.
@@ -164,68 +198,88 @@ They always run after the other tests, and if any test runs for over 5 minutes
 pytest prints where it's stuck.
 
 The browser tests cover the dashboard, but not the Windows app around it (the
-window, tray and build). Check those by hand before each release, with the
+window, tray and installer). Check those by hand before each release, with the
 [release checklist](docs/HANDOVER.md#release-checklist).
 
-Linting and formatting use [Ruff](https://docs.astral.sh/ruff/):
+Linting, formatting and type checking:
 
 ```bash
 uv run ruff check .
 uv run ruff format .
+uvx pyright
 ```
+
+### Continuous integration
+
+Two GitHub Actions workflows run on GitHub:
+
+| Workflow | When | What it does |
+| --- | --- | --- |
+| **Checks** (`.github/workflows/checks.yml`) | Every push and pull request | Ruff, formatting, Pyright (strict) and the unit tests. Not the browser tests. |
+| **Build Windows app** (`.github/workflows/build-windows.yml`) | When the build files change, or run by hand | Builds the installer on Windows and checks the packaged app starts. It uses `.env.example`, so its installer can't send email and is only for checking the build. |
 
 ---
 
 ## Building the Windows app
 
-On Windows:
+On Windows, with [uv](https://docs.astral.sh/uv/) and
+[Inno Setup](https://jrsoftware.org/isdl.php) 6.5 or later installed:
 
-```bash
-uv sync
-uv run pyinstaller inwebstigator.spec
+```powershell
+copy .env.example .env    # then fill in the email settings
+powershell -ExecutionPolicy Bypass -File scripts\build_installer.ps1
 ```
 
-This produces `dist/inwebstigator/`, containing `inwebstigator.exe` and its
-supporting files. To send it to someone:
+This builds `dist\Inwebstigator Installer.exe` in two steps: PyInstaller
+packages the app (`inwebstigator.spec`) into `dist\inwebstigator\`, then Inno
+Setup wraps that folder into one installer (`inwebstigator_installer_script.iss`).
+It can't be built on macOS or Linux, as PyInstaller only builds for the system
+it runs on.
 
-1. Copy a `.env` with the email settings into `dist/inwebstigator/`, next to
-   `inwebstigator.exe`.
-2. Zip the `dist/inwebstigator` folder.
-
-The `.exe` opens a console window alongside the app, which shows its logs.
-The app's data is kept outside this folder (see [Database](#database)), so a
-new version can be unzipped over an old one.
+- **`.env` goes in the installer,** next to `inwebstigator.exe`. It holds the
+  email account's password, so only send the installer to people who should
+  have it.
+- **It installs for the current user** (in `%LOCALAPPDATA%\Programs\Inwebstigator`),
+  so it needs no administrator access. It adds a Start menu shortcut, an
+  optional desktop shortcut and a shortcut that starts the app at sign-in
+  (ticked by default). If the app is running, it asks for it to be quit first.
+- **Uninstalling deletes the app's data** in `%LOCALAPPDATA%\inwebstigator`.
+  Installing a new version over an old one keeps it.
+- **There's no console window,** as the app runs in the system tray. See
+  [Logs](#logs).
+- **Change `MyAppVersion`** in the installer script for each version sent out.
 
 ---
 
 ## Project layout
 
 ```
-inwebstigator.py         Desktop launcher (Windows): local server, window, system tray
-inwebstigator.spec       PyInstaller build settings
+inwebstigator.py                 Desktop launcher (Windows): local server, window, system tray
+inwebstigator.spec               PyInstaller build settings
+inwebstigator_installer_script.iss  Inno Setup installer settings
+scripts/build_installer.ps1      Builds the app and its installer
+conftest.py                      Test settings: a temporary data folder, no automatic scans
 app/
-  main.py                Creates the FastAPI app, database tables and upgrades
-  scheduler.py           Scheduled scans and health check emails (APScheduler)
-  scanner.py             Scanning websites: the scan queue, cancelling, reports, emails
+  main.py                        Creates the FastAPI app: logging, database, scheduler, error responses
+  core/                          Settings, errors, logging, file paths, URL handling
   backend/
-    site_crawler.py      Crawls a website for its internal pages
-    engine.py            Works out what changed on a website and its critical pages
-    diff_checker.py      Compares page text block by block
-    format_message.py    Email HTML
-    email_service.py     Sending email and spotting bounces
-    utils/               Fetching pages, reading HTML, URLs and links
-  core/                  Settings, errors, logging, file paths
+    crawler/                     Fetching pages and crawling a website for its internal pages
+    diff_checker/                Reading a page's text into blocks and comparing two versions
+    scanning/                    Scans: the queue, change detection, failures, reports, scheduling, health checks
+    websites/                    Adding websites, critical pages and emails, and website card titles
+    email_service/               Writing emails (templates/) and sending them
   db/
-    schema.py            Database tables (SQLAlchemy)
-    migrations.py        Upgrades databases made by older versions
-    repository.py        Generic database operations
-    services/            Database operations for websites, pages, links, recipients
-  models/                Request and response shapes (Pydantic)
+    schema.py                    Database tables (SQLAlchemy)
+    migrations.py                Brings databases made by older versions up to date
+    session.py                   The database engine and sessions
+    repository.py                Generic database operations
+    services/                    Database operations for each table
+  models/                        Request, response and scan result shapes (Pydantic)
   frontend/
-    api/routers.py       Dashboard page and API routes
-    templates/           Dashboard HTML (Jinja2)
-    static/              CSS, JavaScript, logos and icon
-tests/                   See Testing
+    api/                         Dashboard page, API routes and the request guard
+    templates/                   Dashboard HTML (Jinja2), split into websites/ and updates/
+    static/                      css/, js/, logos and icon
+tests/                           See Testing
 ```
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how these work together.
@@ -238,17 +292,22 @@ The database is a SQLite file at `<home>/AppData/Local/inwebstigator/inwebstigat
 (`%LOCALAPPDATA%\inwebstigator` on Windows; the same path under your home
 folder on macOS). Delete it to start again from nothing.
 
-There's no migration tool. On startup, `app/main.py` runs:
+There's no migration tool. On startup, `prepare_database()` in
+`app/db/migrations.py`:
 
-- `Base.metadata.create_all()`, which creates missing tables.
-- `add_missing_columns()`, which adds columns added to the models since a
-  database was made. New columns must be nullable or have a server default.
-- `update_indexes()`, which recreates indexes whose uniqueness changed and adds
-  new ones. Only suitable for loosening a rule, or one existing rows already meet.
+- **Creates missing tables** with `Base.metadata.create_all()`.
+- **Adds missing columns** with `add_missing_columns()`, for columns added to
+  the models since a database was made. New columns must be nullable or have a
+  server default.
+- **Updates indexes:** it drops unique indexes the models no longer have, and
+  adds new ones.
+- **Runs one-off updates,** such as converting older local times to UTC. Each
+  runs once, recorded in SQLite's `user_version`.
 
 Anything else (renaming or removing a column, changing a type, rewriting data)
-needs its own upgrade step in `app/db/migrations.py`, so people's existing
-databases keep working.
+needs its own one-off update in `app/db/migrations.py`, so people's existing
+databases keep working. Every time is saved in UTC: use `datetime.now(UTC)`,
+as saving a time without a time zone is an error.
 
 ---
 
@@ -256,8 +315,9 @@ databases keep working.
 
 - Work on a branch per issue, and open a pull request into `main`.
 - Write `Closes #<issue>` in the pull request so the issue closes when it's merged.
-- Before opening it, run `uv run pytest` and `uv run ruff check .` and
-  `uv run ruff format .`.
+- Before opening it, run `uv run pytest`, `uv run ruff check .`,
+  `uv run ruff format .` and `uvx pyright`. The Checks workflow runs the same
+  checks on every pull request.
 - Add tests with your change: unit tests for logic, browser tests for anything
   on the dashboard.
 - Open issues for bugs and ideas rather than TODO lists in the code or docs.

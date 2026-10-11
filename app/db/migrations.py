@@ -1,10 +1,45 @@
 import logging
+from datetime import UTC, datetime, tzinfo
+from pathlib import Path
 from typing import Any
 
-from sqlalchemy import Column, Connection, Engine, Index, MetaData, Table, inspect
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Connection,
+    DateTime,
+    Engine,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    column,
+    inspect,
+    select,
+    table,
+    update,
+)
 from sqlalchemy.schema import CreateColumn
 
+from app.core.config import config
+from app.db.schema import Base
+from app.models.website_models import DeactivationReason
+
 logger: logging.Logger = logging.getLogger(__name__)
+
+OUTDATED_UNIQUE_INDEXES: dict[str, str] = {"ix_internal_links_url": "internal_links"}
+
+# Older versions of the app saved these times in the computer's own time zone. The others (`created_at` and
+# `updated_at`) were always saved by SQLite, in UTC.
+COLUMNS_SAVED_IN_LOCAL_TIME: dict[str, tuple[str, ...]] = {
+    "websites": ("last_scan_at", "on_cooldown_until"),
+    "recipients": ("last_email_at",),
+    "scan_runs": ("scanned_at", "notified_at"),
+}
+# The database version (SQLite's `user_version`) from which every time is saved in UTC
+UTC_TIMES_VERSION: int = 1
+# The database version from which a website switched off for rate limiting the crawler has that reason saved
+RATE_LIMITED_REASON_VERSION: int = 2
 
 
 def _missing_columns(connection: Connection, table: Table) -> list[Column[Any]]:
@@ -56,56 +91,188 @@ def add_missing_columns(engine: Engine, metadata: MetaData) -> None:
                 _add_column(connection, table, column)
 
 
-def _outdated_or_missing_indexes(connection: Connection, table: Table) -> tuple[list[Index], list[Index]]:
-    """Compares a table's indexes in the database with its model's.
+def drop_outdated_unique_indexes(engine: Engine, outdated_indexes: dict[str, str]) -> None:
+    """Drops unique indexes that older versions of the app made but the models no longer have as unique.
+
+    For example, older versions made each internal link unique across every website, so a page could not be saved for
+    two websites that overlap. It is replaced by a unique index per website (see `add_missing_indexes`).
 
     Args:
-        connection: An open connection to the database.
-        table: The table as defined by the models.
-
-    Returns:
-        The model's indexes whose database copy has the wrong uniqueness (to drop and recreate),
-        and the model's indexes missing from the database (to create). Both are empty if the
-        table does not exist yet (`create_all()` makes it with its indexes).
+        engine: The engine of the database to update.
+        outdated_indexes: The name of each index to drop if it is unique, and the table it is on.
     """
-    inspector = inspect(connection)
-    if not inspector.has_table(table.name):
-        return [], []
-
-    existing_unique_by_name: dict[str, bool] = {
-        index["name"]: bool(index["unique"]) for index in inspector.get_indexes(table.name) if index["name"]
-    }
-    outdated: list[Index] = [
-        index
-        for index in table.indexes
-        if index.name in existing_unique_by_name and existing_unique_by_name[index.name] != bool(index.unique)
-    ]
-    missing: list[Index] = [index for index in table.indexes if index.name not in existing_unique_by_name]
-    return outdated, missing
+    with engine.begin() as connection:
+        inspector = inspect(connection)
+        for index_name, table_name in outdated_indexes.items():
+            if not inspector.has_table(table_name):
+                continue
+            if any(index["name"] == index_name and index["unique"] for index in inspector.get_indexes(table_name)):
+                connection.exec_driver_sql(f'DROP INDEX "{index_name}"')
+                logger.info("Dropped the outdated unique index %s on the %s table.", index_name, table_name)
 
 
-def update_indexes(engine: Engine, metadata: MetaData) -> None:
-    """Brings the indexes of a database made by an older version of the app in line with the models.
+def add_missing_indexes(engine: Engine, metadata: MetaData) -> None:
+    """Creates the indexes of the models that are not in the database yet.
 
-    `create_all()` never changes an existing table's indexes, so a uniqueness rule that was changed in the
-    models (e.g. internal links becoming unique per website rather than across every website) would
-    otherwise stay as it was for anyone upgrading. Indexes whose uniqueness changed are dropped and
-    recreated, then indexes added to the models are created.
-
-    Only suitable for loosening a rule, or adding one the existing rows already meet, as creating a
-    unique index fails if the rows already in the table break it.
+    `create_all()` only creates the indexes of tables it creates, so an index added to an existing table's model
+    would otherwise never be made.
 
     Args:
         engine: The engine of the database to update.
         metadata: The metadata of the models the database should match.
     """
     with engine.begin() as connection:
+        inspector = inspect(connection)
         for table in metadata.sorted_tables:
-            outdated, missing = _outdated_or_missing_indexes(connection, table)
-            for index in outdated:
-                index.drop(connection)
-                index.create(connection)
-                logger.info(f"Changed the {index.name} index on the {table.name} table to unique={bool(index.unique)}.")
-            for index in missing:
-                index.create(connection)
-                logger.info(f"Added the {index.name} index to the {table.name} table.")
+            if not inspector.has_table(table.name):
+                continue
+            existing_index_names: set[str | None] = {index["name"] for index in inspector.get_indexes(table.name)}
+            for index in table.indexes:
+                if index.name not in existing_index_names:
+                    index.create(connection)
+                    logger.info("Added the %s index to the %s table.", index.name, table.name)
+
+
+def _database_version(connection: Connection) -> int:
+    """Reads the version number saved in the database, which says which one-off updates it has had.
+
+    Args:
+        connection: An open connection to the database.
+
+    Returns:
+        The version, which is 0 for a database that has never had one set.
+    """
+    return int(connection.exec_driver_sql("PRAGMA user_version").scalar_one())
+
+
+def _local_time_to_utc(saved_time: datetime, local_time_zone: tzinfo | None) -> datetime:
+    """Converts a time saved in the computer's own time zone to UTC, without a time zone, as times are now saved.
+
+    Args:
+        saved_time: The time as it was saved, without a time zone.
+        local_time_zone: The time zone it was saved in, or None for the computer's own time zone.
+
+    Returns:
+        The same moment in UTC, e.g. 13:00 saved in Perth (UTC+8) becomes 05:00.
+    """
+    return saved_time.replace(tzinfo=local_time_zone).astimezone(UTC).replace(tzinfo=None)
+
+
+def _convert_column_to_utc(
+    connection: Connection, table_name: str, column_name: str, local_time_zone: tzinfo | None
+) -> None:
+    """Converts every time in one column from the computer's own time zone to UTC.
+
+    The column is read as a plain date and time, not as the app's UTC column, so the times are read as they were saved.
+
+    Args:
+        connection: An open connection to the database.
+        table_name: The table the column is in.
+        column_name: The column of times to convert.
+        local_time_zone: The time zone the times were saved in, or None for the computer's own time zone.
+    """
+    saved_times = table(table_name, column("id"), column(column_name, DateTime()))
+    time_column = saved_times.c[column_name]
+    rows = connection.execute(select(saved_times.c.id, time_column).where(time_column.is_not(None))).all()
+    for row_id, saved_time in rows:
+        connection.execute(
+            update(saved_times)
+            .where(saved_times.c.id == row_id)
+            .values({column_name: _local_time_to_utc(saved_time, local_time_zone)})
+        )
+
+
+def convert_local_times_to_utc(
+    engine: Engine,
+    columns_by_table: dict[str, tuple[str, ...]],
+    local_time_zone: tzinfo | None = None,
+) -> None:
+    """Converts the times an older version of the app saved in the computer's own time zone to UTC, once.
+
+    The database's version is then set, so the times are never converted twice. A new database has nothing to
+    convert, so it is only given the version.
+
+    Args:
+        engine: The engine of the database to update.
+        columns_by_table: The columns that were saved in local time, by the table they are in.
+        local_time_zone: The time zone the times were saved in, or None for the computer's own time zone.
+    """
+    with engine.begin() as connection:
+        if _database_version(connection) >= UTC_TIMES_VERSION:
+            return
+        inspector = inspect(connection)
+        for table_name, column_names in columns_by_table.items():
+            if not inspector.has_table(table_name):
+                continue
+            for column_name in column_names:
+                _convert_column_to_utc(connection, table_name, column_name, local_time_zone)
+        connection.exec_driver_sql(f"PRAGMA user_version = {UTC_TIMES_VERSION}")
+        logger.info("Any times saved in this computer's time zone were converted to UTC.")
+
+
+def record_why_rate_limited_websites_were_switched_off(engine: Engine, max_failed_attempts: int) -> None:
+    """Saves that websites were switched off for rate limiting the crawler, for those an older version of the app
+    switched off without saving why, once.
+
+    Without a reason they are described as switched off on the dashboard. They are the inactive websites with no
+    reason that had failed the most times allowed at the slowest crawl speed, which only the app does. The database's
+    version is then set, so a website switched off later is never changed.
+
+    Args:
+        engine: The engine of the database to update.
+        max_failed_attempts: The most failed attempts at the slowest crawl speed before a website is switched off.
+    """
+    with engine.begin() as connection:
+        if _database_version(connection) >= RATE_LIMITED_REASON_VERSION:
+            return
+        if inspect(connection).has_table("websites"):
+            websites = table(
+                "websites",
+                column("active", Boolean()),
+                column("deactivated_reason", String()),
+                column("failed_attempts_at_min_speed", Integer()),
+            )
+            switched_off_for_rate_limiting = connection.execute(
+                update(websites)
+                .where(
+                    websites.c.active.is_(False),
+                    websites.c.deactivated_reason.is_(None),
+                    websites.c.failed_attempts_at_min_speed >= max_failed_attempts,
+                )
+                .values(deactivated_reason=DeactivationReason.RATE_LIMITED.value)
+            )
+            if switched_off_for_rate_limiting.rowcount:
+                logger.info(
+                    "Saved why %d websites were switched off: they kept rate limiting the crawler.",
+                    switched_off_for_rate_limiting.rowcount,
+                )
+        connection.exec_driver_sql(f"PRAGMA user_version = {RATE_LIMITED_REASON_VERSION}")
+
+
+def _create_database_folder(engine: Engine) -> None:
+    """Creates the folder the database file is kept in, as SQLite only creates the file itself.
+
+    An in-memory database (e.g. in the tests) has no folder.
+
+    Args:
+        engine: The engine of the database.
+    """
+    database: str | None = engine.url.database
+    if database and database != ":memory:":
+        Path(database).parent.mkdir(parents=True, exist_ok=True)
+
+
+def prepare_database(engine: Engine) -> None:
+    """Creates the database's folder and any tables the database is missing, then brings a database made by an
+    older version of the app up to date.
+
+    Args:
+        engine: The engine of the database to prepare.
+    """
+    _create_database_folder(engine)
+    Base.metadata.create_all(bind=engine)
+    add_missing_columns(engine, Base.metadata)
+    drop_outdated_unique_indexes(engine, OUTDATED_UNIQUE_INDEXES)
+    add_missing_indexes(engine, Base.metadata)
+    convert_local_times_to_utc(engine, COLUMNS_SAVED_IN_LOCAL_TIME)
+    record_why_rate_limited_websites_were_switched_off(engine, config.web_crawler_max_failed_attempts_at_min_speed)

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en" class="preloading">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>About - Inwebstigator</title>
+
+{% include "_head.html" %}
+</head>
+
+{# Edit the team here: listed alphabetically by first name #}
+{% set team = [
+    "Ahmed Jashim",
+    "Jake Spitteler",
+    "Made Aria Ravindrajaya",
+    "Nanasa Itami",
+    "Patrick Caputi",
+    "Pooja Renjith Nair",
+] %}
+{% set current_page = "about" %}
+
+<body>
+
+    <main class="dashboard-container about-page">
+
+{% include "_header.html" %}
+
+        <h2 class="section-title">About Inwebstigator</h2>
+
+        <section class="about-card" aria-labelledby="about-what">
+            <h3 id="about-what">What it does</h3>
+            <p>
+                Inwebstigator watches the websites you choose and tells you when they change,
+                so you don't have to keep checking them yourself.
+            </p>
+            <ul class="about-list">
+                <li>It checks each website on a schedule (every day by default).</li>
+                <li>
+                    It reads the website's main page and any critical pages you choose, and maps the
+                    other pages on the site.
+                </li>
+                <li>
+                    It spots changed, added and removed text, links and documents (such as PDFs),
+                    and pages added to or removed from the site.
+                </li>
+                <li>
+                    Changes appear on the dashboard's <strong>Updates</strong> tab and are emailed
+                    to the website's notification addresses.
+                </li>
+                <li>
+                    If nothing changes, it sends a short "no changes" email (every 7 days by default),
+                    so you know it is still running.
+                </li>
+            </ul>
+            <p>
+                Your list of websites and everything found about them is stored on this computer.
+            </p>
+        </section>
+
+        <h2 class="section-title">The team</h2>
+
+        <section class="about-card" aria-label="The team">
+            <p>Inwebstigator was built by:</p>
+            <ul class="about-team">
+                {% for member in team %}
+                    <li>{{ member }}</li>
+                {% endfor %}
+            </ul>
+        </section>
+
+        <h2 class="section-title">Contact</h2>
+
+        <section class="about-card" aria-label="Contact">
+            <p>
+                If something isn't working, or you have a question or an idea, please contact the
+                Inwebstigator team.
+            </p>
+        </section>
+
+        <h2 class="section-title">Copyright</h2>
+
+        <section class="about-card" aria-label="Copyright">
+            <p>
+                &copy; 2026 The Inwebstigator team. Created as a CITS3200 project at
+                The University of Western Australia.
+            </p>
+        </section>
+
+        <a href="{{ url_for('get_dashboard') }}" class="back-link">&larr; Back to the dashboard</a>
+
+    </main>
+
+{% include "_footer.html" %}
+
+</body>
+
+</html>

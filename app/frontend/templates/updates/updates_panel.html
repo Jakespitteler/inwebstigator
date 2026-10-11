@@ -1,0 +1,40 @@
+{# The Updates tab: the most recent scans of each website and what they found. #}
+
+<section id="updates-panel" class="tab-content" role="tabpanel"
+    aria-labelledby="updates-tab" tabindex="0" hidden>
+<div class="section-heading">
+
+    <h2 class="section-title">Last {{ scans_kept_per_website }} scans of each website</h2>
+
+    {% if next_check %}
+        <p class="week-range">
+            Next scheduled check: {{ next_check | format_timestamp }}
+        </p>
+    {% endif %}
+
+</div>
+
+<!-- SCAN HISTORY -->
+<section id="scan-history">
+
+    {% if website_records %}
+
+        {% for website_record in website_records %}
+
+            {% set website_index = loop.index %}
+
+            {% include "updates/website_history_card.html" %}
+
+        {% endfor %}
+
+    {% else %}
+
+        <p class="empty-state">
+            No websites have been scanned yet.
+        </p>
+
+    {% endif %}
+
+</section>
+
+</section>
