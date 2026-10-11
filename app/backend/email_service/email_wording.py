@@ -6,8 +6,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import HttpUrl
 
-from app.backend.crawler.links import website_name
 from app.core.config import config
+from app.core.urls import website_name
 from app.models.website_models import DeactivationReason, WebsiteRead
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -76,6 +76,14 @@ def format_email_time(moment: datetime) -> str:
     return f"{local_moment:%d %b %Y, %H:%M} {_time_zone_label(local_moment)}"
 
 
+# What a health check says about a switched-off website, by why it was switched off (no reason means the dashboard)
+SWITCHED_OFF_STATUSES: dict[DeactivationReason | None, str] = {
+    DeactivationReason.TOO_LARGE: "Switched off because it has too many pages to crawl.",
+    DeactivationReason.RATE_LIMITED: "Switched off because it kept rate limiting or blocking the crawler.",
+    None: "Switched off on the dashboard.",
+}
+
+
 class WebsiteHealth(NamedTuple):
     """How a website's monitoring is going, for the health check email.
 
@@ -130,12 +138,8 @@ def describe_website_health(website: WebsiteRead, now: datetime) -> WebsiteHealt
     """
     unreachable_pages: int = _unreachable_page_count(website)
     if not website.active:
-        reason: str = (
-            "it has too many pages to crawl"
-            if website.deactivated_reason is DeactivationReason.TOO_LARGE
-            else "its scans kept failing"
-        )
-        return WebsiteHealth(website.url, f"Switched off because {reason}. Its watched pages are still checked.", True)
+        switched_off: str = SWITCHED_OFF_STATUSES[website.deactivated_reason]
+        return WebsiteHealth(website.url, f"{switched_off} Its watched pages are still checked.", True)
     if website.on_cooldown_until and website.on_cooldown_until > now:
         until: str = format_email_time(website.on_cooldown_until)
         return WebsiteHealth(website.url, f"Paused until {until} after the website blocked or did not answer.", True)

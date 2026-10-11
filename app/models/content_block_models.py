@@ -38,7 +38,7 @@ class ContentBlock(BaseModel):
             or None if no preceding heading exists.
         block_type: The structural HTML block type classification for this content. Text that sits straight
             inside a container such as a `<div>` or `<section>`, rather than in a paragraph or list, is `TEXT`.
-        text: The normalized text content contained within the block.
+        text: The normalised text content contained within the block.
     """
 
     parent_heading: str | None = None

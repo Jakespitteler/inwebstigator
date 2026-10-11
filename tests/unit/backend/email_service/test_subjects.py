@@ -26,7 +26,7 @@ def test_scan_report_subject_names_the_websites(website_urls: list[str], subject
 
 
 def test_manual_scan_subject_names_the_website() -> None:
-    assert manual_scan_subject("https://www.example.gov.au/fees") == "Manual scan: example.gov.au"
+    assert manual_scan_subject("https://www.example.gov.au/fees") == "Manual scan: example.gov.au/fees"
 
 
 def test_health_check_subject_when_all_is_well() -> None:

@@ -31,6 +31,8 @@ from tests.fakes import FakeEmailSender
 
 type RequestHandler = Callable[[httpx2.Request], httpx2.Response]
 
+# A database kept in memory, so each test run starts empty and never touches the app's real database
+TEST_DB_URL: str = "sqlite:///:memory:"
 BACKEND_MODULES_USING_THE_DATABASE: tuple[str, ...] = (
     "app.backend.websites.website_setup",
     "app.backend.websites.recipient_checks",
@@ -71,7 +73,7 @@ def _begin_transaction(connection: Connection) -> None:
 def engine() -> Iterator[Engine]:
     """Creates a database engine for the test session."""
     test_engine = create_engine(
-        config.test_db_url,
+        TEST_DB_URL,
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )

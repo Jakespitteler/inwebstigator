@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.backend.scanning.manual_scan import scan_website_now
 from app.backend.scanning.scan_queue import ScanQueue
-from app.core.errors import NotFoundError, ScanAlreadyQueuedError
+from app.core.errors import NotFoundError, ReportNotEmailedError, ScanAlreadyQueuedError
 from app.db.services.recipient_service import RecipientService
 from app.db.services.scan_run_service import ScanRunService
 from app.db.services.website_service import WebsiteService
@@ -111,6 +111,20 @@ async def test_manual_scan_of_a_website_without_recipients_returns_its_report_wi
     assert email_sender.sent == []
 
 
+async def test_a_manual_report_a_scheduled_run_already_emailed_only_goes_to_the_extra_address(
+    session: Session, mocker: MockerFixture, email_sender: FakeEmailSender
+) -> None:
+    """Tests a "Run Scan Now" report that a scheduled run emailed to the website's recipients while the scan was
+    finishing is not emailed to them again, but still goes to the extra address asked for."""
+    website = _add_website(session, "https://example.com", ["recipient@example.com"])
+    scan_run = _scan_finds(session, mocker, website, ["https://example.com/new"])
+    ScanRunService(session).mark_emailed([scan_run.id], emailed_at=datetime.now(UTC))  # By the scheduled run
+
+    await scan_website_now(website.url, email_sender, extra_email="extra@example.com")
+
+    assert [email.to for email in email_sender.sent] == ["extra@example.com"]
+
+
 async def test_manual_scan_keeps_its_report_when_the_email_fails(
     session: Session, mocker: MockerFixture, email_sender: FakeEmailSender
 ) -> None:
@@ -120,7 +134,7 @@ async def test_manual_scan_keeps_its_report_when_the_email_fails(
     scan_run = _scan_finds(session, mocker, website, ["https://example.com/new"])
     mocker.patch.object(email_sender, "send", side_effect=ConnectionError("No internet"))
 
-    with pytest.raises(ConnectionError):
+    with pytest.raises(ReportNotEmailedError):
         await scan_website_now(website.url, email_sender)
 
     assert [waiting.id for waiting in ScanRunService(session).get_awaiting_email()] == [scan_run.id]

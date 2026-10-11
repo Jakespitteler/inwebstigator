@@ -45,34 +45,6 @@ def test_get_internal_link(session: Session, test_internal_link: InternalLinkRea
     assert fetched_internal_link.url == test_internal_link.url
 
 
-def test_get_internal_link_by_url(session: Session, test_internal_link: InternalLinkRead) -> None:
-    """
-    Tests retrieving an existing internal_link by its URL.
-
-    Args:
-        session: The database session fixture.
-        test_internal_link: The test internal link record.
-    """
-    fetched_internal_link: InternalLinkRead = InternalLinkService(session).get_by_url(url=test_internal_link.url)
-
-    assert fetched_internal_link is not None
-    assert fetched_internal_link.id == test_internal_link.id
-    assert fetched_internal_link.url == test_internal_link.url
-
-
-def test_get_internal_link_by_url_not_found(session: Session) -> None:
-    """
-    Tests that retrieving a non-existent internal_link by URL raises a NotFoundError.
-
-    Args:
-        session: The database session fixture.
-    """
-    non_existent_url = HttpUrl("https://www.test_website.com/non-existent-link")
-
-    with pytest.raises(NotFoundError):
-        InternalLinkService(session).get_by_url(url=non_existent_url)
-
-
 def test_create_internal_link(session: Session, test_website: WebsiteRead) -> None:
     """
     Tests creating a new critical page with basic details.
@@ -107,10 +79,7 @@ def test_create_batch_internal_links(session: Session, test_website: WebsiteRead
     ]
     InternalLinkService(session).create_batch(urls, test_website.id)
 
-    for url in urls:
-        fetched_link: InternalLinkRead = InternalLinkService(session).get_by_url(url)
-        assert fetched_link.id is not None
-        assert fetched_link.website_id == test_website.id
+    assert sorted(InternalLinkService(session).get_urls_for_website(test_website.id)) == [str(url) for url in urls]
 
 
 def test_get_urls_for_website_returns_only_that_websites_links(
@@ -202,15 +171,11 @@ def test_delete_batch_internal_links(session: Session, test_website: WebsiteRead
         HttpUrl("https://www.test_website.com/batch_delete_2"),
     ]
     service.create_batch(urls, website_id=test_website.id)
-
-    for url in urls:
-        service.get_by_url(url)
+    assert len(service.get_urls_for_website(test_website.id)) == len(urls)
 
     service.delete_batch(urls=urls, website_id=test_website.id)
 
-    for url in urls:
-        with pytest.raises(NotFoundError):
-            service.get_by_url(url)
+    assert service.get_urls_for_website(test_website.id) == []
 
 
 def test_delete_batch_empty_urls(

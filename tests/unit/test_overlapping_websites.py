@@ -6,11 +6,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.errors import IntegrityError, WebsiteAlreadyMonitoredError
-from app.core.urls import same_page_key
+from app.core.urls import page_key
 from app.db.schema import DBInternalLink, DBWebsite
 from app.db.services.internal_link_service import InternalLinkService
 from app.db.services.website_service import WebsiteService
-from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
+from app.models.scan_result_models import WebsiteScanResult
+from app.models.website_models import WebsiteCreate, WebsiteRead
 from tests.unit.backend.email_service.builders import make_scan_run
 
 # ======================================
@@ -28,8 +29,8 @@ def test_overlapping_websites_can_both_save_the_same_internal_link(session: Sess
     news_section = service.create(WebsiteCreate(url=HttpUrl("https://example.com/news")))
     shared_link = HttpUrl("https://example.com/news/story")
 
-    service.update(whole_site.id, WebsiteUpdate(recent_added_internal_links=[shared_link]))
-    service.update(news_section.id, WebsiteUpdate(recent_added_internal_links=[shared_link]))
+    service.save_scan_result(whole_site.id, WebsiteScanResult(internal_links_added=[shared_link]))
+    service.save_scan_result(news_section.id, WebsiteScanResult(internal_links_added=[shared_link]))
 
     saved = session.scalars(select(DBInternalLink).where(DBInternalLink.url == str(shared_link))).all()
     assert {link.website_id for link in saved} == {whole_site.id, news_section.id}
@@ -50,10 +51,10 @@ def test_deleting_an_overlapping_websites_link_leaves_the_other_websites_copy(se
     whole_site = service.create(WebsiteCreate(url=HttpUrl("https://example.com")))
     news_section = service.create(WebsiteCreate(url=HttpUrl("https://example.com/news")))
     shared_link = HttpUrl("https://example.com/news/story")
-    service.update(whole_site.id, WebsiteUpdate(recent_added_internal_links=[shared_link]))
-    service.update(news_section.id, WebsiteUpdate(recent_added_internal_links=[shared_link]))
+    service.save_scan_result(whole_site.id, WebsiteScanResult(internal_links_added=[shared_link]))
+    service.save_scan_result(news_section.id, WebsiteScanResult(internal_links_added=[shared_link]))
 
-    service.update(news_section.id, WebsiteUpdate(recent_removed_internal_links=[shared_link]))
+    service.save_scan_result(news_section.id, WebsiteScanResult(internal_links_removed=[shared_link]))
 
     link_service = InternalLinkService(session)
     assert link_service.get_urls_for_website(whole_site.id) == [str(shared_link)]
@@ -76,9 +77,9 @@ def test_deleting_an_overlapping_websites_link_leaves_the_other_websites_copy(se
         "https://www.test_website.com/#top",
     ],
 )
-def test_same_page_key_matches_however_the_address_is_written(written_differently: str) -> None:
+def test_page_key_matches_however_the_address_is_written(written_differently: str) -> None:
     """Tests addresses for the same page match with or without "www.", "/" or a #section, in http or https."""
-    assert same_page_key(written_differently) == same_page_key("https://www.test_website.com/")
+    assert page_key(written_differently) == page_key("https://www.test_website.com/")
 
 
 @pytest.mark.parametrize(
@@ -90,9 +91,9 @@ def test_same_page_key_matches_however_the_address_is_written(written_differentl
         "https://www.test_website.com/?page=2",
     ],
 )
-def test_same_page_key_tells_different_pages_apart(different_page: str) -> None:
+def test_page_key_tells_different_pages_apart(different_page: str) -> None:
     """Tests a different path, subdomain, website or query is a different page."""
-    assert same_page_key(different_page) != same_page_key("https://www.test_website.com/")
+    assert page_key(different_page) != page_key("https://www.test_website.com/")
 
 
 def test_get_by_url_finds_a_website_however_its_address_is_written(session: Session, test_website: WebsiteRead) -> None:

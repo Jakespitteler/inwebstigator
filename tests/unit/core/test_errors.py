@@ -1,6 +1,16 @@
 import uuid
 
-from app.core.errors import NotFoundError, WebConnectionError, WebsiteUnavailableError
+import pytest
+
+from app.core.errors import (
+    NotFoundError,
+    ScanAlreadyQueuedError,
+    ScanCancelledError,
+    ScanError,
+    WebConnectionError,
+    WebCrawlerError,
+    WebsiteUnavailableError,
+)
 
 
 def test_not_found_error_names_the_missing_record_by_its_id() -> None:
@@ -34,3 +44,13 @@ def test_a_website_whose_home_page_cannot_load_counts_as_unreachable() -> None:
     assert isinstance(error, WebConnectionError)
     assert error.url == "https://example.com/"
     assert str(error) == "The home page https://example.com/ could not be loaded, so the website could not be scanned."
+
+
+@pytest.mark.parametrize("error_type", [ScanAlreadyQueuedError, ScanCancelledError])
+def test_scan_queue_errors_are_not_crawler_errors(error_type: type[ScanError]) -> None:
+    """Tests a scan that is already queued or was cancelled is not mistaken for a website that could not be crawled,
+    e.g. by code that turns crawler errors into "could not be loaded"."""
+    error = error_type("https://example.com/")
+
+    assert isinstance(error, ScanError)
+    assert not isinstance(error, WebCrawlerError)

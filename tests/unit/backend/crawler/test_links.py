@@ -2,41 +2,10 @@ import pytest
 
 from app.backend.crawler.links import (
     extract_links_from_html,
-    find_added_links,
-    find_removed_links,
     is_document,
     is_internal_web_page,
     separate_document_links,
-    website_name,
 )
-
-
-def test_find_added_links() -> None:
-    previous: list[str] = ["/page1", "/page2"]
-    current: list[str] = ["/page1", "/page2", "/page3"]
-    added: list[str] = find_added_links(previous, current)
-    assert added == ["/page3"]
-
-
-def test_find_added_links_no_changes() -> None:
-    previous: list[str] = ["/page1", "/page2"]
-    current: list[str] = ["/page1", "/page2"]
-    added: list[str] = find_added_links(previous, current)
-    assert added == []
-
-
-def test_find_removed_links() -> None:
-    previous: list[str] = ["/page1", "/page2", "/page3"]
-    current: list[str] = ["/page1", "/page2"]
-    removed: list[str] = find_removed_links(previous, current)
-    assert removed == ["/page3"]
-
-
-def test_find_removed_links_no_changes() -> None:
-    previous: list[str] = ["/page1", "/page2"]
-    current: list[str] = ["/page1", "/page2"]
-    removed: list[str] = find_removed_links(previous, current)
-    assert removed == []
 
 
 @pytest.mark.parametrize(
@@ -207,17 +176,6 @@ def test_is_internal_web_page_treats_www_as_same_site(site_url: str, check_url: 
     assert is_internal_web_page(site_url, check_url) is expected
 
 
-def test_links_written_differently_for_the_same_page_are_not_added_or_removed() -> None:
-    """Test a link now written with or without "www." or with different capitals in the domain is not reported as
-    a page added or removed, while real changes still are."""
-    previous = ["https://example.com/news", "https://example.com/about"]
-    current = ["https://www.example.com/news", "https://Example.com/about", "https://example.com/contact"]
-
-    assert find_added_links(previous, current) == ["https://example.com/contact"]
-    assert find_removed_links(previous, current) == []
-    assert find_removed_links(current, previous) == ["https://example.com/contact"]
-
-
 def test_extract_links_from_html_lists_each_page_once() -> None:
     """Test a page linked as both example.com and www.example.com is only listed once, and domains are written in
     lower case."""
@@ -276,14 +234,6 @@ def test_a_page_whose_path_only_starts_with_the_same_letters_is_not_under_the_we
     assert is_internal_web_page("https://example.com/news", "https://example.com/newsletter") is False
 
 
-def test_found_links_are_listed_once_in_their_original_order() -> None:
-    """Tests a link found more than once is reported once, in the order the links were found."""
-    current: list[str] = ["https://example.com/c", "https://example.com/a", "https://example.com/c"]
-
-    assert find_added_links([], current) == ["https://example.com/c", "https://example.com/a"]
-    assert find_removed_links(current, []) == ["https://example.com/c", "https://example.com/a"]
-
-
 def test_extract_links_from_html_normalises_each_link() -> None:
     """Tests links written with tracking parameters, a default port or a trailing slash are listed once, without
     them, while a query that changes the page is kept."""
@@ -309,23 +259,11 @@ def test_extract_links_from_html_resolves_links_from_the_page_but_keeps_to_the_b
     assert links == ["https://example.com/au/contact", "https://example.com/au/news/story"]
 
 
-@pytest.mark.parametrize(
-    ("url", "expected_name"),
-    [
-        ("https://www.teqsa.gov.au/", "teqsa.gov.au"),
-        ("https://WWW.Example.COM/news", "example.com"),
-        ("https://example.com./about", "example.com"),
-        ("https://user:password@example.com:8080/page", "example.com"),
-        ("https://news.example.com/", "news.example.com"),
-    ],
-    ids=["www-dropped", "lower-cased", "trailing-dot", "login-and-port", "subdomain-kept"],
-)
-def test_website_name_is_the_host_without_www(url: str, expected_name: str) -> None:
-    """Tests a website is named by its host name, including its domain ending, without a leading "www."."""
-    assert website_name(url) == expected_name
+def test_extract_links_from_html_resolves_relative_links_against_the_pages_base() -> None:
+    """Tests a page with a <base href> has its relative links resolved against it, as a browser does, rather than
+    against the page's own address."""
+    html = '<html><head><base href="/au/"></head><body><a href="news">News</a></body></html>'
 
+    links: list[str] = extract_links_from_html(url="https://example.com/campaigns/spring", html_content=html)
 
-@pytest.mark.parametrize("url", ["https://[not-closed/page", "not a url", ""], ids=["unreadable", "no-host", "empty"])
-def test_website_name_falls_back_to_website_for_a_url_without_a_host(url: str) -> None:
-    """Tests a URL that cannot be read, or has no host name, is shown as "Website" rather than breaking the page."""
-    assert website_name(url) == "Website"
+    assert links == ["https://example.com/au/news"]

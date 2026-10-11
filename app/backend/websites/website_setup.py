@@ -8,7 +8,7 @@ from pydantic import HttpUrl
 from app.backend.crawler.page_fetcher import new_http_client
 from app.backend.email_service.delivery import EmailSender
 from app.backend.email_service.html_bodies import monitoring_started_html, recipient_added_html
-from app.backend.scanning.change_detection import get_critical_page_updates
+from app.backend.scanning.critical_page_checks import check_critical_page
 from app.backend.scanning.scan_queue import scan_queue
 from app.backend.scanning.website_scan import scan_website
 from app.backend.websites.page_checks import check_pages_exist
@@ -17,16 +17,19 @@ from app.core.config import config
 from app.core.errors import (
     AlreadyWatchedError,
     InvalidPageError,
+    MainPageNotDeletableError,
     NotFoundError,
     ScanAlreadyQueuedError,
     ScanCancelledError,
+    WebsiteAlreadyMonitoredError,
 )
 from app.core.urls import is_same_page, resolve_critical_page_url
 from app.db.services.critical_page_service import CriticalPageService
 from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
 from app.db.session import db_context
-from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead, CriticalPageUpdate
+from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead
+from app.models.scan_result_models import CriticalPageScanResult
 from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteSettingsUpdate, WebsiteUpdate
 
 MONITORING_STARTED_SUBJECT: str = "Website monitoring started"
@@ -36,19 +39,22 @@ RECIPIENT_ADDED_SUBJECT: str = "Email address added to website monitoring"
 def _refuse_website_already_watched(url: HttpUrl) -> None:
     """Stops a website being added twice, which would scan it twice and email every change twice.
 
-    The same website written differently (e.g. with "www." or a trailing "/") counts as the same website. A different
-    part of a website (e.g. example.com/research when example.com is watched) can still be added.
+    The same website written differently (e.g. with "www.", a trailing "/", or http instead of https) counts as the
+    same website, matched the same way as when it is saved, so nobody is emailed about a website that cannot be added.
+    A different part of a website (e.g. example.com/research when example.com is watched) can still be added.
 
     Args:
         url: The URL of the website being added.
 
     Raises:
-        AlreadyWatchedError: If the website is already being watched.
+        WebsiteAlreadyMonitoredError: If the website is already being watched, naming it as it is saved.
     """
     with db_context() as session:
-        watched_urls: list[str] = [str(website.url) for website in WebsiteService(session).get_all(limit=None)]
-    if any(is_same_page(watched_url, str(url)) for watched_url in watched_urls):
-        raise AlreadyWatchedError(str(url))
+        try:
+            watched_website: WebsiteRead = WebsiteService(session).get_by_url(url)
+        except NotFoundError:
+            return
+    raise WebsiteAlreadyMonitoredError(str(watched_website.url))
 
 
 def _discard_website(website_id: uuid.UUID) -> None:
@@ -88,7 +94,7 @@ async def add_website(model_create: WebsiteCreate, email_sender: EmailSender) ->
         The website as it was added.
 
     Raises:
-        AlreadyWatchedError: If the website is already being watched. Nothing is added.
+        WebsiteAlreadyMonitoredError: If the website is already being watched. Nothing is added.
         PageNotLoadedError: If the website or one of its critical pages could not be loaded. Nothing is added.
         UndeliverableEmailError: If an email to one of its recipients could not be delivered. Nothing is added.
         ScanCancelledError: If the first scan was cancelled. The website is not kept.
@@ -181,15 +187,36 @@ async def add_critical_page(website_id: uuid.UUID, page_url: str) -> CriticalPag
         with db_context() as session:
             critical_page: CriticalPageRead = CriticalPageService(session).create(model_create)
         try:
-            baseline: CriticalPageUpdate | None = await get_critical_page_updates(client, critical_page, init=True)
+            baseline: CriticalPageScanResult | None = await check_critical_page(client, critical_page, init=True)
         except Exception:
             _discard_critical_page(critical_page.id)
             raise
 
     if baseline:
         with db_context() as session:
-            CriticalPageService(session).update(id=critical_page.id, model_update=baseline)
+            CriticalPageService(session).update(id=critical_page.id, model_update=baseline.as_critical_page_update())
     return critical_page
+
+
+def delete_critical_page(critical_page_id: uuid.UUID) -> None:
+    """Stops watching a critical page.
+
+    A website's main page is always watched while the website is, so it cannot be deleted on its own.
+
+    Args:
+        critical_page_id: The ID of the critical page to delete.
+
+    Raises:
+        NotFoundError: If the critical page does not exist.
+        MainPageNotDeletableError: If the page is its website's main page.
+    """
+    with db_context() as session:
+        critical_page_service = CriticalPageService(session)
+        critical_page: CriticalPageRead = critical_page_service.get(critical_page_id)
+        website: WebsiteRead = WebsiteService(session).get(critical_page.website_id)
+        if critical_page.url == website.url:  # The same rule the dashboard uses to show the main page
+            raise MainPageNotDeletableError(str(website.url))
+        critical_page_service.delete(critical_page_id)
 
 
 def _not_yet_recipients(website: WebsiteRead, emails: Sequence[str]) -> list[str]:

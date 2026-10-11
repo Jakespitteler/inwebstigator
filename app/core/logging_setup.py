@@ -4,6 +4,8 @@ from pathlib import Path
 
 LOG_FORMAT: str = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
 WEB_SERVER_LOGGER: str = "uvicorn"
+# Libraries that log every web request, which would bury the app's own logs as a crawl makes thousands of them
+CHATTY_LOGGERS: tuple[str, ...] = ("httpx2",)
 
 
 def _log_file_handler(log_path: Path, max_bytes: int, backup_count: int) -> RotatingFileHandler:
@@ -23,11 +25,18 @@ def _log_file_handler(log_path: Path, max_bytes: int, backup_count: int) -> Rota
     return RotatingFileHandler(log_path, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8")
 
 
+def quiet_chatty_loggers() -> None:
+    """Keeps only the warnings and errors of the libraries that log every web request."""
+    for logger_name in CHATTY_LOGGERS:
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+
 def setup_logging(log_path: Path, max_bytes: int, backup_count: int) -> None:
     """Sends the app's logs to the console and to a log file.
 
     The desktop app has no console on testers' computers, so the log file is the only record of what went wrong.
-    The web server's own logs (e.g. an error while the app starts) are written to the file too.
+    The web server's own logs (e.g. an error while the app starts) are written to the file too, while only the
+    warnings of libraries that log every web request are kept.
     Does nothing if logging has already been set up (e.g. by the test runner).
 
     Args:
@@ -41,3 +50,4 @@ def setup_logging(log_path: Path, max_bytes: int, backup_count: int) -> None:
     file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, handlers=[logging.StreamHandler(), file_handler])
     logging.getLogger(WEB_SERVER_LOGGER).addHandler(file_handler)
+    quiet_chatty_loggers()

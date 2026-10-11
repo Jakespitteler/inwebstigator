@@ -13,11 +13,11 @@
 {% endif %}
 {% if scan_run.internal_links_added %}
 {{ ui.section_title("New Internal Links (%d)" % scan_run.internal_links_added | length) }}
-{{ ui.badge_list("added", scan_run.internal_links_added) }}
+{{ ui.badge_list("added", scan_run.internal_links_added, max_listed_links) }}
 {% endif %}
 {% if scan_run.internal_links_removed %}
 {{ ui.section_title("Removed Internal Links (%d)" % scan_run.internal_links_removed | length) }}
-{{ ui.badge_list("removed", scan_run.internal_links_removed) }}
+{{ ui.badge_list("removed", scan_run.internal_links_removed, max_listed_links) }}
 {% endif %}
 {% if unreachable_pages %}
 {{ ui.section_title("Watched Pages Unreachable (%d)" % unreachable_pages | length, "error") }}
@@ -39,7 +39,7 @@
     ("Documents Removed", "removed", page.documents_removed),
 ] if items %}
 {{ ui.change_label(label) }}
-{{ ui.badge_list(kind, items) }}
+{{ ui.badge_list(kind, items, max_listed_links) }}
 {% endfor %}
 {% for label, kind, blocks in [
     ("Text Added", "added", page.text_added),

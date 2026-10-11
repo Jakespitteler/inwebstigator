@@ -10,10 +10,9 @@ from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
 
 from app.core.config import config
-from app.core.errors import WebConnectionError
+from app.core.errors import IntegrityError, WebConnectionError
 from app.core.logging_setup import WEB_SERVER_LOGGER, setup_logging
 from app.main import app
-from app.models.recipient_models import RecipientRead
 from app.models.website_models import WebsiteRead
 
 
@@ -91,10 +90,13 @@ def test_a_record_that_does_not_exist_is_a_404_naming_it(api_client: TestClient)
     assert "not found" in response.json()["detail"]
 
 
-def test_a_record_breaking_a_database_rule_is_a_400(api_client: TestClient, test_recipient: RecipientRead) -> None:
-    """Tests adding a record the database refuses (here a second recipient with the same email) fails with a 400
-    saying what to check, rather than a server error."""
-    response = api_client.post("/recipients", json={"email": test_recipient.email})
+def test_a_record_breaking_a_database_rule_is_a_400(
+    api_client: TestClient, test_website: WebsiteRead, mocker: MockerFixture
+) -> None:
+    """Tests a change the database refuses fails with a 400 saying what to check, rather than a server error."""
+    mocker.patch("app.frontend.api.routers.update_website_settings", side_effect=IntegrityError())
+
+    response = api_client.patch(f"/websites/{test_website.id}", json={"days_between_scans": 2})
 
     assert response.status_code == 400, response.text
     assert "unique constraints" in response.json()["detail"]

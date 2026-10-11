@@ -62,12 +62,9 @@ runScanButtons.forEach((button) => {
                     );
 
                 if (!response.ok) {
-                    // 409 means it was already queued or was cancelled, which the server explains
-                    throw new Error(
-                        response.status === 409
-                            ? (await response.json()).detail
-                            : "Unable to complete scan."
-                    );
+                    // The server explains a scan that was already queued or cancelled, or whose report
+                    // could not be emailed
+                    throw new Error(await failureReason(response, "Unable to complete scan."));
                 }
 
                 message.textContent =
@@ -183,10 +180,10 @@ function backgroundScanNoteDismissed() {
 }
 
 function updateBackgroundScanNote() {
-    const addingWebsite = document.getElementById("add-website-progress");
+    // A website being added has a progress line that says "scanning" until its first scan ends
     const scanning =
         Boolean(document.querySelector(".is-busy"))
-        || Boolean(addingWebsite && !addingWebsite.hidden);
+        || Boolean(document.querySelector('#add-website-progress-list [data-state="scanning"]'));
     if (!scanning) {
         backgroundScanNoteClosedForNow = false;  // So the next scan shows it again
     }
@@ -222,9 +219,10 @@ if (closeBackgroundScanNoteButton) {
 }
 
 if (backgroundScanNote) {
+    // Progress lines are added (childList) and finished (data-state) without any class changing
     new MutationObserver(updateBackgroundScanNote).observe(
         document.querySelector(".websites-section"),
-        { subtree: true, attributes: true, attributeFilter: ["class", "hidden"] }
+        { subtree: true, childList: true, attributes: true, attributeFilter: ["class", "hidden", "data-state"] }
     );
     updateBackgroundScanNote();
 }

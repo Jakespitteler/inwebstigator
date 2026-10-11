@@ -8,33 +8,36 @@ from fastapi.templating import Jinja2Templates
 from pydantic import HttpUrl
 
 from app.backend.email_service.delivery import EmailSender, get_email_sender
-from app.backend.scanning.all_websites_scan import cancel_run_all, run_all_in_progress, scan_all_websites_now
+from app.backend.scanning.all_websites_scan import run_all_scans, scan_all_websites_now
 from app.backend.scanning.manual_scan import scan_website_now
 from app.backend.scanning.scan_queue import scan_queue
 from app.backend.scanning.scheduler import next_scheduled_check
 from app.backend.websites.website_setup import (
     add_critical_page,
     add_website,
+    delete_critical_page,
     delete_website,
     update_website_settings,
 )
+from app.backend.websites.website_titles import saved_home_page_html, website_card_title
 from app.core.config import config
 from app.core.paths import resource_path
+from app.core.urls import website_name
 from app.db.services.critical_page_service import CriticalPageService
 from app.db.services.crud_protocol import CRUDOperation
 from app.db.services.recipient_service import RecipientService
 from app.db.services.scan_run_service import ScanRunService
 from app.db.services.website_service import WebsiteService
-from app.frontend.api.db_router_factory import SessionDep, create_crud_router
-from app.frontend.api.request_guard import API_TOKEN_HEADER
-from app.frontend.api.utils import (
+from app.db.session import db_context
+from app.frontend.api.dashboard_records import (
     WebsiteHistoryRecord,
     format_timestamp,
     newest_first,
     scan_time,
     website_history_record,
-    website_name,
 )
+from app.frontend.api.db_router_factory import SessionDep, create_crud_router
+from app.frontend.api.request_guard import API_TOKEN_HEADER
 from app.models.critical_page_models import (
     CriticalPageCreate,
     CriticalPageRead,
@@ -42,6 +45,7 @@ from app.models.critical_page_models import (
     CriticalPageUpdate,
 )
 from app.models.recipient_models import RecipientCreate, RecipientUpdate
+from app.models.scan_run_models import ScanRunRead
 from app.models.website_models import NewHttpUrl, WebsiteCreate, WebsiteRead, WebsiteSettingsUpdate, WebsiteUpdate
 
 EmailSenderDep = Annotated[EmailSender, Depends(get_email_sender)]
@@ -61,15 +65,12 @@ templates.env.filters["scan_time"] = scan_time  # pyright: ignore[reportUnknownM
 @ROOT_ROUTER.get("/")
 def get_dashboard(session: SessionDep, request: Request):
     websites: Sequence[WebsiteRead] = WebsiteService(session).get_all(limit=None)
-
-    website_names: dict[str, str] = {}
-    for website in websites:
-        saved_html: str | None = next(
-            (page.text_body for page in website.critical_pages if page.url == website.url and page.text_body),
-            None,
-        )
-        if saved_html or str(website.url) not in website_names:
-            website_names[str(website.url)] = website_name(str(website.url), saved_html)
+    # Each scan saves its website's card title. One not saved yet (e.g. before the website's first scan since the
+    # app was updated) is read from the saved home page until then.
+    website_names: dict[str, str] = {
+        str(website.url): website.card_title or website_card_title(str(website.url), saved_home_page_html(website))
+        for website in websites
+    }
 
     scan_run_service = ScanRunService(session)
     website_records: list[WebsiteHistoryRecord] = [
@@ -99,7 +100,7 @@ def get_dashboard(session: SessionDep, request: Request):
             "queued_website_urls": set(scan_queue.queued_urls),
             "api_token": config.api_token,
             "api_token_header": API_TOKEN_HEADER,
-            "run_all_in_progress": run_all_in_progress(),
+            "run_all_in_progress": run_all_scans.in_progress,
         },
     )
 
@@ -123,19 +124,28 @@ async def favicon() -> FileResponse:
 SCANNER_ROUTER = APIRouter(prefix="/scanner", tags=["Scanner"])
 
 
-@SCANNER_ROUTER.post("/initial_scan", response_model=None)
-async def website_initial_scan(email_sender: EmailSenderDep, model_create: WebsiteCreate) -> None:
+@SCANNER_ROUTER.post("/initial_scan", response_model=ScanRunRead | None)
+async def website_initial_scan(email_sender: EmailSenderDep, model_create: WebsiteCreate) -> ScanRunRead | None:
     """Adds a website and scans it straight away to save its baseline (see `add_website`).
 
     A website already being watched fails with a 409 status, as does cancelling its first scan or adding a website
     that is already being added. A website or critical page that cannot be loaded, or a recipient that cannot be
     emailed, fails with a 422 status. In each case the website is not added.
 
+    A website whose first scan ran into a problem (e.g. it blocked the crawler) is still added, so the problem is
+    returned in the scan for the dashboard to show.
+
     Args:
         email_sender (EmailSenderDep): Sends the emails to the recipients.
         model_create (WebsiteCreate): The website to add.
+
+    Returns:
+        ScanRunRead | None: The website's first scan, or None if it has none.
     """
-    await add_website(model_create, email_sender)
+    website: WebsiteRead = await add_website(model_create, email_sender)
+    with db_context() as session:
+        first_scans: list[ScanRunRead] = ScanRunService(session).get_latest_for_website(website.id, limit=1)
+    return first_scans[0] if first_scans else None
 
 
 @SCANNER_ROUTER.post("/initial_critical_page_scan", response_model=None)
@@ -157,7 +167,7 @@ async def critical_page_initial_scan(
 
 
 @SCANNER_ROUTER.post("/run_all", response_model=str | None)
-async def scan_websites(email_sender: EmailSenderDep) -> str | None:
+async def scan_every_website(email_sender: EmailSenderDep) -> str | None:
     """Scans every website now for "Run All Scans", emailing each recipient one report of all the changes found.
 
     Websites that are not due a scan yet are included, while websites on cooldown are still skipped. The scheduled
@@ -173,7 +183,7 @@ async def scan_websites(email_sender: EmailSenderDep) -> str | None:
     Raises:
         HTTPException: 409 if "Run All Scans" is already running.
     """
-    if run_all_in_progress():
+    if run_all_scans.in_progress:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Run All Scans is already running.")
 
     return await scan_all_websites_now(email_sender=email_sender)
@@ -188,7 +198,7 @@ async def cancel_all_scans() -> bool:
     Returns:
         bool: True if it was cancelled, or False if "Run All Scans" was not running.
     """
-    return cancel_run_all()
+    return run_all_scans.cancel()
 
 
 @SCANNER_ROUTER.post("/run", response_model=str | None)
@@ -198,7 +208,7 @@ async def manually_scan_website(
     recipient_email: Annotated[str | None, Form()] = None,
     max_pages: Annotated[int | None, Form()] = None,
     delay: Annotated[float | None, Form()] = None,
-    concurrent: Annotated[int | None, Form()] = None,
+    concurrent: Annotated[int | None, Form(ge=config.web_crawler_min_concurrent)] = None,
 ) -> str | None:
     """Scans a monitored website straight away for "Run Scan Now", and emails its report (see `scan_website_now`).
 
@@ -241,6 +251,9 @@ RECIPIENT_ROUTER: APIRouter = create_crud_router(
     service_class=RecipientService,
     create_class=RecipientCreate,
     update_class=RecipientUpdate,
+    # Recipients are only added and removed through their websites (PATCH /websites/{id}), which emails each added
+    # address to confirm it, so they can only be read here
+    exclude={CRUDOperation.CREATE, CRUDOperation.UPDATE, CRUDOperation.DELETE},
 )
 
 CRITICAL_PAGE_ROUTER: APIRouter = create_crud_router(
@@ -249,8 +262,9 @@ CRITICAL_PAGE_ROUTER: APIRouter = create_crud_router(
     create_class=CriticalPageCreate,
     update_class=CriticalPageUpdate,
     # Critical pages are only added through /scanner/initial_critical_page_scan, which checks the page is on the
-    # website and loads, and saves its baseline. Updating is replaced below, so only the page's settings can change.
-    exclude={CRUDOperation.CREATE, CRUDOperation.UPDATE},
+    # website and loads, and saves its baseline. Updating and deleting are replaced below, so only the page's settings
+    # can change and a website's main page cannot be deleted.
+    exclude={CRUDOperation.CREATE, CRUDOperation.UPDATE, CRUDOperation.DELETE},
 )
 WEBSITE_ROUTER: APIRouter = create_crud_router(
     prefix="/websites",
@@ -281,6 +295,19 @@ async def update_critical_page(
         NotFoundError: If no critical page has the ID.
     """
     return CriticalPageService(session).update(id, settings.as_critical_page_update())
+
+
+@CRITICAL_PAGE_ROUTER.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_critical_page(id: uuid.UUID) -> None:
+    """Stops watching a critical page. A website's main page fails with a 422 status, as it is always watched.
+
+    Args:
+        id (uuid.UUID): The ID of the critical page to delete.
+
+    Raises:
+        NotFoundError: If no critical page has the ID.
+    """
+    delete_critical_page(id)
 
 
 @WEBSITE_ROUTER.patch("/{id}", response_model=WebsiteRead)

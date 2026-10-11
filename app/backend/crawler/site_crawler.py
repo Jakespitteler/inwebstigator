@@ -134,6 +134,27 @@ def _pages_left_to_visit(queue: list[str], visited: dict[str, str]) -> bool:
     return any(page_key(link) not in visited for link in queue)
 
 
+def _looks_like_a_site_wide_block(
+    forbidden_count: int, batch_size: int, batch_403_threshold: int, batch_403_ratio: float
+) -> bool:
+    """Checks whether a batch had so many forbidden (403) pages that the website is blocking the crawler, rather than
+    only some of its pages being private (e.g. staff-only links).
+
+    A batch can hold thousands of pages, so a fixed count alone would flag a normal website with many private links.
+    The forbidden pages must also be a large share of the batch.
+
+    Args:
+        forbidden_count: How many pages in the batch returned 403.
+        batch_size: How many pages were in the batch.
+        batch_403_threshold: The fewest forbidden pages that can count as a block.
+        batch_403_ratio: The smallest share of the batch (0 to 1) that must be forbidden to count as a block.
+
+    Returns:
+        True if the batch looks like the website blocking the crawler.
+    """
+    return forbidden_count >= batch_403_threshold and forbidden_count >= batch_size * batch_403_ratio
+
+
 async def crawl_site(
     client: httpx2.AsyncClient,
     url: str,
@@ -141,6 +162,7 @@ async def crawl_site(
     max_concurrent: int = 10,
     delay: float = 0,
     batch_403_threshold: int = 20,
+    batch_403_ratio: float = 0.5,
 ) -> set[str]:
     """Asynchronously crawls a website starting from an entry URL up to a maximum page limit.
 
@@ -151,7 +173,7 @@ async def crawl_site(
     a different partial crawl each scan would report pages being added and removed that never were.
 
     Pages are tracked by their `page_key` (visited maps each page's key to the URL it was visited at),
-    so a page linked as both example.com/a and www.example.com/a is only visited once.
+    so a page linked as both example.com/a and www.example.com/a (or with http and https) is only visited once.
 
     Args:
         client: The HTTP client instance used to execute network requests.
@@ -160,15 +182,17 @@ async def crawl_site(
         max_concurrent: The maximum number of concurrent HTTP requests permitted.
             Defaults to 10.
         delay: The time in seconds to pause before fetching individual URLs. Defaults to 0.
-        batch_403_threshold: The threshold count of 403 Forbidden responses in a single batch
-            that triggers a site-wide block exception. Defaults to 20.
+        batch_403_threshold: The fewest 403 Forbidden responses in a single batch that can trigger a
+            site-wide block exception. Defaults to 20.
+        batch_403_ratio: The smallest share of a batch (0 to 1) that must be 403 Forbidden responses to
+            trigger a site-wide block exception. Defaults to 0.5.
 
     Returns:
-        A set of normalized internal URL strings visited during the crawl, one for each page.
+        A set of normalised internal URL strings visited during the crawl, one for each page.
 
     Raises:
-        TrafficError: If a single batch encounters 403 Forbidden responses equal to or exceeding
-            batch_403_threshold, indicating firewall blocking or access denial.
+        TrafficError: If a single batch encounters at least batch_403_threshold 403 Forbidden responses, making
+            up at least batch_403_ratio of the batch, indicating firewall blocking or access denial.
         WebsiteUnavailableError: If the home page could not be loaded (e.g. it returned 403, 404 or 500), so no page
             was visited. Otherwise every page would look removed.
         WebsiteTooLargeError: If the limit is reached while there are still pages left to visit.
@@ -214,9 +238,10 @@ async def crawl_site(
                     queued.add(link_page)
                     queue.append(link)
 
-        if batch_403_count >= batch_403_threshold:
+        if _looks_like_a_site_wide_block(batch_403_count, len(batch), batch_403_threshold, batch_403_ratio):
             logger.error(
-                f"Site-wide block detected: Encountered {batch_403_count} 403 Forbidden responses in a single batch."
+                f"Site-wide block detected: Encountered {batch_403_count} 403 Forbidden responses "
+                f"in a single batch of {len(batch)} pages."
             )
             raise TrafficError(url, 403)
 

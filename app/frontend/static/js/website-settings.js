@@ -69,6 +69,32 @@ deleteWebsiteButtons.forEach(
 );
 
 
+// The settings changed since the page loaded, so a value the app changed since then (e.g. switching the website off,
+// or slowing its crawl after it rate limited the crawler) is not saved back over with the page's old value
+function changedScanSettings(form) {
+    const settings = {};
+
+    const active = form.querySelector(".scan-active");
+    if (active.checked !== active.defaultChecked) {
+        settings.active = active.checked;
+    }
+
+    const numberSettings = [
+        ["recommended_delay", ".scan-delay", parseFloat],
+        ["recommended_concurrent", ".scan-concurrent", (value) => parseInt(value, 10)],
+        ["days_between_scans", ".days-between-scans", parseFloat],
+    ];
+    for (const [name, selector, parse] of numberSettings) {
+        const input = form.querySelector(selector);
+        if (parse(input.value) !== parse(input.defaultValue)) {
+            settings[name] = parse(input.value);
+        }
+    }
+
+    return settings;
+}
+
+
 // Update scan settings for an existing website
 const scanSettingsForms =
     document.querySelectorAll(
@@ -86,37 +112,18 @@ scanSettingsForms.forEach((form) => {
             const websiteId =
                 form.dataset.websiteId;
 
-            const active =
-                form.querySelector(
-                    ".scan-active"
-                ).checked;
-
-            const delay =
-                parseFloat(
-                    form.querySelector(
-                        ".scan-delay"
-                    ).value
-                );
-
-            const concurrent =
-                parseInt(
-                    form.querySelector(
-                        ".scan-concurrent"
-                    ).value,
-                    10
-                );
-
-            const daysBetweenScans =
-                parseFloat(
-                    form.querySelector(
-                        ".days-between-scans"
-                    ).value
-                );
+            const settings =
+                changedScanSettings(form);
 
             const message =
                 form.querySelector(
                     ".scan-settings-message"
                 );
+
+            if (Object.keys(settings).length === 0) {
+                message.textContent = "Nothing has changed.";
+                return;
+            }
 
             message.textContent =
                 "Saving settings...";
@@ -132,15 +139,7 @@ scanSettingsForms.forEach((form) => {
                                 "Content-Type":
                                     "application/json"
                             },
-                            body: JSON.stringify({
-                                active: active,
-                                recommended_delay:
-                                    delay,
-                                recommended_concurrent:
-                                    concurrent,
-                                days_between_scans:
-                                    daysBetweenScans
-                            })
+                            body: JSON.stringify(settings)
                         }
                     );
 

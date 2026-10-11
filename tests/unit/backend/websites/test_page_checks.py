@@ -4,7 +4,7 @@ import httpx2
 import pytest
 
 from app.backend.websites.page_checks import check_pages_exist
-from app.core.errors import PageNotLoadedError
+from app.core.errors import InvalidPageError, PageNotLoadedError
 
 type RequestHandler = Callable[[httpx2.Request], httpx2.Response]
 
@@ -75,8 +75,8 @@ async def test_pages_that_load_are_accepted() -> None:
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     "news_page",
-    [_missing, _broken, _rate_limited, _a_pdf, _unreachable, _protocol_error],
-    ids=["missing", "server error", "rate limited", "not a web page", "unreachable", "protocol error"],
+    [_missing, _broken, _rate_limited, _unreachable, _protocol_error],
+    ids=["missing", "server error", "rate limited", "unreachable", "protocol error"],
 )
 async def test_a_page_that_cannot_be_loaded_is_refused_by_name(news_page: RequestHandler) -> None:
     """Tests a page that cannot be loaded, for whatever reason, is refused with an error naming that page (not the
@@ -87,3 +87,16 @@ async def test_a_page_that_cannot_be_loaded_is_refused_by_name(news_page: Reques
 
     assert refused.value.url == NEWS_PAGE
     assert str(refused.value) == f"{NEWS_PAGE} could not be loaded. Check it exists and the URL is correct."
+
+
+@pytest.mark.anyio
+async def test_a_file_is_refused_as_not_a_web_page() -> None:
+    """Tests a file (e.g. a PDF) added as a page is refused saying it is a file that cannot be watched, rather than
+    that it could not be loaded, which would send the user looking for a typo."""
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(_website_where_news_page(_a_pdf))) as client:
+        with pytest.raises(InvalidPageError) as refused:
+            await check_pages_exist(client, [HOME_PAGE, NEWS_PAGE])
+
+    assert str(refused.value) == (
+        f"{NEWS_PAGE} is a file (application/pdf) rather than a web page, so it cannot be watched."
+    )

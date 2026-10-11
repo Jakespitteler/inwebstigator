@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta
 
+import pytest
+
 from app.backend.email_service.email_wording import describe_website_health
 from app.models.website_models import DeactivationReason
 from tests.unit.backend.email_service.builders import make_page, make_website
@@ -44,12 +46,23 @@ def test_a_website_with_unreachable_watched_pages_needs_attention() -> None:
     assert (health.status, health.needs_attention) == ("1 watched page cannot be reached.", True)
 
 
-def test_a_website_switched_off_because_its_scans_kept_failing_needs_attention() -> None:
-    """Tests a website switched off for failing too often (no other reason saved) says so and needs attention."""
-    health = describe_website_health(make_website(active=False, deactivated_reason=None), NOW)
+@pytest.mark.parametrize(
+    ("deactivated_reason", "expected_status"),
+    [
+        (DeactivationReason.RATE_LIMITED, "Switched off because it kept rate limiting or blocking the crawler."),
+        (None, "Switched off on the dashboard."),
+    ],
+    ids=["rate-limited", "switched-off-on-the-dashboard"],
+)
+def test_a_switched_off_website_says_why_and_needs_attention(
+    deactivated_reason: DeactivationReason | None, expected_status: str
+) -> None:
+    """Tests a website switched off after rate limiting the crawler, or by the user (no reason saved), says which, and
+    needs attention."""
+    health = describe_website_health(make_website(active=False, deactivated_reason=deactivated_reason), NOW)
 
     assert health.needs_attention is True
-    assert health.status == "Switched off because its scans kept failing. Its watched pages are still checked."
+    assert health.status == f"{expected_status} Its watched pages are still checked."
 
 
 def test_a_website_whose_cooldown_has_ended_is_working_again() -> None:

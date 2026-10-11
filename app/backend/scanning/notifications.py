@@ -7,7 +7,7 @@ from app.backend.email_service.delivery import EmailSender
 from app.backend.email_service.message_builder import OutgoingEmail
 from app.db.services.recipient_service import RecipientService
 from app.db.session import db_context
-from app.models.recipient_models import RecipientRead, RecipientUpdate
+from app.models.recipient_models import RecipientRead
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -38,9 +38,7 @@ def _record_email_sent(recipient_email: str) -> None:
         recipient_email: The recipient's email address.
     """
     with db_context() as session:
-        recipient_service = RecipientService(session)
-        recipient = recipient_service.get_by_email(recipient_email)
-        recipient_service.update(id=recipient.id, model_update=RecipientUpdate(last_email_at=datetime.now(UTC)))
+        RecipientService(session).record_emailed([recipient_email], emailed_at=datetime.now(UTC))
 
 
 def send_notification(email: OutgoingEmail, email_sender: EmailSender) -> None:

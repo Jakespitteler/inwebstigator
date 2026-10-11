@@ -5,7 +5,6 @@ from collections.abc import Sequence
 from pydantic import HttpUrl
 from sqlalchemy import Delete, Select, delete, select
 
-from app.core.errors import NotFoundError
 from app.db import repository
 from app.db.schema import DBInternalLink
 from app.db.services.base_crud_service import BaseCRUDService
@@ -25,29 +24,6 @@ class InternalLinkService(BaseCRUDService[DBInternalLink, InternalLinkRead, Inte
 
     table = DBInternalLink
     read_model = InternalLinkRead
-
-    def get_by_url(self, url: HttpUrl) -> InternalLinkRead:
-        """Retrieves a single internal link record by its URL attribute.
-
-        Args:
-            url: The URL string of the internal link to retrieve.
-
-        Returns:
-            The matching InternalLinkRead data model instance.
-
-        Raises:
-            NotFoundError: If no internal link record exists with the specified URL.
-        """
-        internal_link_records: Sequence[DBInternalLink] = repository.get_list(
-            self._db,
-            table=DBInternalLink,
-            attributes={"url": url},
-            limit=1,
-        )
-        if not internal_link_records:
-            raise NotFoundError(attributes={"url": url})
-
-        return InternalLinkRead.model_validate(internal_link_records[0])
 
     def get_urls_for_website(self, website_id: uuid.UUID) -> list[str]:
         """Retrieves the URL of every internal link saved for a website.

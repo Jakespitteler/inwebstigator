@@ -1,4 +1,5 @@
 import imaplib
+import re
 import smtplib
 import ssl
 from dataclasses import replace
@@ -132,7 +133,7 @@ def test_bounces_from_gmail_and_microsoft_are_both_searched_for(monkeypatch: pyt
 
     confirm_address_can_receive_email(confirmation_to("real@example.com"), FakeEmailSender(), INBOX_SETTINGS)
 
-    assert inbox.searches[0] == '((OR FROM "mailer-daemon" FROM "postmaster") TEXT "real@example.com")'
+    assert inbox.searches[0].startswith('((OR FROM "mailer-daemon" FROM "postmaster") (OR TEXT " real@example.com"')
 
 
 def test_open_inbox_checks_the_servers_certificate(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -222,3 +223,28 @@ def test_confirm_address_watches_the_inbox_only_for_the_configured_wait(monkeypa
     confirm_address_can_receive_email(confirmation_to("slow@example.com"), FakeEmailSender(), INBOX_SETTINGS)
 
     assert waits == [3, 3]
+
+
+def _text_searched_for(search: str) -> list[str]:
+    """Reads the texts an inbox search looks for, e.g. [" bob@x.com", "<bob@x.com"], undoing the escaped quotes."""
+    return [text.replace('\\"', '"') for text in re.findall(r'TEXT "((?:[^"\\]|\\.)*)"', search)]
+
+
+@pytest.mark.parametrize(
+    ("bounce_text", "is_about_the_address"),
+    [
+        ("Your message wasn't delivered to bob@example.com because the address couldn't be found.", True),
+        ("<bob@example.com>: host mx.example.com said: 550 No such user", True),
+        ("Final-Recipient: rfc822;bob@example.com", True),
+        ('To: "Bob" bob@example.com', True),
+        ("Your message wasn't delivered to jimbob@example.com because the address couldn't be found.", False),
+        ("<jimbob@example.com>: host mx.example.com said: 550 No such user", False),
+    ],
+    ids=["gmail", "postfix", "delivery-status", "header", "longer-address-gmail", "longer-address-postfix"],
+)
+def test_the_bounce_search_only_matches_the_whole_address(bounce_text: str, is_about_the_address: bool) -> None:
+    """Tests the inbox search for bob@example.com finds bounces about it in the common formats, but not a bounce about
+    a longer address that ends with it (jimbob@example.com), as an inbox search matches any part of the text."""
+    texts: list[str] = _text_searched_for(delivery._address_search("bob@example.com"))  # pyright: ignore[reportPrivateUsage]
+
+    assert any(text in bounce_text for text in texts) is is_about_the_address

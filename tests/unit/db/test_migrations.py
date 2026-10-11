@@ -6,6 +6,7 @@ import pytest
 import sqlalchemy.exc
 from sqlalchemy import Column, Engine, Index, Integer, MetaData, String, Table, create_engine, insert, inspect, select
 
+from app.core.config import config
 from app.db.migrations import (
     UTC_TIMES_VERSION,
     add_missing_columns,
@@ -175,6 +176,72 @@ def test_add_missing_indexes_adds_new_indexes_to_existing_tables_only(
     assert inspect(old_database).get_table_names() == ["websites"]
 
 
+def _insert_website(engine: Engine, website_id: str, active: bool, reason: str | None, failed_attempts: int) -> None:
+    """Saves a website directly, as an older version of the app would have left it."""
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "INSERT INTO websites (id, url, recommended_delay, recommended_concurrent, days_between_scans, active, "
+            "deactivated_reason, failed_attempts_at_min_speed) VALUES (?, ?, 3, 1, 1, ?, ?, ?)",
+            (website_id, f"https://{website_id}.example.com", active, reason, failed_attempts),
+        )
+
+
+def _deactivated_reasons(engine: Engine) -> dict[str, str | None]:
+    """Reads why each website was switched off, by its ID."""
+    with engine.connect() as connection:
+        rows = connection.exec_driver_sql("SELECT id, deactivated_reason FROM websites").all()
+    return {website_id: reason for website_id, reason in rows}
+
+
+def test_websites_an_older_version_switched_off_for_rate_limiting_are_given_that_reason_once(tmp_path: Path) -> None:
+    """Tests an inactive website with no reason saved that had reached the most failed attempts is saved as switched
+    off for rate limiting, while one switched off on the dashboard, one too large and an active one are left alone,
+    and a website switched off after the update is never changed."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    prepare_database(engine)
+    with engine.begin() as connection:
+        connection.exec_driver_sql(f"PRAGMA user_version = {UTC_TIMES_VERSION}")  # Before reasons were saved
+    max_failures = config.web_crawler_max_failed_attempts_at_min_speed
+    _insert_website(engine, "rate-limited", active=False, reason=None, failed_attempts=max_failures)
+    _insert_website(engine, "switched-off", active=False, reason=None, failed_attempts=0)
+    _insert_website(engine, "too-large", active=False, reason="too_large", failed_attempts=max_failures)
+    _insert_website(engine, "active", active=True, reason=None, failed_attempts=max_failures)
+
+    prepare_database(engine)
+    _insert_website(engine, "later", active=False, reason=None, failed_attempts=max_failures)
+    prepare_database(engine)
+
+    assert _deactivated_reasons(engine) == {
+        "rate-limited": "rate_limited",
+        "switched-off": None,
+        "too-large": "too_large",
+        "active": None,
+        "later": None,
+    }
+    engine.dispose()
+
+
+def test_prepare_database_indexes_the_website_of_each_link_and_critical_page_in_an_older_database(
+    tmp_path: Path,
+) -> None:
+    """Tests a database made before links and critical pages were indexed by website gains those indexes, so
+    counting or loading one website's pages does not read every website's."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE internal_links (id CHAR(32) PRIMARY KEY, url VARCHAR, website_id CHAR(32))"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE critical_pages (id CHAR(32) PRIMARY KEY, url VARCHAR NOT NULL, website_id CHAR(32) NOT NULL)"
+        )
+
+    prepare_database(engine)
+
+    assert "ix_internal_links_website_id" in _index_names(engine, "internal_links")
+    assert "ix_critical_pages_website_id" in _index_names(engine, "critical_pages")
+    engine.dispose()
+
+
 def test_prepare_database_adds_new_columns_to_an_older_database_keeping_its_rows(tmp_path: Path) -> None:
     """Tests a critical pages table made before the failure columns existed gains them, with the existing page given
     the column's default of 0 failures and no failure reason."""
@@ -233,3 +300,12 @@ def test_times_are_converted_from_the_computers_own_time_zone_by_default(tmp_pat
     expected_utc_time = local_time.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")
     assert _saved_scan_time(engine) == expected_utc_time
     engine.dispose()
+
+
+def test_prepare_database_creates_the_folder_the_database_is_kept_in(tmp_path: Path) -> None:
+    """Tests a database in a folder that does not exist yet (e.g. on a new computer) is still created."""
+    db_path: Path = tmp_path / "new folder" / "inwebstigator.db"
+
+    prepare_database(create_engine(f"sqlite:///{db_path.as_posix()}"))
+
+    assert db_path.is_file()

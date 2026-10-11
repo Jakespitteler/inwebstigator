@@ -6,7 +6,9 @@ from dotenv import load_dotenv
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings
 
-load_dotenv()
+from app.core.paths import app_folder
+
+load_dotenv(app_folder() / ".env")
 
 
 class Config(BaseSettings):
@@ -20,8 +22,8 @@ class Config(BaseSettings):
     app_name: str = "inwebstigator"
     automatic_scans: bool = True
 
+    # Created when the app starts (see `prepare_database` and `setup_logging`), not when the settings are read
     user_data_dir: Path = Path.home() / "AppData" / "Local" / app_name
-    user_data_dir.mkdir(parents=True, exist_ok=True)
 
     db_name: str = f"{app_name}.db"
     db_path: Path = user_data_dir / db_name
@@ -34,7 +36,7 @@ class Config(BaseSettings):
     api_token: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
     api_token_required: bool = True
 
-    log_file_max_bytes: int = 1_000_000
+    log_file_max_bytes: int = 5_000_000
     log_file_backup_count: int = 3
 
     email: str = ""
@@ -47,6 +49,7 @@ class Config(BaseSettings):
     email_bounce_wait_seconds: int = 30
     email_bounce_poll_seconds: int = 3
     email_time_zone: str = ""
+    email_max_listed_links: int = 100
 
     web_crawler_user_agent: str = "Mozilla/5.0 (compatible; Inwebstigator/0.1; website change monitor)"
     web_crawler_default_max_pages: int = 50_000
@@ -55,6 +58,7 @@ class Config(BaseSettings):
     web_crawler_default_concurrent: int = 5
     web_crawler_min_concurrent: int = 1
     web_crawler_batch_403_threshold: int = 50
+    web_crawler_batch_403_ratio: float = 0.5
     web_crawler_max_failed_attempts_at_min_speed: int = 3
     web_crawler_max_missing_pages_ratio: float = 0.5
     web_crawler_min_known_pages_to_check_missing: int = 20
@@ -99,12 +103,8 @@ class Config(BaseSettings):
 
     @property
     def db_url(self) -> str:
-        self.user_data_dir.mkdir(parents=True, exist_ok=True)
+        """The address SQLAlchemy opens the app's database at."""
         return f"sqlite:///{self.db_path.as_posix()}"
-
-    @property
-    def test_db_url(self) -> str:
-        return "sqlite:///:memory:"
 
 
 config = Config()

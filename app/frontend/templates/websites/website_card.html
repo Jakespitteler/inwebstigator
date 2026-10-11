@@ -74,17 +74,29 @@
 
     <!-- Inactive websites are still scanned, but only their critical pages -->
     {% if not website.active %}
-        {% set too_large = website.deactivated_reason == "too_large" %}
-        <p class="website-notice{% if too_large %} website-notice-warning{% endif %}">
-            {% if too_large %}
+        <p class="website-notice{% if website.deactivated_reason %} website-notice-warning{% endif %}">
+            {% if website.deactivated_reason == "too_large" %}
                 <strong>Too large to scan.</strong>
                 This website has more than {{ "{:,}".format(max_pages) }} pages, which is
                 more than Inwebstigator will scan, so it has been deactivated.
+            {% elif website.deactivated_reason == "rate_limited" %}
+                <strong>Blocked the crawler.</strong>
+                This website kept rate limiting or blocking scans, even at the slowest
+                speed, so it has been deactivated.
             {% else %}
                 <strong>Inactive.</strong>
             {% endif %}
             Only its critical pages are checked for changes. New and removed pages on
             the rest of the website are not looked for.
+        </p>
+    {% endif %}
+
+    <!-- Nobody would hear about this website's changes, so say so where it cannot be missed -->
+    {% if not website.recipients %}
+        <p class="no-recipients-notice">
+            <strong>No notification emails.</strong>
+            Nobody is emailed this website's reports. Open it and add an email under
+            Notification emails to receive them.
         </p>
     {% endif %}
 

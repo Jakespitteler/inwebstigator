@@ -25,6 +25,7 @@ from app.core.errors import (
     PageNotLoadedError,
     UndeliverableEmailError,
     WebConnectionError,
+    WebsiteAlreadyMonitoredError,
 )
 from app.db.schema import DBChange, DBCriticalPage, DBInternalLink, DBRecipient, DBScanRun, DBWebsite
 from app.db.services.recipient_service import RecipientService
@@ -202,6 +203,22 @@ async def test_a_new_website_is_not_added_when_one_recipient_bounces(
         )
 
     assert (_count(session, DBWebsite), _count(session, DBCriticalPage), _count(session, DBRecipient)) == (0, 0, 0)
+
+
+@pytest.mark.anyio
+async def test_the_http_address_of_a_watched_website_is_refused_before_anyone_is_emailed(
+    session: Session, mocker: MockerFixture, bouncing_addresses: set[str], email_sender: FakeEmailSender
+) -> None:
+    """Tests adding "http://" for a website already watched at "https://" is refused before its pages are loaded or
+    anyone is told monitoring has started, rather than failing only once it is saved."""
+    WebsiteService(session).create(_new_website(url=HOME_PAGE))
+    requested_urls: list[str] = _put_online(mocker, _serve({"http://example.com/": HOME_HTML}))
+
+    with pytest.raises(WebsiteAlreadyMonitoredError, match=f"{HOME_PAGE} is already being monitored"):
+        await add_website(_new_website(url="http://example.com/", recipient_emails=["a@example.com"]), email_sender)
+
+    assert (requested_urls, email_sender.sent) == ([], [])
+    assert _count(session, DBWebsite) == 1
 
 
 # ==========================

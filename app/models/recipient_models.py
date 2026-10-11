@@ -24,5 +24,5 @@ class RecipientRead(BaseModel):
 
 class RecipientUpdate(BaseModel):
     email: EmailStr | None = None
-    last_email_at: AwareDatetime | None = None  # Can be set through the API, so a time without a zone is refused
+    last_email_at: AwareDatetime | None = None  # A time without a zone is refused, as it cannot be saved as UTC
     days_between_health_checks: float | None = None

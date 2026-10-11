@@ -40,12 +40,13 @@ def test_the_log_file_is_in_the_apps_data_folder(tmp_path: Path) -> None:
     assert Config(user_data_dir=tmp_path).log_path == tmp_path / "logs" / "inwebstigator.log"
 
 
-def test_the_database_url_points_at_the_database_and_creates_its_folder(tmp_path: Path) -> None:
-    """Tests the database URL points at the database file, creating the data folder if it does not exist yet."""
+def test_reading_the_settings_does_not_create_the_data_folder(tmp_path: Path) -> None:
+    """Tests the database URL points at the database file, and reading the settings leaves the disk alone, as the
+    app creates its data folder when it starts."""
     data_dir: Path = tmp_path / "data"
     db_path: Path = data_dir / "inwebstigator.db"
 
     db_url: str = Config(user_data_dir=data_dir, db_path=db_path).db_url
 
     assert db_url == f"sqlite:///{db_path.as_posix()}"
-    assert data_dir.is_dir()
+    assert not data_dir.exists()
