@@ -11,12 +11,13 @@ import pytest
 from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 from httpx2 import ASGITransport, AsyncClient, MockTransport, Response
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, HttpUrl, ValidationError
 from pytest_mock import MockerFixture
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.backend.email_service.message_builder import OutgoingEmail
+from app.backend.scanning.all_websites_scan import run_all_scans
 from app.backend.scanning.scan_queue import ScanQueue, scan_queue
 from app.core.config import config
 from app.core.errors import ScanAlreadyQueuedError, ScanCancelledError, UndeliverableEmailError, WebsiteTooLargeError
@@ -171,6 +172,30 @@ class TestRecipientRouter(TestCRUDRouters):
     model_create = recipient_models.RecipientCreate(email="test_recipient@gmail.com")
     model_update = recipient_models.RecipientUpdate(email="test_recipient_update@gmail.com")
     fixture_name = "test_recipient"
+    # Recipients are only added, changed and removed through their websites (PATCH /websites/{id}), which emails each
+    # added address to confirm it can receive email, so they can only be read here
+    expected_create_status = 405
+
+    def test_update_record(self, api_client: TestClient, api_record: Base) -> None:
+        """Tests a recipient's address cannot be changed on its own, which would skip confirming the new address."""
+        response: Response = api_client.patch(url=f"{self.prefix}/{api_record.id}", json={"email": "new@example.com"})
+        assert response.status_code == 405, response.text
+
+    def test_update_record_not_found(self, api_client: TestClient) -> None:
+        """Tests changing a recipient is refused before looking for it, as recipients cannot be changed here."""
+        response: Response = api_client.patch(url=f"{self.prefix}/{uuid.uuid4()}", json={"email": "new@example.com"})
+        assert response.status_code == 405, response.text
+
+    def test_delete_record(self, api_client: TestClient, api_record: Base) -> None:
+        """Tests a recipient cannot be deleted on its own; it is removed from each website instead."""
+        response: Response = api_client.delete(url=f"{self.prefix}/{api_record.id}")
+        assert response.status_code == 405, response.text
+        assert api_client.get(url=f"{self.prefix}/{api_record.id}").status_code == 200
+
+    def test_delete_record_not_found(self, api_client: TestClient) -> None:
+        """Tests deleting a recipient is refused before looking for it, as recipients cannot be deleted here."""
+        response: Response = api_client.delete(url=f"{self.prefix}/{uuid.uuid4()}")
+        assert response.status_code == 405, response.text
 
 
 class TestWebsiteRouter(TestCRUDRouters):
@@ -452,6 +477,30 @@ def test_hosted_names_are_used_in_compact_cards_and_updates(api_client: TestClie
     assert last_scan.get_text(strip=True) == "Not scanned yet"
 
 
+def test_the_dashboard_shows_the_card_title_saved_by_the_last_scan(
+    api_client: TestClient, session: Session, mocker: MockerFixture
+) -> None:
+    """Tests the dashboard shows the card title the last scan saved, without reading the website's saved home page
+    again, which is slow for a large page."""
+    url = "https://www.uwa.edu.au/"
+    session.add(
+        DBWebsite(
+            url=url,
+            card_title="UWA",
+            critical_pages=[DBCriticalPage(url=url, text_body="<title>UWA</title>")],
+        )
+    )
+    session.flush()
+    mock_card_title = mocker.patch("app.frontend.api.routers.website_card_title")
+
+    response = api_client.get("/")
+
+    assert response.status_code == 200
+    card = BeautifulSoup(response.text, "html.parser").select_one(".website-card .website-name")
+    assert card is not None and card.get_text(strip=True) == "UWA"
+    mock_card_title.assert_not_called()
+
+
 def test_run_all_scans_every_website(
     api_client: TestClient, mocker: MockerFixture, email_sender: FakeEmailSender
 ) -> None:
@@ -468,7 +517,7 @@ def test_run_all_is_refused_while_run_all_scans_is_already_running(
     api_client: TestClient, mocker: MockerFixture
 ) -> None:
     """Tests a second "Run All Scans" is refused rather than run alongside the first."""
-    mocker.patch("app.frontend.api.routers.run_all_in_progress", return_value=True)
+    mocker.patch("app.frontend.api.routers.run_all_scans", in_progress=True)
     mock_scan_all_websites_now = mocker.patch("app.frontend.api.routers.scan_all_websites_now")
 
     response = api_client.post("/scanner/run_all")
@@ -480,7 +529,7 @@ def test_run_all_is_refused_while_run_all_scans_is_already_running(
 
 def test_cancel_all_reports_whether_run_all_scans_was_cancelled(api_client: TestClient, mocker: MockerFixture) -> None:
     """Tests "Cancel" on Run All Scans cancels it, and says so when it wasn't running."""
-    mocker.patch("app.frontend.api.routers.cancel_run_all", side_effect=[True, False])
+    mocker.patch.object(run_all_scans, "cancel", side_effect=[True, False])
 
     assert api_client.post("/scanner/cancel_all").json() is True
     assert api_client.post("/scanner/cancel_all").json() is False
@@ -492,7 +541,7 @@ def test_dashboard_shows_run_all_cancel_button_only_while_run_all_scans_is_runni
 ) -> None:
     """Tests the Cancel button for Run All Scans shows, and Run All Scans is disabled, only while it is running,
     even after a refresh."""
-    mocker.patch("app.frontend.api.routers.run_all_in_progress", return_value=running)
+    mocker.patch("app.frontend.api.routers.run_all_scans", in_progress=running)
 
     dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
 
@@ -581,14 +630,16 @@ def test_manual_scan_keeps_its_report_when_the_email_fails(
     mocker: MockerFixture,
     email_sender: FakeEmailSender,
 ) -> None:
-    """Tests a "Run Scan Now" report that could not be emailed is kept, so the next scheduled run sends it."""
+    """Tests a "Run Scan Now" report that could not be emailed is kept, so the next scheduled run sends it, and the
+    dashboard is told the scan finished but the email failed, rather than that the scan failed."""
     scan_run: ScanRunRead = _scan_finding_a_new_page(session, test_website)
     mocker.patch("app.backend.scanning.manual_scan.scan_website", return_value=scan_run)
     mocker.patch.object(email_sender, "send", side_effect=ConnectionError("No internet"))
 
-    with pytest.raises(ConnectionError):
-        api_client.post("/scanner/run", data={"url": str(test_website.url)})
+    response = api_client.post("/scanner/run", data={"url": str(test_website.url)})
 
+    assert response.status_code == 502, response.text
+    assert "finished, but its report could not be emailed" in response.json()["detail"]
     assert [waiting.id for waiting in ScanRunService(session).get_awaiting_email()] == [scan_run.id]
 
 
@@ -597,12 +648,12 @@ def test_manual_scan_of_a_website_already_queued_is_refused(
 ) -> None:
     """Tests "Run Scan Now" for a website already queued or being scanned is refused rather than queued twice."""
     mocker.patch.object(scan_queue, "_scans", {str(test_website.url): mocker.Mock()})
-    mock_get_website_updates = mocker.patch("app.backend.scanning.website_scan.get_website_updates")
+    mock_scan_whole_website = mocker.patch("app.backend.scanning.website_scan.scan_whole_website")
 
     response = api_client.post("/scanner/run", data={"url": str(test_website.url)})
 
     assert response.status_code == 409, response.text
-    mock_get_website_updates.assert_not_called()
+    mock_scan_whole_website.assert_not_called()
 
 
 def test_cancel_scan_reports_whether_there_was_a_scan_to_cancel(
@@ -773,6 +824,29 @@ def _website_notice(api_client: TestClient, url: str) -> str | None:
     return " ".join(notice.get_text().split()) if notice else None
 
 
+def test_a_website_nobody_is_emailed_about_says_so(
+    api_client: TestClient, session: Session, test_recipient: recipient_models.RecipientRead
+) -> None:
+    """Tests a website with no notification emails says nobody is emailed its reports, while one with an email
+    does not."""
+    recipient = session.get_one(DBRecipient, test_recipient.id)
+    session.add_all(
+        [
+            DBWebsite(url="https://unheard.example.com"),
+            DBWebsite(url="https://heard.example.com", recipients=[recipient]),
+        ]
+    )
+    session.flush()
+
+    dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
+
+    notices = {
+        str(card.get("data-website-name")): card.select_one(".no-recipients-notice") is not None
+        for card in dashboard.select(".website-card")
+    }
+    assert notices == {"Example Unheard": True, "Example Heard": False}
+
+
 def _run_scan_button_text(api_client: TestClient, url: str) -> str:
     """Returns the text of a website's run scan button on the dashboard."""
     dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
@@ -846,7 +920,7 @@ def first_scan_in_progress(
         await asyncio.Event().wait()
 
     mocker.patch("app.backend.websites.website_setup.check_pages_exist")  # The website is not loaded online
-    mocker.patch("app.backend.scanning.website_scan.get_website_updates", side_effect=crawl_until_cancelled)
+    mocker.patch("app.backend.scanning.website_scan.scan_whole_website", side_effect=crawl_until_cancelled)
     app.dependency_overrides[get_db_session] = lambda: session
     yield crawl_started
     app.dependency_overrides.clear()
@@ -930,12 +1004,37 @@ def test_adding_an_email_to_a_website_counts_as_emailing_it(
     assert recipient.last_email_at is not None
 
 
+def test_a_website_setting_sent_as_null_is_left_as_it_is(
+    api_client: TestClient, session: Session, test_website: website_models.WebsiteRead
+) -> None:
+    """Tests a setting sent as null (e.g. an empty number field) is ignored rather than failing with a database
+    error, while the other settings sent are still saved."""
+    response = api_client.patch(
+        f"/websites/{test_website.id}", json={"recommended_delay": None, "days_between_scans": 2}
+    )
+
+    assert response.status_code == 200, response.text
+    saved = session.get_one(DBWebsite, test_website.id)
+    assert (saved.recommended_delay, saved.days_between_scans) == (test_website.recommended_delay, 2)
+
+
+def test_a_website_cannot_be_set_to_make_no_requests_at_once(
+    api_client: TestClient, session: Session, test_website: website_models.WebsiteRead
+) -> None:
+    """Tests a concurrency of 0 is refused, as it would leave every scan of the website waiting forever."""
+    response = api_client.patch(f"/websites/{test_website.id}", json={"recommended_concurrent": 0})
+
+    assert response.status_code == 422, response.text
+    assert session.get_one(DBWebsite, test_website.id).recommended_concurrent == test_website.recommended_concurrent
+
+
 @pytest.mark.parametrize(
     "typed_url",
     [
         "/test_critical_page/",
         "https://www.test_website.com/test_critical_page",
         "https://TEST_WEBSITE.com/test_critical_page",
+        "http://test_website.com/test_critical_page",
     ],
 )
 def test_adding_a_critical_page_already_watched_is_refused(
@@ -946,7 +1045,8 @@ def test_adding_a_critical_page_already_watched_is_refused(
     typed_url: str,
 ) -> None:
     """Tests a critical page that is already watched is refused, including when it is written differently (a
-    trailing slash, no "www." or capitals in the domain), so the same page is not watched (and reported) twice."""
+    trailing slash, no "www.", capitals in the domain or http instead of https), so the same page is not watched
+    (and reported) twice."""
     mock_check_pages_exist = mocker.patch("app.backend.websites.website_setup.check_pages_exist")
 
     response = api_client.post(
@@ -1062,7 +1162,7 @@ def test_adding_a_website_already_watched_is_refused(
     response = api_client.post("/scanner/initial_scan", json={"url": url})
 
     assert response.status_code == 409, response.text
-    assert "is already being watched" in response.json()["detail"]
+    assert response.json()["detail"] == f"{test_website.url} is already being monitored."
     mock_check_pages_exist.assert_not_called()
 
 
@@ -1124,10 +1224,27 @@ def test_adding_a_website_with_the_same_email_twice_adds_it_once(
     assert [recipient.email for recipient in website.recipients] == ["jj@example.com"]
 
 
-def test_a_recipient_time_without_a_time_zone_is_refused(
-    api_client: TestClient, test_recipient: recipient_models.RecipientRead
-) -> None:
-    """Tests a time without a time zone is refused with a 422, as it cannot be saved as UTC."""
-    response = api_client.patch(f"/recipients/{test_recipient.id}", json={"last_email_at": "2026-10-08T10:00:00"})
+def test_a_recipient_time_without_a_time_zone_is_refused() -> None:
+    """Tests a time without a time zone is refused, as it cannot be saved as UTC."""
+    with pytest.raises(ValidationError):
+        recipient_models.RecipientUpdate.model_validate({"last_email_at": "2026-10-08T10:00:00"})
 
-    assert response.status_code == 422, response.text
+
+def test_a_websites_main_page_cannot_be_deleted(
+    api_client: TestClient, session: Session, test_website: website_models.WebsiteRead
+) -> None:
+    """Tests deleting a website's main page is refused with a 422 saying why, as it is always watched, while its
+    other critical pages can still be deleted."""
+    main_page = DBCriticalPage(website_id=test_website.id, url=str(test_website.url))
+    other_page = DBCriticalPage(website_id=test_website.id, url=f"{test_website.url}fees")
+    session.add_all([main_page, other_page])
+    session.flush()
+
+    main_page_response = api_client.delete(f"/critical_pages/{main_page.id}")
+    other_page_response = api_client.delete(f"/critical_pages/{other_page.id}")
+
+    assert main_page_response.status_code == 422, main_page_response.text
+    assert "always watched" in main_page_response.json()["detail"]
+    assert other_page_response.status_code == 204, other_page_response.text
+    remaining = session.scalars(select(DBCriticalPage.id).where(DBCriticalPage.website_id == test_website.id)).all()
+    assert remaining == [main_page.id]

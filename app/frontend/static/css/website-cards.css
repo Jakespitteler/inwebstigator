@@ -106,7 +106,8 @@
 }
 
 /* Explains that an inactive website only has its critical pages scanned, and why it is inactive */
-.website-notice {
+.website-notice,
+.no-recipients-notice {
     margin: 14px 0 0;
     padding: 10px 14px;
     font-size: 13.5px;
@@ -116,8 +117,9 @@
     border-radius: var(--radius-md);
 }
 
-/* The app deactivated the website itself, e.g. it is too large to scan */
-.website-notice-warning {
+/* The app deactivated the website itself (e.g. it is too large to scan), or nobody is emailed its reports */
+.website-notice-warning,
+.no-recipients-notice {
     color: var(--danger-text);
     background: var(--danger-bg);
     border-color: var(--danger-border);

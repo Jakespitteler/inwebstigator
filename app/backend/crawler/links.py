@@ -1,12 +1,10 @@
-import logging
 from pathlib import PurePosixPath
-from urllib.parse import ParseResult, urljoin, urlparse, urlsplit
+from urllib.parse import ParseResult, urljoin, urlparse
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
+from bs4.filter import SoupStrainer
 
-from app.core.urls import normalise_url, page_key, remove_repeated_pages, site_host
-
-logging.getLogger("httpx2").setLevel(logging.WARNING)
+from app.core.urls import normalise_url, remove_repeated_pages, site_host
 
 WEB_SCHEMES: frozenset[str] = frozenset({"http", "https"})
 
@@ -34,58 +32,6 @@ NON_PAGE_EXTENSIONS: frozenset[str] = frozenset(
         *(".exe", ".msi", ".dmg", ".apk", ".iso", ".epub"),
     }
 )
-
-
-def _links_to_pages_not_in(links: list[str], other_links: list[str]) -> list[str]:
-    """Finds the links that go to a page none of the other links go to.
-
-    Links are compared as pages (see `page_key`), so a link written differently for a page the other links
-    also go to (e.g. with "www.") is not counted. Links found exactly as written in the other links are skipped
-    first, so the slower page comparison only runs when something has changed.
-
-    Args:
-        links: URL strings to check.
-        other_links: URL strings to check them against.
-
-    Returns:
-        The links, each only once and in their original order, whose page is not among the other links.
-    """
-    other_link_set: set[str] = set(other_links)
-    unmatched_links: list[str] = [link for link in dict.fromkeys(links) if link not in other_link_set]
-    if not unmatched_links:
-        return []
-    other_pages: set[str] = {page_key(link) for link in other_links}
-    return [link for link in unmatched_links if page_key(link) not in other_pages]
-
-
-def find_added_links(previous_state: list[str], current_state: list[str]) -> list[str]:
-    """Identifies links that were added between a previous state and a current state.
-
-    A link now written differently for a page it already had (e.g. with "www.") is not counted as added.
-
-    Args:
-        previous_state: A list of URL strings representing the initial state.
-        current_state: A list of URL strings representing the updated state.
-
-    Returns:
-        A list of URL strings for pages in current_state but missing from previous_state.
-    """
-    return _links_to_pages_not_in(current_state, previous_state)
-
-
-def find_removed_links(previous_state: list[str], current_state: list[str]) -> list[str]:
-    """Identifies links that were removed between a previous state and a current state.
-
-    A link now written differently for a page it still has (e.g. without "www.") is not counted as removed.
-
-    Args:
-        previous_state: A list of URL strings representing the initial state.
-        current_state: A list of URL strings representing the updated state.
-
-    Returns:
-        A list of URL strings for pages in previous_state but missing from current_state.
-    """
-    return _links_to_pages_not_in(previous_state, current_state)
 
 
 def is_document(link: str) -> bool:
@@ -165,6 +111,35 @@ def is_internal_web_page(base_url: str, check_url: str) -> bool:
     return base_url_path == check_url_path or base_url_path in check_url_path.parents
 
 
+def _base_href(url: str, soup: BeautifulSoup) -> str:
+    """Works out the URL a page's relative links are resolved against: its `<base href>` if it has one, otherwise
+    the page's own URL.
+
+    Args:
+        url: The page's URL, after any redirects.
+        soup: The parsed page.
+
+    Returns:
+        The URL to resolve relative links against.
+    """
+    base_tag = soup.find("base", href=True)
+    return urljoin(url, str(base_tag["href"]).strip()) if isinstance(base_tag, Tag) else url
+
+
+def page_link_base(url: str, html_content: str) -> str:
+    """Works out the URL a page's relative links are resolved against, from its whole HTML (`<base href>` is in its
+    `<head>`), for when the links are then read from only part of the page.
+
+    Args:
+        url: The page's URL, after any redirects.
+        html_content: The page's whole HTML.
+
+    Returns:
+        The page's `<base href>` if it has one, otherwise the page's own URL.
+    """
+    return _base_href(url, BeautifulSoup(html_content, "html.parser", parse_only=SoupStrainer("base")))
+
+
 def extract_links_from_html(
     url: str,
     html_content: str,
@@ -174,7 +149,7 @@ def extract_links_from_html(
     """Extracts, resolves, and normalises unique links from HTML content.
 
     Args:
-        url: The URL of the page, used to resolve relative paths.
+        url: The URL of the page, used to resolve relative paths, unless the page has a `<base href>`.
         html_content: The raw HTML string to be parsed for links.
         internal_only: If True, filters links to only those sharing the base domain and path scope.
         base_url: Optional override URL string used to evaluate domain boundaries when
@@ -194,8 +169,10 @@ def extract_links_from_html(
     if not parsed_base.netloc:
         raise ValueError(f"Invalid url provided: {url}")
 
+    soup = BeautifulSoup(html_content, "html.parser")
+    link_base: str = _base_href(url, soup)
     links: set[str] = set()
-    for tag in BeautifulSoup(html_content, "html.parser").find_all("a", href=True):
+    for tag in soup.find_all("a", href=True):
         href: str = str(tag["href"]).strip()
 
         # Skip empty links and links to a part of the same page
@@ -203,7 +180,7 @@ def extract_links_from_html(
             continue
 
         # Resolve relative links into absolute URLs, keeping only links to web pages
-        absolute_url: str = urljoin(url, href)
+        absolute_url: str = urljoin(link_base, href)
         if urlparse(absolute_url).scheme not in WEB_SCHEMES:
             continue
 
@@ -214,15 +191,3 @@ def extract_links_from_html(
         links.add(normalise_url(absolute_url))
 
     return remove_repeated_pages(sorted(links))
-
-
-def website_name(url: str) -> str:
-    """Display the hostname, including its domain ending, without a leading www."""
-    try:
-        hostname = (urlsplit(url).hostname or "").rstrip(".")
-    except ValueError:
-        return "Website"
-    if not hostname:
-        return "Website"
-
-    return hostname.removeprefix("www.")

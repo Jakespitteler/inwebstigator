@@ -23,6 +23,11 @@ PERMANENT_SMTP_ERRORS: tuple[type[smtplib.SMTPException], ...] = (
 RETRYABLE_ERRORS: tuple[type[Exception], ...] = (smtplib.SMTPException, TimeoutError, ConnectionError)
 FIRST_PERMANENT_REPLY_CODE: int = 500
 BOUNCE_SENDERS_SEARCH: str = '(OR FROM "mailer-daemon" FROM "postmaster")'
+# What comes just before an address in delivery failure emails, e.g. "delivered to bob@x.com", "<bob@x.com>" or
+# "rfc822;bob@x.com". An inbox search matches any part of the text, so searching for the address alone would also
+# match a longer address that ends with it (e.g. jimbob@x.com for bob@x.com). The last is a double quote, escaped as
+# the search puts each one inside double quotes.
+ADDRESS_PREFIXES: tuple[str, ...] = (" ", "<", ";", ":", "(", "'", '\\"')
 logger: logging.Logger = logging.getLogger(__name__)
 
 
@@ -308,10 +313,28 @@ def _open_inbox(settings: InboxSettings) -> imaplib.IMAP4_SSL | None:
     return inbox
 
 
+def _address_search(address: str) -> str:
+    """Builds the inbox search for an email address, only where it starts after a space or punctuation.
+
+    Args:
+        address: The email address to look for. It must already be validated, as it is placed in the search.
+
+    Returns:
+        The search, e.g. `OR TEXT " bob@x.com" OR TEXT "<bob@x.com" ...`.
+    """
+    searches: list[str] = [f'TEXT "{prefix}{address}"' for prefix in ADDRESS_PREFIXES]
+    combined: str = searches[-1]
+    for search in reversed(searches[:-1]):
+        combined = f"OR {search} {combined}"
+    return combined
+
+
 def _count_bounces(inbox: imaplib.IMAP4_SSL, address: str) -> int:
     """Counts the delivery failure emails in the inbox that mention an address.
 
     Gmail and most other providers send them from "mailer-daemon", and Microsoft 365 and Outlook from "postmaster".
+    A delivery failure about a longer address that ends with this one (e.g. jimbob@x.com for bob@x.com) is not
+    counted (see `_address_search`).
 
     Args:
         inbox: A logged in connection to the inbox.
@@ -321,7 +344,7 @@ def _count_bounces(inbox: imaplib.IMAP4_SSL, address: str) -> int:
         The number of delivery failure emails that mention the address.
     """
     inbox.select(mailbox="INBOX", readonly=True)
-    _, matches = inbox.search(None, f'({BOUNCE_SENDERS_SEARCH} TEXT "{address}")')
+    _, matches = inbox.search(None, f"({BOUNCE_SENDERS_SEARCH} ({_address_search(address)}))")
     return len((matches[0] or b"").split())
 
 

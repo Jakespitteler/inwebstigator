@@ -1,4 +1,5 @@
 import asyncio
+import smtplib
 from datetime import UTC, datetime
 
 from pydantic import HttpUrl
@@ -6,11 +7,11 @@ from pydantic import HttpUrl
 from app.backend.crawler.page_fetcher import new_http_client
 from app.backend.email_service.delivery import EmailSender
 from app.backend.email_service.email_wording import manual_scan_subject
-from app.backend.email_service.html_bodies import generate_scan_report_html
+from app.backend.email_service.html_bodies import scan_report_html
 from app.backend.email_service.message_builder import OutgoingEmail
-from app.backend.scanning.notifications import send_notifications
-from app.backend.scanning.scan_reports import record_reports_emailed
+from app.backend.scanning.scan_reports import email_report_once
 from app.backend.scanning.website_scan import scan_website
+from app.core.errors import ReportNotEmailedError
 from app.db.services.website_service import WebsiteService
 from app.db.session import db_context
 from app.models.scan_run_models import ScanRunRead
@@ -61,8 +62,8 @@ async def scan_website_now(
         TrafficError: If the website rate limited a scan that was given its own delay or concurrency.
         ScanAlreadyQueuedError: If the website is already queued or being scanned.
         ScanCancelledError: If the scan was cancelled before it finished.
-        smtplib.SMTPException: If the report could not be emailed.
-        OSError: If the mail server could not be reached.
+        ReportNotEmailedError: If the scan finished but its report could not be emailed (e.g. the mail server could
+            not be reached). The report is kept to send with the next scheduled scan.
     """
     with db_context() as session:
         website: WebsiteRead = WebsiteService(session).get_by_url(url)
@@ -76,11 +77,14 @@ async def scan_website_now(
     if not scan_run.has_report:
         return None
 
-    report: str = generate_scan_report_html(website.url, scan_run)
+    report: str = scan_report_html(website.url, scan_run)
     recipient_emails: list[str] = _report_recipients(website, extra_email)
     if recipient_emails:
         subject: str = manual_scan_subject(str(website.url))
         emails = [OutgoingEmail(to=email, subject=subject, html_body=report) for email in recipient_emails]
-        await asyncio.to_thread(send_notifications, emails, email_sender)
-        record_reports_emailed([scan_run.id])
+        website_recipients: set[str] = {recipient.email for recipient in website.recipients}
+        try:
+            await asyncio.to_thread(email_report_once, scan_run.id, emails, website_recipients, email_sender)
+        except (smtplib.SMTPException, OSError) as error:
+            raise ReportNotEmailedError(str(website.url)) from error
     return report

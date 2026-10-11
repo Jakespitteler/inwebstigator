@@ -9,6 +9,9 @@ from app.models.content_block_models import ContentBlock, HTMLBlockType
 
 HEADING_TAGS: frozenset[str] = frozenset({"h1", "h2", "h3", "h4", "h5", "h6"})
 IGNORED_SECTION_TAGS: frozenset[str] = frozenset({"nav", "aside"})
+PAGE_FRAME_TAGS: frozenset[str] = frozenset({"header", "footer"})
+# A header or footer inside one of these belongs to that content (e.g. an article's title and date), not the page
+SECTIONING_TAGS: frozenset[str] = frozenset({"article", "section", "main", "aside", "nav"})
 FORM_CONTROL_TAGS: frozenset[str] = frozenset({"select", "option", "optgroup", "datalist", "textarea"})
 INLINE_TAGS: frozenset[str] = frozenset(
     {
@@ -49,11 +52,11 @@ INLINE_TAGS: frozenset[str] = frozenset(
 NO_HEADING: str = "No heading"
 
 
-def normalize_text(text: str) -> str:
+def normalise_text(text: str) -> str:
     """Removes extra whitespace and newlines from a string.
 
     Args:
-        text: The raw string to clean and normalize.
+        text: The raw string to clean and normalise.
 
     Returns:
         A single-line string with all continuous whitespace collapsed into
@@ -69,10 +72,10 @@ def parse_standard_text(tag: Tag) -> str:
         tag: The BeautifulSoup Tag object to extract text content from.
 
     Returns:
-        The normalized text content extracted from the tag, with space-separated
+        The normalised text content extracted from the tag, with space-separated
         text nodes.
     """
-    return normalize_text(tag.get_text(" ", strip=True))
+    return normalise_text(tag.get_text(" ", strip=True))
 
 
 def parse_table_row(tag: Tag) -> str:
@@ -85,7 +88,7 @@ def parse_table_row(tag: Tag) -> str:
         A pipe-delimited string representing the row contents (e.g., "Col 1 | Col 2").
     """
     cells = tag.find_all(["th", "td"])
-    return " | ".join(normalize_text(cell.get_text(" ", strip=True)) for cell in cells)
+    return " | ".join(normalise_text(cell.get_text(" ", strip=True)) for cell in cells)
 
 
 BLOCK_PARSERS: dict[HTMLBlockType, Callable[[Tag], str]] = {
@@ -105,7 +108,7 @@ def clean_html(soup: BeautifulSoup) -> BeautifulSoup:
     """Removes non-content elements, HTML comments, and embedded raw HTML text nodes from a DOM tree.
 
     Args:
-        soup: The BeautifulSoup DOM tree to sanitize.
+        soup: The BeautifulSoup DOM tree to sanitise.
 
     Returns:
         The mutated BeautifulSoup object with unwanted tags, comments, and raw text HTML elements removed.
@@ -137,7 +140,7 @@ def extract_last_updated(container: Tag) -> str | None:
         container: The root Tag or BeautifulSoup object to search.
 
     Returns:
-        The normalized text from the immediate sibling element of the 'Last Updated:' heading,
+        The normalised text from the immediate sibling element of the 'Last Updated:' heading,
         or None if no matching heading or sibling date element is found.
     """
     heading: Tag | None = container.find(
@@ -216,14 +219,14 @@ def _page_pieces(container: Tag, ignore_parents: frozenset[str]) -> Iterator[Tag
     line_parts: list[str] = []
     for child in container.children:
         if isinstance(child, Tag) and not _is_inline(child):
-            if loose_text := normalize_text(" ".join(line_parts)):
+            if loose_text := normalise_text(" ".join(line_parts)):
                 yield loose_text
             line_parts = []
             yield from _pieces_of_tag(child, ignore_parents)
         else:
             line_parts.append(_text_of(child))
 
-    if loose_text := normalize_text(" ".join(line_parts)):
+    if loose_text := normalise_text(" ".join(line_parts)):
         yield loose_text
 
 
@@ -277,9 +280,43 @@ def extract_sequential_blocks(container: Tag, ignore_parents: frozenset[str]) ->
     return headings, blocks
 
 
+def _without_page_header_and_footer[Container: Tag](container: Container) -> Container:
+    """Removes the page's own header and footer (e.g. its logo, contact details and copyright line), which are the
+    same on every page and often change (e.g. the year), so they are not reported as changes.
+
+    A header or footer inside an article or section belongs to that content (e.g. an article's title), so it is kept.
+
+    Args:
+        container: The part of the page that is watched, which is changed in place.
+
+    Returns:
+        The same container, without the page's header and footer.
+    """
+    for frame in container.find_all(list(PAGE_FRAME_TAGS)):
+        if not frame.decomposed and frame.find_parent(list(SECTIONING_TAGS)) is None:
+            frame.decompose()
+    return container
+
+
+def _watched_part(soup: BeautifulSoup) -> Tag | BeautifulSoup:
+    """Finds the part of a page whose changes are watched: its `<main>`, or else its `<body>` without the page's own
+    header and footer.
+
+    Args:
+        soup: The parsed page, which may be changed in place.
+
+    Returns:
+        The watched part of the page.
+    """
+    main: Tag | None = soup.find("main")
+    if main is not None:
+        return main
+    return _without_page_header_and_footer(soup.find("body") or soup)
+
+
 def main_content_html(html: str) -> str:
-    """Returns the HTML of the part of a page whose changes are watched: its `<main>` (or `<body>`), without its
-    navigation and side panels (`<nav>`, `<aside>`).
+    """Returns the HTML of the part of a page whose changes are watched: its `<main>` (or `<body>` without the page's
+    own header and footer), without its navigation and side panels (`<nav>`, `<aside>`).
 
     Links are taken from the same part of the page as the text, so a change to a menu shared by every page is not
     reported as a change on every critical page.
@@ -290,8 +327,7 @@ def main_content_html(html: str) -> str:
     Returns:
         The HTML of the page's main content.
     """
-    soup = BeautifulSoup(html, "html.parser")
-    main_container: Tag | BeautifulSoup = soup.find("main") or soup.find("body") or soup
+    main_container: Tag | BeautifulSoup = _watched_part(BeautifulSoup(html, "html.parser"))
     for ignored_section in main_container.find_all(list(IGNORED_SECTION_TAGS)):
         ignored_section.decompose()
     return str(main_container)
@@ -300,8 +336,8 @@ def main_content_html(html: str) -> str:
 def parse_html(html: str) -> PageContent:
     """Parses a raw HTML string into structured content blocks, headings and metadata.
 
-    Cleans script and noise tags, locates the primary document container (`<main>`,
-    `<body>`, or root), excludes non-content regions (`<nav>`, `<aside>`), and aggregates
+    Cleans script and noise tags, locates the primary document container (`<main>`, or `<body>` or the root without
+    the page's own header and footer), excludes non-content regions (`<nav>`, `<aside>`), and aggregates
     parsed contents into a unified PageContent data structure.
 
     Args:
@@ -312,7 +348,7 @@ def parse_html(html: str) -> PageContent:
         content blocks, and last-updated metadata.
     """
     cleaned_soup: BeautifulSoup = clean_html(BeautifulSoup(html, "html.parser"))
-    main_container: Tag | BeautifulSoup = cleaned_soup.find("main") or cleaned_soup.find("body") or cleaned_soup
+    main_container: Tag | BeautifulSoup = _watched_part(cleaned_soup)
 
     headings, blocks = extract_sequential_blocks(main_container, IGNORED_SECTION_TAGS)
     return PageContent(headings=headings, blocks=blocks, last_updated=extract_last_updated(main_container))

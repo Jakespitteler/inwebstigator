@@ -256,7 +256,7 @@ def running_app(tmp_path_factory: pytest.TempPathFactory) -> Iterator[RunningApp
 
         monkeypatch.setattr("app.backend.websites.website_setup.new_http_client", websites.client)
         monkeypatch.setattr("app.backend.scanning.manual_scan.new_http_client", websites.client)
-        monkeypatch.setattr("app.backend.scanning.all_websites_scan.AsyncClient", websites.client)
+        monkeypatch.setattr("app.backend.scanning.all_websites_scan.new_http_client", websites.client)
         # Emails are recorded by `email_sender` and `skip_email_confirmations` below, which run for every test
 
         server, thread = _start_server(_free_port())

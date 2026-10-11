@@ -44,10 +44,15 @@
   only its name (and potentially its link) and a scan button. Clicking anywhere
   in the website's box should expand it to show the additional information.
   This should make the dashboard easier to use with multiple monitored sites.
-- **Improve website name display.** For example, `teqsa.gov.au` should be
-  displayed as `TEQSA` rather than the full domain. Investigate whether a
-  library can reliably extract a readable site name from a URL. Note that
-  simply removing the `.com`/`.gov.au` suffix is not sufficient for all cases.
+- **Website names (decided).** The emails and the add website form name a
+  website by its host name without "www.", then its path if it is only part of
+  a website, e.g. `teqsa.gov.au` or `example.gov.au/research` (`website_name`
+  in `app/core/urls.py`, and `displayName` in `add-website.js`). The
+  dashboard's cards show a friendlier title read from the saved home page,
+  e.g. `TEQSA`, `Education NSW` or `Example News` for news.example.com
+  (`website_card_title` in `app/backend/websites/website_titles.py`). Each
+  scan works the title out once and saves it, so the dashboard does not read
+  every home page each time it loads.
 - **Make the latest scan time per-site.** Currently the latest scan time appears
   to be global and is displayed for all websites. Each monitored website
   should display its own latest scan time.
@@ -95,7 +100,7 @@ reports           records the scan, then emails its report to the website's reci
 | stage | code |
 | --- | --- |
 | crawler | `app/backend/crawler/` |
-| change detection | `app/backend/scanning/change_detection.py`, with `app/backend/diff_checker/` comparing the text of each critical page |
+| change detection | `app/backend/scanning/change_detection.py` compares the crawl with the last scan, and `app/backend/scanning/critical_page_checks.py` checks each critical page, with `app/backend/diff_checker/` comparing its text |
 | reports | `app/backend/scanning/website_scan.py` records the scan, `app/backend/scanning/scan_reports.py` emails it, and `app/backend/email_service/` writes and sends the emails |
 
 A website's first scan, when it is added, only saves each page as a starting
@@ -115,7 +120,8 @@ on every critical page.
 
 The wording (subjects, times) is in `email_service/email_wording.py`, and the
 HTML is in `email_service/templates/`, rendered by `email_service/html_bodies.py`,
-which also copies the CSS onto each tag, as many email apps ignore `<style>`.
+and `email_service/style_inliner.py` copies the CSS onto each tag, as many email
+apps ignore `<style>`.
 
 ### Email format
 
@@ -206,6 +212,40 @@ The app logs to `%LOCALAPPDATA%\inwebstigator\logs\inwebstigator.log`, as well
 as the terminal, keeping the last few files (`LOG_FILE_MAX_BYTES`,
 `LOG_FILE_BACKUP_COUNT`), so a tester can send it to the team.
 
+### build the Windows app
+
+The installer testers are sent is built on Windows in two steps: PyInstaller
+packages the app (`inwebstigator.spec`) into `dist\inwebstigator\`, then
+Inno Setup wraps that folder into one installer
+(`inwebstigator_installer_script.iss`). One script does both:
+
+```powershell
+copy .env.example .env    # then fill in the email settings
+powershell -ExecutionPolicy Bypass -File scripts\build_installer.ps1
+```
+
+It needs [uv](https://docs.astral.sh/uv/) and
+[Inno Setup](https://jrsoftware.org/isdl.php) 6.5 or later, and builds
+`dist\Inwebstigator Installer.exe`. It cannot be built on macOS or Linux, as
+PyInstaller only builds for the system it runs on.
+
+- `.env` is put in the installer, next to `inwebstigator.exe`, which is where
+  the installed app reads its settings from. It holds the email account's
+  password, so only send the installer to people who should have it.
+- The installer installs for the person running it (in
+  `%LOCALAPPDATA%\Programs\Inwebstigator`), so it needs no administrator
+  access. It adds a Start menu shortcut, an optional desktop shortcut and a
+  shortcut that starts the app at sign-in (a box in the installer, ticked by
+  default), and asks for the app to be quit first if it is running. Uninstalling also deletes the app's data in
+  `%LOCALAPPDATA%\inwebstigator`.
+- The app is built without a console window, as it runs in the system tray.
+  Its log file (above) records what a console would have shown.
+- Change `MyAppVersion` in the installer script for each version sent out.
+- The "Build Windows app" GitHub Actions workflow runs the same script on
+  GitHub's Windows machines whenever the build files change, and checks the
+  packaged app starts. It uses `.env.example`, so its installer cannot send
+  email and is only for checking the build.
+
 ### The dashboard's files
 
 The dashboard is one page, `app/frontend/templates/index.html`, built from
@@ -237,7 +277,9 @@ cp .env.example .env      # then fill it in
 ```
 
 `app/core/config.py` reads `.env` for the whole project on import, so there is
-nothing to `source`. Anything already exported wins over the file, so you can
+nothing to `source`. It is read from the project's folder, or in the packaged
+app from the folder `inwebstigator.exe` is in, whichever folder the app was
+started from. Anything already exported wins over the file, so you can
 still override a setting for one run
 (`EMAIL_TIME_ZONE=UTC uv run python inwebstigator.py`). Every field of `Config`
 can be set this way, by its name in capitals. `.env` is gitignored — never

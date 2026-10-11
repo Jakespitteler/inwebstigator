@@ -251,9 +251,12 @@ async def test_crawl_site_visits_a_page_linked_with_and_without_www_once(
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
 ):
     """Tests a website that answers on both example.com and www.example.com without redirecting, and links to
-    both (and with capitals in the domain), has each page visited and returned once."""
+    both (and with capitals in the domain, or with http), has each page visited and returned once."""
     page_paths: dict[str, str] = {
-        "/": '<a href="https://www.example.com/about">About</a><a href="https://EXAMPLE.com/about/">About</a>',
+        "/": (
+            '<a href="https://www.example.com/about">About</a><a href="https://EXAMPLE.com/about/">About</a>'
+            '<a href="http://example.com/about">About</a>'
+        ),
         "/about": '<a href="https://example.com/">Home</a><a href="https://www.example.com/">Home</a>',
     }
     requested_urls: list[str] = []
@@ -488,6 +491,26 @@ async def test_crawl_site_skips_forbidden_pages_below_the_403_threshold() -> Non
         visited: set[str] = await crawl_site(client, "https://example.com", max_pages=10, batch_403_threshold=4)
 
     assert visited == {"https://example.com/"}
+
+
+@pytest.mark.anyio
+async def test_crawl_site_is_not_blocked_when_forbidden_pages_are_a_small_share_of_the_batch() -> None:
+    """Tests a round with as many forbidden (403) pages as the threshold, but mostly pages that load (e.g. a website
+    with many staff-only links), only leaves the forbidden pages out rather than treating the website as blocking."""
+    forbidden_paths: list[str] = ["/staff-one", "/staff-two"]
+    public_paths: list[str] = ["/one", "/two", "/three"]
+    handler: RequestHandler = _serve_pages(
+        {"/": "".join(f'<a href="{path}">Page</a>' for path in [*forbidden_paths, *public_paths])}
+        | dict.fromkeys(public_paths, "<p>Public page.</p>"),
+        error_statuses=dict.fromkeys(forbidden_paths, 403),
+    )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        visited: set[str] = await crawl_site(
+            client, "https://example.com", max_pages=10, batch_403_threshold=len(forbidden_paths), batch_403_ratio=0.5
+        )
+
+    assert visited == {"https://example.com/", *(f"https://example.com{path}" for path in public_paths)}
 
 
 @pytest.mark.anyio

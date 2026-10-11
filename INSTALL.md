@@ -69,7 +69,8 @@ it catches up on any missed scans shortly after you next open it.
 
 **After restarting the computer,** there is nothing to do: Inwebstigator
 starts by itself when you sign in to Windows, and catches up on any scans
-missed while the computer was off.
+missed while the computer was off. (If you unticked "Start Inwebstigator when
+I sign in to Windows" when installing, open it from the Start menu instead.)
 
 **Emails you'll receive** (they come from the Inwebstigator email account, not
 from a person):
@@ -81,7 +82,8 @@ from a person):
 - **Website update:** something changed. The email shows what's changed. It's
   also sent if a website couldn't be scanned properly, e.g. it couldn't be
   reached. If the email can't be sent at the time, it is sent with the next
-  scan.
+  scan. A long list of new or removed pages is cut short in the email; the
+  **Updates** tab lists them all.
 - **Manual scan:** the report from a **Run Scan Now**, sent if it found
   anything.
 - **Health check:** sent about once a week, so you know Inwebstigator is still
@@ -131,7 +133,7 @@ Each website has its own box. Click it to open or close it. In the box you can:
 - **Add Email** to send this website's reports to another address, or
   **Delete** one.
 - **Delete Website** to stop watching it. This also removes its saved
-  history, so you'll be asked to type the website's name to confirm.
+  history, so you'll be asked to type `CONFIRM` first.
 
 **Run All Scans** at the top scans every website straight away.
 

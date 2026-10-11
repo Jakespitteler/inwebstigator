@@ -6,7 +6,9 @@ from collections.abc import Callable
 
 from playwright.sync_api import Locator, Page, expect
 
+from app.backend.scanning.scan_failures import handle_too_large
 from app.backend.scanning.scan_queue import scan_queue
+from app.db.services.website_service import WebsiteService
 from tests.e2e.conftest import API_HEADERS, RunningApp
 
 # As the app saves it, with the "/" a website's address always gets
@@ -250,6 +252,29 @@ def test_saving_scan_settings(open_dashboard: Callable[..., Page], app_server: R
     card = _card(page)
     expect(card.locator(".run-scan-button")).to_have_text(re.compile("Scan critical pages"))
     expect(card.locator(".website-notice")).to_be_visible()
+
+
+def test_saving_one_setting_keeps_what_the_app_changed_since_the_page_loaded(
+    open_dashboard: Callable[..., Page], app_server: RunningApp
+) -> None:
+    """Tests changing one setting on a page loaded before the app switched the website off (e.g. it was found too
+    large) only saves that setting, rather than switching the website back on with the page's old values."""
+    app_server.add_website(WEBSITE_URL)
+    page = open_dashboard()
+    with app_server.session() as session:
+        [website] = app_server.saved_websites()
+        handle_too_large(WebsiteService(session), website.id, max_pages=50_000)
+        session.commit()
+
+    card = _open_card(page)
+    card.locator(".scan-settings summary").click()
+    settings = card.locator(".scan-settings-form")
+    settings.locator(".days-between-scans").fill("3")
+    with page.expect_navigation():
+        settings.get_by_role("button", name="Save Settings").click()
+
+    [website] = app_server.saved_websites()
+    assert (website.active, website.deactivated_reason, website.days_between_scans) == (False, "too_large", 3)
 
 
 # ======================================

@@ -106,6 +106,18 @@ class ScanRunService:
         )
         return [ScanRunRead.model_validate(scan_run_record) for scan_run_record in self._db.scalars(statement)]
 
+    def is_awaiting_email(self, id: uuid.UUID) -> bool:
+        """Checks whether a scan's report is still waiting to be emailed.
+
+        Args:
+            id: The scan.
+
+        Returns:
+            True if the scan has a report that has not been emailed yet.
+        """
+        statement: Select[uuid.UUID] = select(DBScanRun.id).where(DBScanRun.id == id, _is_awaiting_email())
+        return self._db.scalar(statement) is not None
+
     def mark_emailed(self, ids: Collection[uuid.UUID], emailed_at: datetime) -> None:
         """Records that the reports of some scans have been emailed, so they are not sent again.
 

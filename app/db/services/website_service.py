@@ -6,9 +6,8 @@ from datetime import UTC, datetime, timedelta
 from pydantic import HttpUrl
 from sqlalchemy import select
 
-from app.core.config import config
 from app.core.errors import NotFoundError, WebsiteAlreadyMonitoredError
-from app.core.urls import remove_repeated_pages, same_page_key
+from app.core.urls import is_same_page, page_key, remove_repeated_pages
 from app.db import repository
 from app.db.schema import DBWebsite
 from app.db.services.base_crud_service import BaseCRUDService
@@ -17,11 +16,10 @@ from app.db.services.internal_link_service import InternalLinkService
 from app.db.services.recipient_service import RecipientService
 from app.models.critical_page_models import CriticalPageCreate
 from app.models.recipient_models import RecipientCreate
-from app.models.website_models import DeactivationReason, WebsiteCreate, WebsiteRead, WebsiteUpdate
+from app.models.scan_result_models import WebsiteScanResult
+from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
 
 logger: logging.Logger = logging.getLogger(__name__)
-
-MAX_DELAY: float = config.web_crawler_max_delay
 
 
 class WebsiteService(BaseCRUDService[DBWebsite, WebsiteRead, WebsiteCreate, WebsiteUpdate]):
@@ -65,10 +63,10 @@ class WebsiteService(BaseCRUDService[DBWebsite, WebsiteRead, WebsiteCreate, Webs
         Raises:
             NotFoundError: If no matching website record exists for the provided URL.
         """
-        url_key: tuple[str, str, str] = same_page_key(str(url))
+        url_key: str = page_key(str(url))
         # Only the ids and URLs are loaded to search, as a website's internal links can number thousands
         for website_id, website_url in self._db.execute(select(DBWebsite.id, DBWebsite.url)).all():
-            if same_page_key(website_url) == url_key:
+            if page_key(website_url) == url_key:
                 return self.get(website_id)
 
         raise NotFoundError(attributes={"url": url})
@@ -97,8 +95,15 @@ class WebsiteService(BaseCRUDService[DBWebsite, WebsiteRead, WebsiteCreate, Webs
         repository.add(self._db, record=website_record)
 
         critical_page_service = CriticalPageService(self._db)
-        # Each page is created once, even if written twice (e.g. "/news" and "/news/")
-        for critical_page_url in remove_repeated_pages([str(model_create.url), *model_create.critical_pages]):
+        # Each page is created once, even if written twice (e.g. "/news" and "/news/"). The home page is always the
+        # website's own address, so the dashboard and the scans can tell which page it is.
+        website_url: str = str(model_create.url)
+        other_pages: list[str] = [
+            page_url
+            for page_url in remove_repeated_pages(model_create.critical_pages)
+            if not is_same_page(page_url, website_url)
+        ]
+        for critical_page_url in [website_url, *other_pages]:
             critical_page_service.create(
                 CriticalPageCreate(website_id=website_record.id, url=HttpUrl(critical_page_url))
             )
@@ -125,31 +130,30 @@ class WebsiteService(BaseCRUDService[DBWebsite, WebsiteRead, WebsiteCreate, Webs
             recipient_service.link_recipient_and_website(website_id=website_id, recipient_id=recipient.id)
 
     def update(self, id: uuid.UUID, model_update: WebsiteUpdate) -> WebsiteRead:
-        """Updates attributes of an existing website record and syncs its sub-resources.
+        """Updates attributes of an existing website record and which recipients are emailed about it.
 
-        Handles updates to website URLs, batch updates for monitored critical pages,
-        and batch additions/removals of internal links. Re-activating a website clears
-        why it was deactivated.
+        Re-activating an inactive website clears why it was deactivated and its failed attempts, so one more rate
+        limit does not switch it off again.
 
         Args:
             id: The UUID identifier of the website record to update.
-            model_update: The WebsiteUpdate schema containing modified fields and sub-resource updates.
+            model_update: The WebsiteUpdate schema containing modified fields and the recipients to add or remove.
 
         Returns:
             The refreshed WebsiteRead data model instance following updates.
 
         Raises:
-            NotFoundError: If the website record or any referenced sub-resource does not exist.
+            NotFoundError: If the website record or a recipient being removed does not exist.
             IntegrityError: If updated attributes violate database constraints.
         """
         website_record: DBWebsite = repository.get(self._db, table=DBWebsite, id=id)
 
         update_data = model_update.model_dump(
             exclude_unset=True,
-            exclude={"critical_page_updates", "recipient_emails"},
+            exclude={"add_recipient_emails", "remove_recipient_emails"},
         )
-        if model_update.active:
-            update_data["deactivated_reason"] = None
+        if model_update.active and not website_record.active:
+            update_data |= {"deactivated_reason": None, "failed_attempts_at_min_speed": 0}
 
         recipient_service = RecipientService(self._db)
         if model_update.add_recipient_emails:
@@ -161,32 +165,35 @@ class WebsiteService(BaseCRUDService[DBWebsite, WebsiteRead, WebsiteCreate, Webs
                 recipient_service.unlink_recipient_and_website(website_id=website_record.id, recipient_id=recipient.id)
 
         if update_data:
-            website_record = repository.update(self._db, record=website_record, updates=update_data)
+            repository.update(self._db, record=website_record, updates=update_data)
 
-        if model_update.critical_page_updates:
-            critical_page_service = CriticalPageService(self._db)
-            for critical_page_id, critical_page_updates in model_update.critical_page_updates.items():
-                critical_page_service.update(id=critical_page_id, model_update=critical_page_updates)
+        website_record: DBWebsite = repository.get(self._db, table=DBWebsite, id=id)
+        return WebsiteRead.model_validate(website_record)
+
+    def save_scan_result(self, id: uuid.UUID, scan_result: WebsiteScanResult) -> None:
+        """Saves what a scan of a website found: each critical page as it is now, and the pages found on the website.
+
+        What changed is not saved here, but in the scan's history (see `ScanRunService`).
+
+        Args:
+            id: The UUID identifier of the website that was scanned.
+            scan_result: What the scan found.
+
+        Raises:
+            NotFoundError: If one of the critical pages does not exist.
+            IntegrityError: If a page found on the website is already saved for it.
+        """
+        critical_page_service = CriticalPageService(self._db)
+        for critical_page_id, page_result in (scan_result.critical_page_results or {}).items():
+            critical_page_service.update(id=critical_page_id, model_update=page_result.as_critical_page_update())
 
         internal_link_service = InternalLinkService(self._db)
-        if model_update.initial_internal_links:
-            internal_link_service.create_batch(
-                urls=model_update.initial_internal_links,
-                website_id=website_record.id,
-            )
-        if model_update.recent_added_internal_links:
-            internal_link_service.create_batch(
-                urls=model_update.recent_added_internal_links,
-                website_id=website_record.id,
-            )
-        if model_update.recent_removed_internal_links:
-            internal_link_service.delete_batch(
-                urls=model_update.recent_removed_internal_links,
-                website_id=website_record.id,
-            )
-        website_record: DBWebsite = repository.get(self._db, table=DBWebsite, id=id)
-
-        return WebsiteRead.model_validate(website_record)
+        if scan_result.baseline_internal_links:
+            internal_link_service.create_batch(urls=scan_result.baseline_internal_links, website_id=id)
+        if scan_result.internal_links_added:
+            internal_link_service.create_batch(urls=scan_result.internal_links_added, website_id=id)
+        if scan_result.internal_links_removed:
+            internal_link_service.delete_batch(urls=scan_result.internal_links_removed, website_id=id)
 
     def delete(self, id: uuid.UUID) -> None:
         """Deletes a website record and associated resources from the database by its primary key.
@@ -224,113 +231,6 @@ class WebsiteService(BaseCRUDService[DBWebsite, WebsiteRead, WebsiteCreate, Webs
         )
         logger.warning(f"Website {website_record.url} placed on cooldown until {on_cooldown_until}.")
         return WebsiteRead.model_validate(website_record)
-
-    def throttle_and_cooldown(self, id: uuid.UUID, hours: int = 24) -> WebsiteRead:
-        """Increases crawler delay, decreases concurrency limits, and sets a cooldown period.
-
-        Args:
-            id: The UUID identifier of the target website record.
-            hours: The number of hours to keep the website on cooldown. Defaults to 24.
-
-        Returns:
-            The refreshed WebsiteRead data model instance reflecting updated throttling and cooldown settings.
-
-        Raises:
-            NotFoundError: If no website record matches the provided UUID.
-        """
-        website_record: DBWebsite = repository.get(self._db, table=DBWebsite, id=id)
-
-        new_delay: float = min(config.web_crawler_max_delay, website_record.recommended_delay + 0.5)
-        new_concurrent: int = max(config.web_crawler_min_concurrent, website_record.recommended_concurrent // 2)
-
-        on_cooldown_until = datetime.now(UTC) + timedelta(hours=hours)
-
-        updated_record = repository.update(
-            self._db,
-            record=website_record,
-            updates=WebsiteUpdate(
-                recommended_delay=new_delay,
-                recommended_concurrent=new_concurrent,
-                on_cooldown_until=on_cooldown_until,
-            ).model_dump(exclude_unset=True),
-        )
-
-        logger.warning(
-            f"Website {website_record.url} throttled ({new_delay=}s, {new_concurrent=}) "
-            f"and placed on cooldown until {on_cooldown_until}."
-        )
-        return WebsiteRead.model_validate(updated_record)
-
-    def handle_traffic_error(self, website: WebsiteRead) -> str:
-        """Encapsulates rate-limit policy, throttling, cool downs, and deactivation logic.
-
-        If the crawler is operating above minimum speed limits, throttles requests and sets
-        a 24-hour cooldown. If already operating at minimum crawl speed, increments the
-        consecutive failure counter and sets a 24-hour cooldown, automatically deactivating
-        the website if the maximum failure threshold is reached.
-
-        Args:
-            website (WebsiteRead): The website record that encountered a traffic rate-limiting error.
-
-        Returns:
-            str: Status action message summarising the mitigation applied (throttled, cooldown, or deactivated).
-        """
-
-        is_at_min_speed: bool = (
-            website.recommended_concurrent <= config.web_crawler_min_concurrent
-            and website.recommended_delay >= config.web_crawler_max_delay
-        )
-
-        if not is_at_min_speed:
-            self.throttle_and_cooldown(id=website.id, hours=config.website_cooldown_hours_after_throttle)
-            return "Website throttled and placed on cooldown."
-
-        # At minimum speed, manage consecutive failures
-        self.set_cooldown(id=website.id, hours=config.website_cooldown_hours_after_throttle)
-
-        if website.failed_attempts_at_min_speed >= config.web_crawler_max_failed_attempts_at_min_speed:
-            self.update(id=website.id, model_update=WebsiteUpdate(active=False))
-            return f"Failed {website.failed_attempts_at_min_speed} times. Deactivating: {website.url}"
-
-        self.update(
-            id=website.id,
-            model_update=WebsiteUpdate(failed_attempts_at_min_speed=website.failed_attempts_at_min_speed + 1),
-        )
-        return "Website placed on cooldown."
-
-    def handle_too_large(self, id: uuid.UUID, max_pages: int) -> str:
-        """Deactivates a website with more pages than the crawler will scan, recording why so the
-        dashboard can tell the user.
-
-        Args:
-            id (uuid.UUID): Unique identifier of the website that is too large to scan.
-            max_pages (int): The most pages the crawler would scan.
-
-        Returns:
-            str: Status action message explaining the website has been deactivated.
-        """
-        website: WebsiteRead = self.update(
-            id=id,
-            model_update=WebsiteUpdate(active=False, deactivated_reason=DeactivationReason.TOO_LARGE),
-        )
-        logger.warning(f"Website {website.url} deactivated as it has more than {max_pages:,} pages.")
-        return (
-            f"This website has more than {max_pages:,} pages, which is more than the crawler will scan, "
-            "so it has been deactivated. Its critical pages are still checked for changes, "
-            "but the rest of the website is no longer scanned."
-        )
-
-    def handle_connection_error(self, website_id: uuid.UUID) -> str:
-        """Handles unreachable site errors by setting a standard 2-hour cooldown period.
-
-        Args:
-            website_id (uuid.UUID): Unique identifier of the unreachable website.
-
-        Returns:
-            str: Status action message confirming cooldown placement.
-        """
-        self.set_cooldown(id=website_id, hours=config.website_cooldown_hours_after_unreachable)
-        return "Website placed on cooldown."
 
     def reset_failed_attempts(self, id: uuid.UUID) -> None:
         """Resets the consecutive failed attempt counter to 0 upon a successful scan.

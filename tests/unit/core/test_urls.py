@@ -7,6 +7,7 @@ from app.core.urls import (
     page_key,
     remove_repeated_pages,
     resolve_critical_page_url,
+    website_name,
 )
 
 
@@ -19,6 +20,7 @@ from app.core.urls import (
         ("https://www.example.com/news", "https://example.com/news", True),
         ("https://Example.COM/news", "https://example.com/news", True),
         ("https://WWW.Example.com/news/", "https://example.com/news", True),
+        ("http://example.com/news", "https://example.com/news", True),
         ("https://example.com/News", "https://example.com/news", False),
         ("https://example.com/news", "https://example.com/sport", False),
         ("https://example.com/news?page=2", "https://example.com/news", False),
@@ -26,8 +28,9 @@ from app.core.urls import (
     ],
 )
 def test_is_same_page_ignores_differences_that_do_not_change_the_page(url: str, other_url: str, expected: bool) -> None:
-    """Test URLs that only differ by a trailing slash, fragment, leading "www." or capitals in the domain are the
-    same page, while a different path (including its capitals), query or subdomain is a different page."""
+    """Test URLs that only differ by a trailing slash, fragment, leading "www.", capitals in the domain or http
+    instead of https are the same page, while a different path (including its capitals), query or subdomain is a
+    different page."""
     assert is_same_page(url, other_url) is expected
 
 
@@ -44,11 +47,20 @@ def test_remove_repeated_pages_keeps_the_first_of_each_page() -> None:
     assert remove_repeated_pages(urls) == ["https://example.com", "https://example.com/news/"]
 
 
+def test_remove_repeated_pages_keeps_a_pages_https_address_over_its_http_one() -> None:
+    """Test a page written with http and then https is kept once, at its https address, in the place it first
+    appeared."""
+    urls = ["http://example.com/news", "https://example.com/", "https://example.com/news/"]
+
+    assert remove_repeated_pages(urls) == ["https://example.com/news/", "https://example.com/"]
+
+
 def test_page_key_only_removes_differences_that_do_not_change_the_page() -> None:
-    """Test the page key drops a leading "www.", capitals in the domain, a trailing slash and a fragment, but keeps
-    the path's capitals and the query, which can change the page."""
+    """Test the page key drops a leading "www.", capitals in the domain, a trailing slash and a fragment, and writes
+    http as https, but keeps the path's capitals and the query, which can change the page."""
     assert page_key("https://WWW.Example.com/News/?id=1#top") == "https://example.com/News?id=1"
     assert page_key("https://www.example.com") == "https://example.com/"
+    assert page_key("http://example.com:80/news") == "https://example.com/news"
 
 
 @pytest.mark.parametrize(
@@ -136,3 +148,28 @@ def test_resolve_critical_page_url_refuses_a_page_on_another_website(page_url: s
     """Tests a critical page on a different website (or subdomain) is refused, rather than watched."""
     with pytest.raises(ValueError, match="is not a page on https://example.com"):
         resolve_critical_page_url("https://example.com", page_url)
+
+
+@pytest.mark.parametrize(
+    ("url", "expected_name"),
+    [
+        ("https://www.teqsa.gov.au/", "teqsa.gov.au"),
+        ("https://WWW.Example.COM/", "example.com"),
+        ("https://example.com./", "example.com"),
+        ("https://user:password@example.com:8080/", "example.com"),
+        ("https://news.example.com/", "news.example.com"),
+        ("https://www.example.gov.au/research/", "example.gov.au/research"),
+        ("https://example.com/au/news?page=2#top", "example.com/au/news"),
+    ],
+    ids=["www-dropped", "lower-cased", "trailing-dot", "login-and-port", "subdomain-kept", "path-kept", "path-only"],
+)
+def test_website_name_is_the_host_without_www_then_the_path(url: str, expected_name: str) -> None:
+    """Tests a website is named by its host name, without a leading "www.", followed by its path (without a
+    trailing "/", query or #section), so two parts of one website can be told apart."""
+    assert website_name(url) == expected_name
+
+
+@pytest.mark.parametrize("url", ["https://[not-closed/page", "not a url", ""], ids=["unreadable", "no-host", "empty"])
+def test_website_name_falls_back_to_website_for_a_url_without_a_host(url: str) -> None:
+    """Tests a URL that cannot be read, or has no host name, is shown as "Website" rather than breaking the page."""
+    assert website_name(url) == "Website"

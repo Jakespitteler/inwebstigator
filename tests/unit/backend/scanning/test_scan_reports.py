@@ -1,16 +1,23 @@
 import smtplib
-from contextlib import nullcontext
+import threading
+import time
+from collections.abc import Generator
+from contextlib import contextmanager, nullcontext
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from pydantic import HttpUrl
 from pytest_mock import MockerFixture
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.backend.email_service.message_builder import OutgoingEmail
 from app.backend.scanning.scan_reports import send_reports_awaiting_email
+from app.db.schema import Base
 from app.db.services.scan_run_service import ScanRunService
 from app.db.services.website_service import WebsiteService
+from app.db.session import configure_sqlite_connection
 from app.models.scan_run_models import ChangeCreate, ChangeKind, ScanRunCreate, ScanRunRead, ScanStatus
 from app.models.website_models import WebsiteCreate, WebsiteRead
 from tests.fakes import FakeEmailSender
@@ -209,3 +216,48 @@ def test_reports_are_still_emailed_when_recording_them_as_sent_fails(session: Se
 
     assert [email.to for email in email_sender.sent] == ["someone@example.com"]
     assert len(_awaiting_email(session)) == 1
+
+
+class SlowEmailSender(FakeEmailSender):
+    """Records the emails the app would send, taking a moment over each like a real mail server, so two runs that
+    finish together overlap while they send."""
+
+    def send(self, email: OutgoingEmail) -> None:
+        """Waits a moment, then records the email as sent.
+
+        Args:
+            email: The email.
+        """
+        time.sleep(0.2)
+        super().send(email)
+
+
+def test_two_runs_that_finish_together_email_each_report_once(tmp_path: Path, mocker: MockerFixture):
+    """Tests two runs that send the waiting reports at the same time (e.g. Run All Scans and a scheduled check), each
+    in its own thread with its own database session as in the app, email each report only once."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'reports.db'}", connect_args={"check_same_thread": False})
+    event.listen(engine, "connect", configure_sqlite_connection)
+    Base.metadata.create_all(engine)
+    new_session = sessionmaker(bind=engine)
+
+    @contextmanager
+    def own_session() -> Generator[Session]:
+        with new_session() as session, session.begin():
+            yield session
+
+    for module in ("scan_reports", "notifications"):
+        mocker.patch(f"app.backend.scanning.{module}.db_context", side_effect=own_session)
+    with own_session() as session:
+        _record_scan(
+            session, _website(session, "https://example.com", ["someone@example.com"]), status=ScanStatus.TRAFFIC_ERROR
+        )
+    email_sender = SlowEmailSender()
+
+    runs = [threading.Thread(target=send_reports_awaiting_email, args=(email_sender,)) for _ in range(2)]
+    for run in runs:
+        run.start()
+    for run in runs:
+        run.join()
+
+    assert [email.to for email in email_sender.sent] == ["someone@example.com"]
+    engine.dispose()

@@ -7,14 +7,14 @@ from pydantic import HttpUrl
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.config import config
 from app.core.errors import NotFoundError
 from app.db.schema import DBRecipient
 from app.db.services.critical_page_service import CriticalPageService
 from app.db.services.internal_link_service import InternalLinkService
 from app.db.services.website_service import WebsiteService
-from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead, CriticalPageUpdate
+from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead
 from app.models.internal_link_models import InternalLinkCreate, InternalLinkRead
+from app.models.scan_result_models import CriticalPageScanResult, WebsiteScanResult
 from app.models.website_models import DeactivationReason, WebsiteCreate, WebsiteRead, WebsiteUpdate
 
 
@@ -223,9 +223,9 @@ def test_get_website_counts_its_internal_links(session: Session, test_website: W
     assert "internal_links" not in WebsiteRead.model_fields
 
 
-def test_update_website_internal_links(session: Session, test_website: WebsiteRead) -> None:
+def test_save_scan_result_saves_internal_links_added_and_removed(session: Session, test_website: WebsiteRead) -> None:
     """
-    Tests updating a website with added and removed internal links.
+    Tests saving a scan that found internal links added and removed.
 
     Args:
         session: The database session fixture.
@@ -236,20 +236,16 @@ def test_update_website_internal_links(session: Session, test_website: WebsiteRe
     internal_link_service.create_batch(urls=[existing_link_url], website_id=test_website.id)
 
     new_link_url = HttpUrl(f"{test_website.url}link_to_add")
-    model_update = WebsiteUpdate(
-        recent_added_internal_links=[new_link_url],
-        recent_removed_internal_links=[existing_link_url],
+    scan_result = WebsiteScanResult(
+        internal_links_added=[new_link_url],
+        internal_links_removed=[existing_link_url],
     )
 
-    updated_website = WebsiteService(session).update(id=test_website.id, model_update=model_update)
+    WebsiteService(session).save_scan_result(id=test_website.id, scan_result=scan_result)
+    updated_website = WebsiteService(session).get(test_website.id)
 
-    # Confirm added link exists
-    added_link = internal_link_service.get_by_url(url=new_link_url)
-    assert added_link.website_id == test_website.id
-
-    # Confirm deleted link is gone
-    with pytest.raises(NotFoundError):
-        internal_link_service.get_by_url(url=existing_link_url)
+    # Confirm the added link is saved and the removed link is gone
+    assert internal_link_service.get_urls_for_website(test_website.id) == [str(new_link_url)]
 
     # Confirm the website read model counts its links, rather than loading them all
     assert updated_website.internal_link_count == len(internal_link_service.get_urls_for_website(test_website.id))
@@ -315,9 +311,9 @@ def test_delete_website_cascades(session: Session, test_website: WebsiteRead) ->
         CriticalPageService(session).get(id=created_critical_page.id)
 
 
-def test_update_website_critical_page_updates(session: Session, test_website: WebsiteRead) -> None:
+def test_save_scan_result_saves_each_critical_page_as_it_is_now(session: Session, test_website: WebsiteRead) -> None:
     """
-    Tests updating a website's critical pages using critical_page_updates.
+    Tests saving a scan saves each critical page's new state.
 
     Args:
         session: The database session fixture.
@@ -332,9 +328,9 @@ def test_update_website_critical_page_updates(session: Session, test_website: We
     )
 
     updated_url = HttpUrl(f"{test_website.url}critical_1_updated")
-    model_update = WebsiteUpdate(critical_page_updates={created_page.id: CriticalPageUpdate(url=updated_url)})
+    scan_result = WebsiteScanResult(critical_page_results={created_page.id: CriticalPageScanResult(url=updated_url)})
 
-    WebsiteService(session).update(id=test_website.id, model_update=model_update)
+    WebsiteService(session).save_scan_result(id=test_website.id, scan_result=scan_result)
 
     fetched_page = critical_page_service.get(id=created_page.id)
     assert fetched_page.url == updated_url
@@ -359,180 +355,6 @@ def test_set_cooldown(session: Session, test_website: WebsiteRead) -> None:
         <= updated_website.on_cooldown_until
         <= datetime.now(UTC) + timedelta(hours=hours)
     )
-
-
-def test_throttle_and_cooldown(session: Session, test_website: WebsiteRead) -> None:
-    """
-    Tests throttling parameters (increasing delay, decreasing concurrency)
-    and placing a website on cooldown.
-
-    Args:
-        session: The database session fixture.
-        test_website: The test website record.
-    """
-    initial_delay = test_website.recommended_delay
-    initial_concurrent = test_website.recommended_concurrent
-
-    hours = 24
-    updated_website: WebsiteRead = WebsiteService(session).throttle_and_cooldown(id=test_website.id, hours=hours)
-
-    assert updated_website.on_cooldown_until is not None
-    assert updated_website.recommended_delay > initial_delay
-    assert updated_website.recommended_concurrent < initial_concurrent
-    assert updated_website.on_cooldown_until > datetime.now(UTC) + timedelta(hours=hours - 1)
-
-
-def test_throttle_and_cooldown_clamped_to_config_limits(session: Session, test_website: WebsiteRead) -> None:
-    """
-    Tests that throttling respects maximum delay and minimum concurrency limits defined in config.
-
-    Args:
-        session: The database session fixture.
-        test_website: The test website record.
-    """
-    service = WebsiteService(session)
-
-    # Force site attributes to maximum/minimum bounds before throttling
-    service.update(
-        id=test_website.id,
-        model_update=WebsiteUpdate(
-            recommended_delay=config.web_crawler_max_delay,
-            recommended_concurrent=config.web_crawler_min_concurrent,
-        ),
-    )
-
-    updated_website = service.throttle_and_cooldown(id=test_website.id)
-
-    assert updated_website.recommended_delay == config.web_crawler_max_delay
-    assert updated_website.recommended_concurrent == config.web_crawler_min_concurrent
-
-
-def test_handle_traffic_error_throttles_when_not_at_min_speed(session: Session, test_website: WebsiteRead) -> None:
-    """
-    Tests handle_traffic_error when website crawler parameters have not reached minimum speed limits.
-
-    Args:
-        session: The database session fixture.
-        test_website: The test website record.
-    """
-    service = WebsiteService(session)
-
-    # Configure website to be above minimum speed limits
-    website = service.update(
-        id=test_website.id,
-        model_update=WebsiteUpdate(
-            recommended_delay=config.web_crawler_max_delay - 0.1,
-            recommended_concurrent=config.web_crawler_min_concurrent + 1,
-        ),
-    )
-
-    result_message = service.handle_traffic_error(website=website)
-
-    assert result_message == "Website throttled and placed on cooldown."
-
-    fetched_website = service.get(id=website.id)
-    assert fetched_website.recommended_delay > website.recommended_delay
-    assert fetched_website.recommended_concurrent < website.recommended_concurrent
-    assert fetched_website.on_cooldown_until is not None
-    assert fetched_website.on_cooldown_until > datetime.now(UTC)
-
-
-def test_handle_traffic_error_increments_attempts_at_min_speed(session: Session, test_website: WebsiteRead) -> None:
-    """
-    Tests handle_traffic_error increments failed attempts when already operating at minimum speed.
-
-    Args:
-        session: The database session fixture.
-        test_website: The test website record.
-    """
-    service = WebsiteService(session)
-
-    # Configure website to be at minimum speed limits
-    website = service.update(
-        id=test_website.id,
-        model_update=WebsiteUpdate(
-            recommended_delay=config.web_crawler_max_delay,
-            recommended_concurrent=config.web_crawler_min_concurrent,
-            failed_attempts_at_min_speed=0,
-        ),
-    )
-
-    result_message = service.handle_traffic_error(website=website)
-
-    assert result_message == "Website placed on cooldown."
-
-    fetched_website = service.get(id=website.id)
-    assert fetched_website.failed_attempts_at_min_speed == 1
-    assert fetched_website.on_cooldown_until is not None
-
-
-def test_handle_traffic_error_deactivates_website_at_max_failures(session: Session, test_website: WebsiteRead) -> None:
-    """
-    Tests handle_traffic_error deactivates the website upon reaching maximum failed attempts at minimum speed.
-
-    Args:
-        session: The database session fixture.
-        test_website: The test website record.
-    """
-    service = WebsiteService(session)
-    max_failures = config.web_crawler_max_failed_attempts_at_min_speed
-
-    # Set website to max failure threshold
-    website = service.update(
-        id=test_website.id,
-        model_update=WebsiteUpdate(
-            recommended_delay=config.web_crawler_max_delay,
-            recommended_concurrent=config.web_crawler_min_concurrent,
-            failed_attempts_at_min_speed=max_failures,
-            active=True,
-        ),
-    )
-
-    result_message = service.handle_traffic_error(website=website)
-
-    assert f"Failed {max_failures} times. Deactivating: {website.url}" in result_message
-
-    fetched_website = service.get(id=website.id)
-    assert fetched_website.active is False
-
-
-def test_handle_connection_error(session: Session, test_website: WebsiteRead) -> None:
-    """
-    Tests handle_connection_error sets a 2-hour cooldown period and returns proper status message.
-
-    Args:
-        session: The database session fixture.
-        test_website: The test website record.
-    """
-    service = WebsiteService(session)
-
-    result_message = service.handle_connection_error(website_id=test_website.id)
-
-    assert result_message == "Website placed on cooldown."
-
-    fetched_website = service.get(id=test_website.id)
-    assert fetched_website.on_cooldown_until is not None
-    assert fetched_website.on_cooldown_until > datetime.now(UTC) + timedelta(hours=1, minutes=59)
-    assert fetched_website.on_cooldown_until <= datetime.now(UTC) + timedelta(hours=2)
-
-
-def test_handle_too_large_deactivates_website_and_records_why(session: Session, test_website: WebsiteRead) -> None:
-    """
-    Tests handle_too_large deactivates the website, records it was too large, and explains the page limit.
-
-    Args:
-        session: The database session fixture.
-        test_website: The test website record.
-    """
-    service = WebsiteService(session)
-
-    result_message = service.handle_too_large(id=test_website.id, max_pages=50_000)
-
-    assert "more than 50,000 pages" in result_message
-
-    fetched_website = service.get(id=test_website.id)
-    assert fetched_website.active is False
-    assert fetched_website.deactivated_reason == DeactivationReason.TOO_LARGE
 
 
 @pytest.mark.parametrize(
@@ -560,7 +382,10 @@ def test_deactivated_reason_is_only_cleared_by_reactivating(
         expected_reason: The deactivation reason expected after the update.
     """
     service = WebsiteService(session)
-    service.handle_too_large(id=test_website.id, max_pages=50_000)
+    service.update(
+        id=test_website.id,
+        model_update=WebsiteUpdate(active=False, deactivated_reason=DeactivationReason.TOO_LARGE),
+    )
 
     updated_website = service.update(id=test_website.id, model_update=model_update)
 
@@ -580,6 +405,16 @@ def test_create_monitors_main_url_once(session: Session) -> None:
         "https://example.com/fees",
     ]
     assert payload.critical_pages == ["https://example.com/fees", "https://example.com/"]  # caller's model untouched
+
+
+def test_create_keeps_the_websites_own_address_as_its_home_page(session: Session) -> None:
+    """Tests a website added with http, with its home page also typed as a critical page with https, keeps its own
+    address as its home page, so the dashboard and the scans can still tell which page is the home page."""
+    payload = WebsiteCreate(url=HttpUrl("http://example.com"), critical_pages=["https://example.com/"])
+
+    website = WebsiteService(session).create(payload)
+
+    assert [page.url for page in website.critical_pages] == [website.url]
 
 
 def test_create_links_an_email_given_twice_once(session: Session) -> None:

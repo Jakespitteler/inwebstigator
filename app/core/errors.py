@@ -2,13 +2,13 @@ import uuid
 from typing import Any
 
 
-class DataBaseError(Exception):
+class DatabaseError(Exception):
     """Base class for all custom database-related exceptions in the application."""
 
     ...
 
 
-class NotFoundError(DataBaseError):
+class NotFoundError(DatabaseError):
     """Exception raised when a requested database record cannot be found.
 
     Handles initialisation via either a primary key UUID or a dictionary of
@@ -34,7 +34,7 @@ class NotFoundError(DataBaseError):
             super().__init__("not found.")
 
 
-class IntegrityError(DataBaseError):
+class IntegrityError(DatabaseError):
     """Exception raised when database integrity or unique constraints are violated.
 
     Attributes:
@@ -45,7 +45,7 @@ class IntegrityError(DataBaseError):
         super().__init__("Data validation error. Ensure all referenced IDs exist and unique constraints are met.")
 
 
-class WebsiteAlreadyMonitoredError(DataBaseError):
+class WebsiteAlreadyMonitoredError(DatabaseError):
     """Exception raised when adding a website that is already being monitored.
 
     The address can be written differently, e.g. with or without "www.", a trailing "/", or http instead of https.
@@ -71,16 +71,45 @@ class UndeliverableEmailError(Exception):
         super().__init__(f"An email to {address} could not be delivered.")
 
 
-class AlreadyWatchedError(Exception):
-    """Exception raised when a website or critical page being added is already being watched.
+class ReportNotEmailedError(Exception):
+    """Exception raised when a scan finished but its report could not be emailed (e.g. the mail server was down).
+
+    The scan and its report are kept, and the report is sent with the next scheduled scan.
 
     Attributes:
-        url: The URL of the website or page.
+        url: The URL of the website that was scanned.
+    """
+
+    def __init__(self, url: str) -> None:
+        self.url: str = url
+        super().__init__(
+            f"The scan of {url} finished, but its report could not be emailed. "
+            "It will be sent with the next scheduled scan."
+        )
+
+
+class AlreadyWatchedError(Exception):
+    """Exception raised when a critical page being added is already being watched.
+
+    Attributes:
+        url: The URL of the page.
     """
 
     def __init__(self, url: str) -> None:
         self.url: str = url
         super().__init__(f"{url} is already being watched.")
+
+
+class MainPageNotDeletableError(Exception):
+    """Exception raised when deleting a website's main page, which is always watched while the website is.
+
+    Attributes:
+        url: The URL of the main page.
+    """
+
+    def __init__(self, url: str) -> None:
+        self.url: str = url
+        super().__init__(f"{url} is the website's main page, which is always watched, so it cannot be deleted.")
 
 
 class InvalidPageError(ValueError):
@@ -171,7 +200,7 @@ class MostPagesMissingError(WebCrawlerError):
         self.known_count: int = known_count
         super().__init__(
             f"{missing_count:,} of the {known_count:,} pages found on {url} by its last scan could not be found, "
-            "so the website may be partly down. Nothing from this scan has been saved."
+            "so the website may be partly down. None of its pages have been reported as removed."
         )
 
 
@@ -216,7 +245,13 @@ class WebsiteTooLargeError(WebCrawlerError):
         super().__init__(f"{url} has more than {max_pages:,} pages, which is more than the crawler will scan.")
 
 
-class ScanAlreadyQueuedError(WebCrawlerError):
+class ScanError(Exception):
+    """Base class for the errors of the queue that runs website scans one at a time (see `ScanQueue`)."""
+
+    ...
+
+
+class ScanAlreadyQueuedError(ScanError):
     """Exception raised when a scan is requested for a website that is already queued or being scanned.
 
     Attributes:
@@ -228,7 +263,7 @@ class ScanAlreadyQueuedError(WebCrawlerError):
         super().__init__(f"{url} is already queued or being scanned.")
 
 
-class ScanCancelledError(WebCrawlerError):
+class ScanCancelledError(ScanError):
     """Exception raised when a website's scan is cancelled before it finished.
 
     Attributes:

@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 from playwright.sync_api import Locator, Page, expect
 
-from app.backend.scanning.all_websites_scan import run_all_in_progress
+from app.backend.scanning.all_websites_scan import run_all_scans
 from app.backend.scanning.scan_queue import scan_queue
 from tests.e2e.conftest import RunningApp
 
@@ -53,9 +53,10 @@ def test_the_about_page_has_no_refresh_button(open_dashboard: Callable[..., Page
 
 
 def test_every_way_back_to_the_dashboard_works(open_dashboard: Callable[..., Page], app_server: RunningApp) -> None:
-    """Tests the app name in the header, the footer's Dashboard link and the About page's back link all go back to
-    the dashboard."""
+    """Tests the logo and the app name in the header, the footer's Dashboard link and the About page's back link all
+    go back to the dashboard."""
     links: tuple[Callable[[Page], Locator], ...] = (
+        lambda page: page.locator(".brand-logo-link"),
         lambda page: page.locator(".home-link"),
         lambda page: page.locator(".site-footer").get_by_role("link", name="Dashboard"),
         lambda page: page.locator(".back-link"),
@@ -158,7 +159,7 @@ def test_cancelling_run_all_scans_skips_the_websites_left(
 
     expect(cancel).to_be_hidden()
     expect(page.locator("#run-all-scans-button")).to_be_enabled()
-    assert not run_all_in_progress()
+    assert not run_all_scans.in_progress
     assert len(_websites_requested(app_server)) == 1
 
 
@@ -183,5 +184,5 @@ def test_run_all_scans_can_be_cancelled_after_a_refresh(
         "Run All Scans cancelled. Press Refresh to see the latest results."
     )
     expect(page.locator("#cancel-all-scans-button")).to_be_hidden()
-    _wait_until(lambda: not run_all_in_progress(), "Run All Scans stopped")
+    _wait_until(lambda: not run_all_scans.in_progress, "Run All Scans stopped")
     assert len(_websites_requested(app_server)) == 1

@@ -271,6 +271,24 @@ def test_cancelling_the_first_scan_does_not_add_the_website(
     assert app_server.saved_websites() == []
 
 
+def test_the_close_window_note_shows_while_a_website_is_being_added(
+    open_dashboard: Callable[..., Page], app_server: RunningApp
+) -> None:
+    """Tests the note saying the window can be closed while scans run shows during a new website's first scan, and
+    goes once that scan has ended."""
+    _serve_example_website(app_server)
+    page = open_dashboard()
+    page.locator("#website-url").fill(WEBSITE_URL)
+    page.locator('.guide-dot[data-step="4"]').click()
+
+    app_server.websites.delay_seconds = 0.5  # Slow the scan down enough to see the note
+    page.locator("#guide-submit").click()
+
+    note = page.locator("#background-scan-note")
+    expect(note).to_be_visible()
+    expect(note).to_be_hidden(timeout=15_000)
+
+
 # ======================================
 # Once websites exist
 # ======================================
