@@ -7,7 +7,7 @@ from pydantic import HttpUrl
 from app.backend.crawler.page_fetcher import new_http_client
 from app.backend.email_service.delivery import EmailSender
 from app.backend.email_service.email_wording import manual_scan_subject
-from app.backend.email_service.html_bodies import generate_scan_report_html
+from app.backend.email_service.html_bodies import scan_report_html
 from app.backend.email_service.message_builder import OutgoingEmail
 from app.backend.scanning.scan_reports import email_report_once
 from app.backend.scanning.website_scan import scan_website
@@ -77,7 +77,7 @@ async def scan_website_now(
     if not scan_run.has_report:
         return None
 
-    report: str = generate_scan_report_html(website.url, scan_run)
+    report: str = scan_report_html(website.url, scan_run)
     recipient_emails: list[str] = _report_recipients(website, extra_email)
     if recipient_emails:
         subject: str = manual_scan_subject(str(website.url))

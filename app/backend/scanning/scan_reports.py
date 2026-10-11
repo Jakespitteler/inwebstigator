@@ -7,7 +7,7 @@ from typing import NamedTuple
 
 from app.backend.email_service.delivery import EmailSender, is_undeliverable
 from app.backend.email_service.email_wording import scan_report_subject
-from app.backend.email_service.html_bodies import generate_scan_report_html, join_scan_reports
+from app.backend.email_service.html_bodies import join_scan_reports, scan_report_html
 from app.backend.email_service.message_builder import OutgoingEmail
 from app.backend.scanning.notifications import (
     group_by_recipient,
@@ -63,7 +63,7 @@ def write_report(website: WebsiteRead, scan_run: ScanRunRead) -> WebsiteReport:
     Returns:
         The report.
     """
-    return WebsiteReport(website, scan_run, generate_scan_report_html(website.url, scan_run))
+    return WebsiteReport(website, scan_run, scan_report_html(website.url, scan_run))
 
 
 def _reports_awaiting_email() -> list[WebsiteReport]:

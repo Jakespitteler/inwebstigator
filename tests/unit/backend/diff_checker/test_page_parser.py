@@ -8,7 +8,7 @@ from app.backend.diff_checker.page_parser import (
     extract_last_updated,
     extract_sequential_blocks,
     main_content_html,
-    normalize_text,
+    normalise_text,
     parse_html,
     parse_standard_text,
     parse_table_row,
@@ -16,13 +16,13 @@ from app.backend.diff_checker.page_parser import (
 from app.models.content_block_models import HTMLBlockType
 
 
-def test_normalize_text_basic() -> None:
+def test_normalise_text_basic() -> None:
     raw: str = "  Hello   \n  world!  "
-    assert normalize_text(raw) == "Hello world!"
+    assert normalise_text(raw) == "Hello world!"
 
 
-def test_normalize_text_empty() -> None:
-    assert normalize_text("   \n\t  ") == ""
+def test_normalise_text_empty() -> None:
+    assert normalise_text("   \n\t  ") == ""
 
 
 def test_parse_standard_text() -> None:

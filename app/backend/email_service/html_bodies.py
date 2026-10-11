@@ -82,7 +82,7 @@ def _render(template_name: str, **values: object) -> str:
     return inline_styles(html)
 
 
-def generate_scan_report_html(website_url: HttpUrl | str, scan_run: ScanRunRead) -> str:
+def scan_report_html(website_url: HttpUrl | str, scan_run: ScanRunRead) -> str:
     """Generates the inline-styled HTML report card for one scan of a website, for any scan status.
 
     Long lists of links are cut short (see `config.email_max_listed_links`), as a scan that finds thousands of new

@@ -29,8 +29,8 @@ def test_overlapping_websites_can_both_save_the_same_internal_link(session: Sess
     news_section = service.create(WebsiteCreate(url=HttpUrl("https://example.com/news")))
     shared_link = HttpUrl("https://example.com/news/story")
 
-    service.save_scan_result(whole_site.id, WebsiteScanResult(recent_added_internal_links=[shared_link]))
-    service.save_scan_result(news_section.id, WebsiteScanResult(recent_added_internal_links=[shared_link]))
+    service.save_scan_result(whole_site.id, WebsiteScanResult(internal_links_added=[shared_link]))
+    service.save_scan_result(news_section.id, WebsiteScanResult(internal_links_added=[shared_link]))
 
     saved = session.scalars(select(DBInternalLink).where(DBInternalLink.url == str(shared_link))).all()
     assert {link.website_id for link in saved} == {whole_site.id, news_section.id}
@@ -51,10 +51,10 @@ def test_deleting_an_overlapping_websites_link_leaves_the_other_websites_copy(se
     whole_site = service.create(WebsiteCreate(url=HttpUrl("https://example.com")))
     news_section = service.create(WebsiteCreate(url=HttpUrl("https://example.com/news")))
     shared_link = HttpUrl("https://example.com/news/story")
-    service.save_scan_result(whole_site.id, WebsiteScanResult(recent_added_internal_links=[shared_link]))
-    service.save_scan_result(news_section.id, WebsiteScanResult(recent_added_internal_links=[shared_link]))
+    service.save_scan_result(whole_site.id, WebsiteScanResult(internal_links_added=[shared_link]))
+    service.save_scan_result(news_section.id, WebsiteScanResult(internal_links_added=[shared_link]))
 
-    service.save_scan_result(news_section.id, WebsiteScanResult(recent_removed_internal_links=[shared_link]))
+    service.save_scan_result(news_section.id, WebsiteScanResult(internal_links_removed=[shared_link]))
 
     link_service = InternalLinkService(session)
     assert link_service.get_urls_for_website(whole_site.id) == [str(shared_link)]

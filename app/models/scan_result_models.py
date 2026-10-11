@@ -15,6 +15,16 @@ from app.models.content_block_models import ChangedBlock, ContentBlock
 from app.models.critical_page_models import CriticalPageUpdate
 
 ALERT_AFTER_FAILURES: int = config.critical_page_alert_after_failures
+# The fields of a critical page's result that say what changed on it, rather than what it is now
+PAGE_CHANGE_FIELDS: tuple[str, ...] = (
+    "links_added",
+    "links_removed",
+    "documents_added",
+    "documents_removed",
+    "text_added",
+    "text_removed",
+    "text_changed",
+)
 
 
 class CriticalPageScanResult(BaseModel):
@@ -27,13 +37,13 @@ class CriticalPageScanResult(BaseModel):
         text_body: The page's HTML now, if it needs saving.
         consecutive_failures: How many checks of the page have failed in a row, if it changed.
         last_failure_reason: Why the page's last check failed, if it changed.
-        recent_links_added: Links that are new on the page.
-        recent_links_removed: Links that are no longer on the page.
-        recent_documents_added: Documents that are new on the page.
-        recent_documents_removed: Documents that are no longer on the page.
-        recent_text_added: Blocks of text that are new on the page.
-        recent_text_removed: Blocks of text that are no longer on the page.
-        recent_text_changed: Blocks of text that were edited or moved to a different section.
+        links_added: Links that are new on the page.
+        links_removed: Links that are no longer on the page.
+        documents_added: Documents that are new on the page.
+        documents_removed: Documents that are no longer on the page.
+        text_added: Blocks of text that are new on the page.
+        text_removed: Blocks of text that are no longer on the page.
+        text_changed: Blocks of text that were edited or moved to a different section.
     """
 
     # Values set after the result is made (e.g. by the change detection) are checked too, so a bad link cannot be saved
@@ -46,13 +56,13 @@ class CriticalPageScanResult(BaseModel):
     consecutive_failures: int | None = None
     last_failure_reason: str | None = None
 
-    recent_links_added: list[HttpUrl] | None = None
-    recent_links_removed: list[HttpUrl] | None = None
-    recent_documents_added: list[HttpUrl] | None = None
-    recent_documents_removed: list[HttpUrl] | None = None
-    recent_text_added: list[ContentBlock] | None = None
-    recent_text_removed: list[ContentBlock] | None = None
-    recent_text_changed: list[ChangedBlock] | None = None
+    links_added: list[HttpUrl] | None = None
+    links_removed: list[HttpUrl] | None = None
+    documents_added: list[HttpUrl] | None = None
+    documents_removed: list[HttpUrl] | None = None
+    text_added: list[ContentBlock] | None = None
+    text_removed: list[ContentBlock] | None = None
+    text_changed: list[ChangedBlock] | None = None
 
     @property
     def has_just_reached_failure_limit(self) -> bool:
@@ -60,20 +70,15 @@ class CriticalPageScanResult(BaseModel):
         return self.consecutive_failures == ALERT_AFTER_FAILURES
 
     @property
+    def change_counts(self) -> dict[str, int]:
+        """How many of each kind of change were found on the page, e.g. {"links_added": 2}, leaving out kinds with
+        none."""
+        return {field: len(changes) for field in PAGE_CHANGE_FIELDS if (changes := getattr(self, field))}
+
+    @property
     def has_changes(self) -> bool:
         """Whether this result has anything to report: a change to the page, or the page becoming unreachable."""
-        return any(
-            (
-                self.recent_links_added,
-                self.recent_links_removed,
-                self.recent_documents_added,
-                self.recent_documents_removed,
-                self.recent_text_added,
-                self.recent_text_removed,
-                self.recent_text_changed,
-                self.has_just_reached_failure_limit,
-            )
-        )
+        return bool(self.change_counts) or self.has_just_reached_failure_limit
 
     def as_critical_page_update(self) -> CriticalPageUpdate:
         """Picks out the page as it is now, to save over the page's saved copy. What changed goes in the scan's
@@ -92,27 +97,27 @@ class WebsiteScanResult(BaseModel):
     pages added and removed since the last scan.
 
     Attributes:
-        critical_page_updates: The result of each critical page that changed, saved a baseline, failed or recovered,
+        critical_page_results: The result of each critical page that changed, saved a baseline, failed or recovered,
             by page ID.
-        initial_internal_links: Every page found on the website, when saving a baseline.
-        recent_added_internal_links: Pages found on the website that were not there at the last scan.
-        recent_removed_internal_links: Pages from the last scan that are no longer on the website.
+        baseline_internal_links: Every page found on the website, when saving a baseline.
+        internal_links_added: Pages found on the website that were not there at the last scan.
+        internal_links_removed: Pages from the last scan that are no longer on the website.
     """
 
     # Values set after the result is made (e.g. by the change detection) are checked too, so a bad link cannot be saved
     model_config = ConfigDict(validate_assignment=True)
 
-    critical_page_updates: dict[uuid.UUID, CriticalPageScanResult] | None = None
-    initial_internal_links: list[HttpUrl] | None = None
-    recent_added_internal_links: list[HttpUrl] | None = None
-    recent_removed_internal_links: list[HttpUrl] | None = None
+    critical_page_results: dict[uuid.UUID, CriticalPageScanResult] | None = None
+    baseline_internal_links: list[HttpUrl] | None = None
+    internal_links_added: list[HttpUrl] | None = None
+    internal_links_removed: list[HttpUrl] | None = None
 
     @property
     def changed_page_ids(self) -> set[uuid.UUID]:
         """IDs of the critical pages a scan found changes on, excluding pages that only saved a baseline."""
-        return {page_id for page_id, page in (self.critical_page_updates or {}).items() if page.has_changes}
+        return {page_id for page_id, page in (self.critical_page_results or {}).items() if page.has_changes}
 
     @property
     def has_changes(self) -> bool:
         """Whether a scan found changes worth reporting, as opposed to only saving baselines."""
-        return bool(self.changed_page_ids or self.recent_added_internal_links or self.recent_removed_internal_links)
+        return bool(self.changed_page_ids or self.internal_links_added or self.internal_links_removed)

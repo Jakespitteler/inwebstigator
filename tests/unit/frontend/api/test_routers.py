@@ -648,12 +648,12 @@ def test_manual_scan_of_a_website_already_queued_is_refused(
 ) -> None:
     """Tests "Run Scan Now" for a website already queued or being scanned is refused rather than queued twice."""
     mocker.patch.object(scan_queue, "_scans", {str(test_website.url): mocker.Mock()})
-    mock_get_website_updates = mocker.patch("app.backend.scanning.website_scan.get_website_updates")
+    mock_scan_whole_website = mocker.patch("app.backend.scanning.website_scan.scan_whole_website")
 
     response = api_client.post("/scanner/run", data={"url": str(test_website.url)})
 
     assert response.status_code == 409, response.text
-    mock_get_website_updates.assert_not_called()
+    mock_scan_whole_website.assert_not_called()
 
 
 def test_cancel_scan_reports_whether_there_was_a_scan_to_cancel(
@@ -920,7 +920,7 @@ def first_scan_in_progress(
         await asyncio.Event().wait()
 
     mocker.patch("app.backend.websites.website_setup.check_pages_exist")  # The website is not loaded online
-    mocker.patch("app.backend.scanning.website_scan.get_website_updates", side_effect=crawl_until_cancelled)
+    mocker.patch("app.backend.scanning.website_scan.scan_whole_website", side_effect=crawl_until_cancelled)
     app.dependency_overrides[get_db_session] = lambda: session
     yield crawl_started
     app.dependency_overrides.clear()

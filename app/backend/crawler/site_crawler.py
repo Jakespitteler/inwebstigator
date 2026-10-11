@@ -188,7 +188,7 @@ async def crawl_site(
             trigger a site-wide block exception. Defaults to 0.5.
 
     Returns:
-        A set of normalized internal URL strings visited during the crawl, one for each page.
+        A set of normalised internal URL strings visited during the crawl, one for each page.
 
     Raises:
         TrafficError: If a single batch encounters at least batch_403_threshold 403 Forbidden responses, making

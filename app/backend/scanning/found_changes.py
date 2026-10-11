@@ -23,37 +23,37 @@ def _url_changes(
         yield ChangeCreate(kind=kind, page_url=page_url, url=url)
 
 
-def _critical_page_changes(page_update: CriticalPageScanResult) -> Iterator[ChangeCreate]:
+def _critical_page_changes(page_result: CriticalPageScanResult) -> Iterator[ChangeCreate]:
     """Makes a change for each thing a scan found on one critical page.
 
     A page that has just failed enough checks in a row is reported once, as unreachable. A page that only saved a
     baseline, or that could be checked again after failing, has nothing to report.
 
     Args:
-        page_update: What the scan found on the page.
+        page_result: What the scan found on the page.
 
     Yields:
         The page's changes: links, then documents, then text added, removed and edited.
     """
-    page_url: HttpUrl | None = page_update.url
-    if page_update.has_just_reached_failure_limit:
+    page_url: HttpUrl | None = page_result.url
+    if page_result.has_just_reached_failure_limit:
         yield ChangeCreate(
             kind=ChangeKind.PAGE_UNREACHABLE,
             page_url=page_url,
-            failure_reason=page_update.last_failure_reason,
-            failure_count=page_update.consecutive_failures,
+            failure_reason=page_result.last_failure_reason,
+            failure_count=page_result.consecutive_failures,
         )
         return
 
-    yield from _url_changes(ChangeKind.LINK_ADDED, page_update.recent_links_added, page_url)
-    yield from _url_changes(ChangeKind.LINK_REMOVED, page_update.recent_links_removed, page_url)
-    yield from _url_changes(ChangeKind.DOCUMENT_ADDED, page_update.recent_documents_added, page_url)
-    yield from _url_changes(ChangeKind.DOCUMENT_REMOVED, page_update.recent_documents_removed, page_url)
-    for block in page_update.recent_text_added or []:
+    yield from _url_changes(ChangeKind.LINK_ADDED, page_result.links_added, page_url)
+    yield from _url_changes(ChangeKind.LINK_REMOVED, page_result.links_removed, page_url)
+    yield from _url_changes(ChangeKind.DOCUMENT_ADDED, page_result.documents_added, page_url)
+    yield from _url_changes(ChangeKind.DOCUMENT_REMOVED, page_result.documents_removed, page_url)
+    for block in page_result.text_added or []:
         yield ChangeCreate(kind=ChangeKind.TEXT_ADDED, page_url=page_url, new_block=block)
-    for block in page_update.recent_text_removed or []:
+    for block in page_result.text_removed or []:
         yield ChangeCreate(kind=ChangeKind.TEXT_REMOVED, page_url=page_url, old_block=block)
-    for edit in page_update.recent_text_changed or []:
+    for edit in page_result.text_changed or []:
         yield ChangeCreate(
             kind=ChangeKind.TEXT_CHANGED,
             page_url=page_url,
@@ -63,26 +63,26 @@ def _critical_page_changes(page_update: CriticalPageScanResult) -> Iterator[Chan
         )
 
 
-def changes_found_by(website_updates: WebsiteScanResult | None) -> list[ChangeCreate]:
+def changes_found_by(scan_result: WebsiteScanResult | None) -> list[ChangeCreate]:
     """Lists everything a scan found, to save in the website's history.
 
     Baselines (e.g. a new website's first crawl) are not changes, so they are left out.
 
     Args:
-        website_updates: What the scan found, or None if nothing changed.
+        scan_result: What the scan found, or None if nothing changed.
 
     Returns:
         The website's added and removed internal pages, then the changes on each critical page, in the order the
         pages were checked.
     """
-    if website_updates is None:
+    if scan_result is None:
         return []
     return [
-        *_url_changes(ChangeKind.INTERNAL_LINK_ADDED, website_updates.recent_added_internal_links),
-        *_url_changes(ChangeKind.INTERNAL_LINK_REMOVED, website_updates.recent_removed_internal_links),
+        *_url_changes(ChangeKind.INTERNAL_LINK_ADDED, scan_result.internal_links_added),
+        *_url_changes(ChangeKind.INTERNAL_LINK_REMOVED, scan_result.internal_links_removed),
         *(
             change
-            for page_update in (website_updates.critical_page_updates or {}).values()
-            for change in _critical_page_changes(page_update)
+            for page_result in (scan_result.critical_page_results or {}).values()
+            for change in _critical_page_changes(page_result)
         ),
     ]

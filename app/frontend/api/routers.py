@@ -167,7 +167,7 @@ async def critical_page_initial_scan(
 
 
 @SCANNER_ROUTER.post("/run_all", response_model=str | None)
-async def scan_websites(email_sender: EmailSenderDep) -> str | None:
+async def scan_every_website(email_sender: EmailSenderDep) -> str | None:
     """Scans every website now for "Run All Scans", emailing each recipient one report of all the changes found.
 
     Websites that are not due a scan yet are included, while websites on cooldown are still skipped. The scheduled

@@ -7,31 +7,20 @@ from pydantic import HttpUrl
 from app.backend.scanning.critical_page_checks import (
     STAND_IN_FAILURES_BEFORE_ACCEPTING,
     STAND_IN_PAGE_REASON,
-    gather_critical_page_updates,
-    get_critical_page_updates,
+    check_critical_page,
+    check_critical_pages,
 )
 from app.models.critical_page_models import CriticalPageRead
-from app.models.scan_result_models import CriticalPageScanResult
+from app.models.scan_result_models import PAGE_CHANGE_FIELDS, CriticalPageScanResult
 from tests.conftest import RequestHandler
 
-RECENT_PAGE_FIELDS = (
-    "recent_links_added",
-    "recent_links_removed",
-    "recent_documents_added",
-    "recent_documents_removed",
-    "recent_text_added",
-    "recent_text_removed",
-    "recent_text_changed",
-)
-
-
 # ======================================
-# get_critical_page_updates
+# check_critical_page
 # ======================================
 
 
 @pytest.mark.anyio
-async def test_get_critical_page_updates_with_changes(
+async def test_check_critical_page_with_changes(
     test_critical_page: CriticalPageRead,
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
     website_handler: RequestHandler,
@@ -44,17 +33,17 @@ async def test_get_critical_page_updates_with_changes(
         }
     )
     async with mock_client_factory(website_handler) as client:
-        updates: CriticalPageScanResult | None = await get_critical_page_updates(client, initial_page)
-    assert updates
-    assert updates.has_changes
-    assert updates.url == initial_page.url
-    assert updates.recent_links_added == [
+        page_result: CriticalPageScanResult | None = await check_critical_page(client, initial_page)
+    assert page_result
+    assert page_result.has_changes
+    assert page_result.url == initial_page.url
+    assert page_result.links_added == [
         HttpUrl("https://www.test_website.com/about"),
         HttpUrl("https://www.test_website.com/new-link"),
     ]
-    assert updates.recent_links_removed == [HttpUrl(f"{test_critical_page.url}old-link")]
-    assert [block.text for block in updates.recent_text_removed or []] == ["Old Content"]
-    assert updates.text_body is not None and "Updated Critical Page Content" in updates.text_body
+    assert page_result.links_removed == [HttpUrl(f"{test_critical_page.url}old-link")]
+    assert [block.text for block in page_result.text_removed or []] == ["Old Content"]
+    assert page_result.text_body is not None and "Updated Critical Page Content" in page_result.text_body
 
 
 @pytest.mark.anyio
@@ -68,45 +57,45 @@ async def test_a_watched_pages_links_are_resolved_against_its_base(
     )
 
     async with mock_client_factory(lambda request: httpx2.Response(200, html=html)) as client:
-        updates: CriticalPageScanResult | None = await get_critical_page_updates(client, test_critical_page, init=True)
+        page_result: CriticalPageScanResult | None = await check_critical_page(client, test_critical_page, init=True)
 
-    assert updates is not None
-    assert updates.links == [HttpUrl("https://www.test_website.com/au/fees")]
+    assert page_result is not None
+    assert page_result.links == [HttpUrl("https://www.test_website.com/au/fees")]
 
 
 @pytest.mark.anyio
-async def test_get_critical_page_updates_no_changes(
+async def test_check_critical_page_no_changes(
     test_critical_page: CriticalPageRead,
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
     website_handler: RequestHandler,
 ):
-    """Tests a page re-scanned with the same content as its saved baseline returns no updates."""
+    """Tests a page re-scanned with the same content as its saved baseline returns nothing."""
     new_page = test_critical_page.model_copy(update={"text_body": None, "links": None, "documents": None})
 
     async with mock_client_factory(website_handler) as client:
-        baseline: CriticalPageScanResult | None = await get_critical_page_updates(client, new_page)
+        baseline: CriticalPageScanResult | None = await check_critical_page(client, new_page)
         assert baseline is not None
 
         synced_page = new_page.model_copy(
             update={"text_body": baseline.text_body, "links": baseline.links, "documents": baseline.documents}
         )
-        assert await get_critical_page_updates(client, synced_page) is None
+        assert await check_critical_page(client, synced_page) is None
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    ("stored_field", "recent_removed_field", "removed_url"),
+    ("stored_field", "removed_field", "removed_url"),
     [
-        ("documents", "recent_documents_removed", "https://www.test_website.com/files/policy.pdf"),
-        ("links", "recent_links_removed", "https://www.test_website.com/old-page"),
+        ("documents", "documents_removed", "https://www.test_website.com/files/policy.pdf"),
+        ("links", "links_removed", "https://www.test_website.com/old-page"),
     ],
     ids=["last-document", "last-link"],
 )
-async def test_get_critical_page_updates_detects_last_link_or_document_removed(
+async def test_check_critical_page_detects_last_link_or_document_removed(
     test_critical_page: CriticalPageRead,
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
     stored_field: str,
-    recent_removed_field: str,
+    removed_field: str,
     removed_url: str,
 ):
     """Tests removing a page's only link or document is reported and saved, not ignored as "no change"."""
@@ -114,12 +103,12 @@ async def test_get_critical_page_updates_detects_last_link_or_document_removed(
     stored_page = test_critical_page.model_copy(update={"text_body": html, stored_field: [removed_url]})
 
     async with mock_client_factory(lambda request: httpx2.Response(200, text=html)) as client:
-        updates: CriticalPageScanResult | None = await get_critical_page_updates(client, stored_page)
+        page_result: CriticalPageScanResult | None = await check_critical_page(client, stored_page)
 
-    assert updates is not None
-    assert updates.has_changes
-    assert getattr(updates, recent_removed_field) == [HttpUrl(removed_url)]
-    assert getattr(updates, stored_field) == []
+    assert page_result is not None
+    assert page_result.has_changes
+    assert getattr(page_result, removed_field) == [HttpUrl(removed_url)]
+    assert getattr(page_result, stored_field) == []
 
 
 @pytest.mark.anyio
@@ -139,7 +128,7 @@ async def test_get_critical_page_updates_detects_last_link_or_document_removed(
     ],
     ids=["new-page", "page-without-saved-text", "init-over-saved-content"],
 )
-async def test_get_critical_page_updates_saves_baseline(
+async def test_check_critical_page_saves_baseline(
     test_critical_page: CriticalPageRead,
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
     stored_content: dict[str, object],
@@ -154,15 +143,15 @@ async def test_get_critical_page_updates_saves_baseline(
     stored_page = test_critical_page.model_copy(update=stored_content)
 
     async with mock_client_factory(lambda request: httpx2.Response(200, text=html)) as client:
-        updates: CriticalPageScanResult | None = await get_critical_page_updates(client, stored_page, init=init)
+        page_result: CriticalPageScanResult | None = await check_critical_page(client, stored_page, init=init)
 
-    assert updates is not None
-    assert updates.text_body == html
-    assert updates.links == [HttpUrl("https://www.test_website.com/apply")]
-    assert updates.documents == [HttpUrl("https://www.test_website.com/files/fees.pdf")]
-    assert not updates.has_changes
-    for recent_field in RECENT_PAGE_FIELDS:
-        assert not getattr(updates, recent_field), recent_field
+    assert page_result is not None
+    assert page_result.text_body == html
+    assert page_result.links == [HttpUrl("https://www.test_website.com/apply")]
+    assert page_result.documents == [HttpUrl("https://www.test_website.com/files/fees.pdf")]
+    assert not page_result.has_changes
+    for change_field in PAGE_CHANGE_FIELDS:
+        assert not getattr(page_result, change_field), change_field
 
 
 # ======================================
@@ -189,13 +178,13 @@ async def test_a_stand_in_page_is_a_failed_check_that_keeps_the_saved_page(
     stored_page = test_critical_page.model_copy(update={"text_body": FEES_PAGE, "links": [], "documents": []})
 
     async with mock_client_factory(lambda request: httpx2.Response(200, html=CHALLENGE_PAGE)) as client:
-        page_results = await gather_critical_page_updates(client, [stored_page], init=False)
+        page_results = await check_critical_pages(client, [stored_page], init=False)
 
-    page_update = page_results[stored_page.id]
-    assert page_update.consecutive_failures == 1
-    assert (page_update.last_failure_reason or "").startswith("Most of the page's content is missing")
-    assert page_update.text_body is None
-    assert page_update.recent_text_removed is None
+    page_result = page_results[stored_page.id]
+    assert page_result.consecutive_failures == 1
+    assert (page_result.last_failure_reason or "").startswith("Most of the page's content is missing")
+    assert page_result.text_body is None
+    assert page_result.text_removed is None
 
 
 @pytest.mark.anyio
@@ -216,14 +205,14 @@ async def test_a_page_that_stays_a_stand_in_is_accepted_as_its_new_content(
     )
 
     async with mock_client_factory(lambda request: httpx2.Response(200, html=CHALLENGE_PAGE)) as client:
-        page_results = await gather_critical_page_updates(client, [stored_page], init=False)
+        page_results = await check_critical_pages(client, [stored_page], init=False)
 
-    page_update = page_results[stored_page.id]
-    assert page_update.text_body == CHALLENGE_PAGE
-    assert page_update.recent_text_removed
-    assert page_update.has_changes
-    assert page_update.consecutive_failures == 0
-    assert page_update.last_failure_reason is None
+    page_result = page_results[stored_page.id]
+    assert page_result.text_body == CHALLENGE_PAGE
+    assert page_result.text_removed
+    assert page_result.has_changes
+    assert page_result.consecutive_failures == 0
+    assert page_result.last_failure_reason is None
 
 
 @pytest.mark.parametrize(
@@ -255,12 +244,12 @@ async def test_a_stand_in_page_is_not_accepted_too_early(
     )
 
     async with mock_client_factory(lambda request: httpx2.Response(200, html=CHALLENGE_PAGE)) as client:
-        page_results = await gather_critical_page_updates(client, [stored_page], init=False)
+        page_results = await check_critical_pages(client, [stored_page], init=False)
 
-    page_update = page_results[stored_page.id]
-    assert page_update.consecutive_failures == failures_after
-    assert page_update.last_failure_reason == STAND_IN_PAGE_REASON
-    assert page_update.text_body is None
+    page_result = page_results[stored_page.id]
+    assert page_result.consecutive_failures == failures_after
+    assert page_result.last_failure_reason == STAND_IN_PAGE_REASON
+    assert page_result.text_body is None
 
 
 def _refuse_connection(request: httpx2.Request) -> httpx2.Response:
@@ -299,12 +288,12 @@ async def test_a_critical_page_with_no_response_is_a_failed_check_saying_why(
     stored_page = test_critical_page.model_copy(update={"text_body": FEES_PAGE, "links": [], "documents": []})
 
     async with mock_client_factory(handler) as client:
-        page_results = await gather_critical_page_updates(client, [stored_page], init=False)
+        page_results = await check_critical_pages(client, [stored_page], init=False)
 
-    page_update = page_results[stored_page.id]
-    assert page_update.consecutive_failures == 1
-    assert page_update.last_failure_reason == failure_reason
-    assert page_update.text_body is None
+    page_result = page_results[stored_page.id]
+    assert page_result.consecutive_failures == 1
+    assert page_result.last_failure_reason == failure_reason
+    assert page_result.text_body is None
 
 
 # ======================================
@@ -322,10 +311,10 @@ async def test_a_page_that_really_changed_is_not_mistaken_for_a_stand_in(
     new_page: str = FEES_PAGE.replace("$110.", "$115.")
 
     async with mock_client_factory(lambda request: httpx2.Response(200, html=new_page)) as client:
-        updates: CriticalPageScanResult | None = await get_critical_page_updates(client, stored_page)
+        page_result: CriticalPageScanResult | None = await check_critical_page(client, stored_page)
 
-    assert updates is not None
-    assert updates.recent_text_changed is not None and len(updates.recent_text_changed) == 1
+    assert page_result is not None
+    assert page_result.text_changed is not None and len(page_result.text_changed) == 1
 
 
 @pytest.mark.parametrize(("ignore_rules", "reported"), [([], True), ([r"Page last updated: .*"], False)])
@@ -345,9 +334,9 @@ async def test_ignore_rules_hide_text_that_changes_every_scan(
     )
 
     async with mock_client_factory(lambda request: httpx2.Response(200, html=new_page)) as client:
-        updates: CriticalPageScanResult | None = await get_critical_page_updates(client, stored_page)
+        page_result: CriticalPageScanResult | None = await check_critical_page(client, stored_page)
 
-    assert (updates is not None) is reported
+    assert (page_result is not None) is reported
 
 
 def _page_with_menu(menu_links: str, content_links: str) -> str:
@@ -364,16 +353,16 @@ async def test_a_change_to_the_site_wide_menu_is_not_reported_on_a_critical_page
     html = _page_with_menu('<a href="/about">About</a>', '<a href="/apply">Apply</a>')
 
     async with mock_client_factory(lambda request: httpx2.Response(200, text=html)) as client:
-        baseline = await get_critical_page_updates(client, test_critical_page, init=True)
+        baseline = await check_critical_page(client, test_critical_page, init=True)
         assert baseline is not None and baseline.links == [HttpUrl("https://www.test_website.com/apply")]
         saved = test_critical_page.model_copy(update=baseline.model_dump(exclude_unset=True, exclude={"url"}))
 
         html = _page_with_menu('<a href="/careers">Careers</a>', '<a href="/apply">Apply</a><a href="/dates">D</a>')
-        updates = await get_critical_page_updates(client, saved)
+        page_result = await check_critical_page(client, saved)
 
-    assert updates is not None
-    assert updates.recent_links_added == [HttpUrl("https://www.test_website.com/dates")]
-    assert updates.recent_links_removed == []
+    assert page_result is not None
+    assert page_result.links_added == [HttpUrl("https://www.test_website.com/dates")]
+    assert page_result.links_removed == []
 
 
 @pytest.mark.anyio
@@ -392,11 +381,11 @@ async def test_menu_links_saved_by_an_older_version_are_dropped_without_being_re
     )
 
     async with mock_client_factory(lambda request: httpx2.Response(200, text=html)) as client:
-        updates = await get_critical_page_updates(client, saved_by_older_version)
+        page_result = await check_critical_page(client, saved_by_older_version)
 
-    assert updates is not None
-    assert not updates.has_changes
-    assert updates.links == [HttpUrl("https://www.test_website.com/apply")]
+    assert page_result is not None
+    assert not page_result.has_changes
+    assert page_result.links == [HttpUrl("https://www.test_website.com/apply")]
 
 
 @pytest.mark.anyio
@@ -412,7 +401,7 @@ async def test_relative_links_are_resolved_against_the_page_a_critical_page_redi
         return httpx2.Response(200, text='<html><body><main><a href="details">Details</a></main></body></html>')
 
     async with mock_client_factory(redirect_to_new_section) as client:
-        baseline = await get_critical_page_updates(client, test_critical_page, init=True)
+        baseline = await check_critical_page(client, test_critical_page, init=True)
 
     assert baseline is not None
     assert baseline.links == [HttpUrl("https://www.test_website.com/new-section/details")]
@@ -430,9 +419,9 @@ async def test_a_document_added_to_a_critical_pages_content_is_reported_but_not_
     html = _page_with_menu('<a href="/files/menu.pdf">Menu PDF</a>', '<a href="/files/fees.pdf">Fees PDF</a>')
 
     async with mock_client_factory(lambda request: httpx2.Response(200, text=html)) as client:
-        updates: CriticalPageScanResult | None = await get_critical_page_updates(client, stored_page)
+        page_result: CriticalPageScanResult | None = await check_critical_page(client, stored_page)
 
-    assert updates is not None
-    assert updates.recent_documents_added == [HttpUrl("https://www.test_website.com/files/fees.pdf")]
-    assert updates.recent_documents_removed == []
-    assert updates.documents == [HttpUrl("https://www.test_website.com/files/fees.pdf")]
+    assert page_result is not None
+    assert page_result.documents_added == [HttpUrl("https://www.test_website.com/files/fees.pdf")]
+    assert page_result.documents_removed == []
+    assert page_result.documents == [HttpUrl("https://www.test_website.com/files/fees.pdf")]

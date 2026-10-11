@@ -184,16 +184,16 @@ class WebsiteService(BaseCRUDService[DBWebsite, WebsiteRead, WebsiteCreate, Webs
             IntegrityError: If a page found on the website is already saved for it.
         """
         critical_page_service = CriticalPageService(self._db)
-        for critical_page_id, page_result in (scan_result.critical_page_updates or {}).items():
+        for critical_page_id, page_result in (scan_result.critical_page_results or {}).items():
             critical_page_service.update(id=critical_page_id, model_update=page_result.as_critical_page_update())
 
         internal_link_service = InternalLinkService(self._db)
-        if scan_result.initial_internal_links:
-            internal_link_service.create_batch(urls=scan_result.initial_internal_links, website_id=id)
-        if scan_result.recent_added_internal_links:
-            internal_link_service.create_batch(urls=scan_result.recent_added_internal_links, website_id=id)
-        if scan_result.recent_removed_internal_links:
-            internal_link_service.delete_batch(urls=scan_result.recent_removed_internal_links, website_id=id)
+        if scan_result.baseline_internal_links:
+            internal_link_service.create_batch(urls=scan_result.baseline_internal_links, website_id=id)
+        if scan_result.internal_links_added:
+            internal_link_service.create_batch(urls=scan_result.internal_links_added, website_id=id)
+        if scan_result.internal_links_removed:
+            internal_link_service.delete_batch(urls=scan_result.internal_links_removed, website_id=id)
 
     def delete(self, id: uuid.UUID) -> None:
         """Deletes a website record and associated resources from the database by its primary key.

@@ -15,7 +15,9 @@ from app.backend.websites.website_titles import website_card_title
         ("https://www.uwa.edu.au/study/", "<title>UWA</title>", "UWA - Study"),
         ("https://theguardian.com/au/", "<title>The Guardian</title>", "The Guardian - Au"),
         ("https://127.0.0.1/news/", None, "127.0.0.1 - News"),
+        ("https://www.uwa.edu.au/", "<title>Home</title>", "Uwa"),  # The page never writes the website's name
         ("", None, "Website"),
+        ("http://[unclosed/news", None, "Website"),  # Not a URL that can be read
     ],
 )
 def test_website_card_title_includes_path(url: str, html: str | None, expected: str) -> None:

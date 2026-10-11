@@ -237,8 +237,8 @@ def test_save_scan_result_saves_internal_links_added_and_removed(session: Sessio
 
     new_link_url = HttpUrl(f"{test_website.url}link_to_add")
     scan_result = WebsiteScanResult(
-        recent_added_internal_links=[new_link_url],
-        recent_removed_internal_links=[existing_link_url],
+        internal_links_added=[new_link_url],
+        internal_links_removed=[existing_link_url],
     )
 
     WebsiteService(session).save_scan_result(id=test_website.id, scan_result=scan_result)
@@ -328,7 +328,7 @@ def test_save_scan_result_saves_each_critical_page_as_it_is_now(session: Session
     )
 
     updated_url = HttpUrl(f"{test_website.url}critical_1_updated")
-    scan_result = WebsiteScanResult(critical_page_updates={created_page.id: CriticalPageScanResult(url=updated_url)})
+    scan_result = WebsiteScanResult(critical_page_results={created_page.id: CriticalPageScanResult(url=updated_url)})
 
     WebsiteService(session).save_scan_result(id=test_website.id, scan_result=scan_result)
 

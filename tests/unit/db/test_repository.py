@@ -1,11 +1,15 @@
 import uuid
 from collections.abc import Sequence
+from typing import Any
 
 import pytest
-from sqlalchemy.orm import Session
+from sqlalchemy import inspect
+from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from app.core.errors import IntegrityError, NotFoundError
 from app.db import repository
+from app.db.schema import DBWebsite
+from app.models.website_models import WebsiteRead
 from tests.conftest import DBTestTable
 
 
@@ -232,3 +236,16 @@ def test_delete(session: Session, test_record: DBTestTable) -> None:
     # Confirm it's gone
     with pytest.raises(NotFoundError):
         repository.get(session, table=DBTestTable, id=test_record.id)
+
+
+@pytest.mark.parametrize("relations", [[DBWebsite.critical_pages], None], ids=["asked-for", "not-asked-for"])
+def test_get_list_loads_the_relations_asked_for(
+    session: Session, test_website: WebsiteRead, relations: list[InstrumentedAttribute[Any]] | None
+) -> None:
+    """Tests the relations asked for are loaded with the records, so reading them does not query each record again,
+    while relations not asked for are left to load when they are read."""
+    session.expire_all()
+
+    [website] = repository.get_list(session, table=DBWebsite, attributes={"id": test_website.id}, relations=relations)
+
+    assert ("critical_pages" in inspect(website).unloaded) is (relations is None)

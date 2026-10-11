@@ -11,7 +11,7 @@ from httpx2 import AsyncClient
 from pydantic import HttpUrl
 
 from app.backend.crawler.site_crawler import crawl_site
-from app.backend.scanning.critical_page_checks import find_url_difference, gather_critical_page_updates
+from app.backend.scanning.critical_page_checks import check_critical_pages, find_url_difference
 from app.core.config import config
 from app.core.errors import MostPagesMissingError, TrafficError, WebConnectionError, WebsiteTooLargeError
 from app.models.scan_result_models import CriticalPageScanResult, WebsiteScanResult
@@ -33,12 +33,12 @@ class CrawlFailedError(Exception):
 
     Attributes:
         error: Why the crawl failed.
-        critical_page_updates: What the critical pages' check found, or None if nothing changed.
+        found_before_failing: What the critical pages' check found, or None if nothing changed.
     """
 
-    def __init__(self, error: CrawlFailure, critical_page_updates: WebsiteScanResult | None) -> None:
+    def __init__(self, error: CrawlFailure, found_before_failing: WebsiteScanResult | None) -> None:
         self.error: CrawlFailure = error
-        self.critical_page_updates: WebsiteScanResult | None = critical_page_updates
+        self.found_before_failing: WebsiteScanResult | None = found_before_failing
         super().__init__(str(error))
 
 
@@ -61,19 +61,21 @@ def _has_lost_most_pages(known_count: int, missing_count: int) -> bool:
     )
 
 
-def _website_has_been_updated(updates: WebsiteScanResult) -> bool:
+def _has_anything_to_save(scan_result: WebsiteScanResult) -> bool:
     """Checks whether a scan found anything to save: a critical page's result, a first list of pages, or a change.
 
     Args:
-        updates: What the scan found.
+        scan_result: What the scan found.
 
     Returns:
         True if there is something to save.
     """
-    return bool(updates.critical_page_updates or updates.initial_internal_links is not None or updates.has_changes)
+    return bool(
+        scan_result.critical_page_results or scan_result.baseline_internal_links is not None or scan_result.has_changes
+    )
 
 
-async def get_critical_page_only_updates(
+async def scan_critical_pages_only(
     client: AsyncClient,
     stored_website: WebsiteRead,
     init: bool = False,
@@ -88,14 +90,14 @@ async def get_critical_page_only_updates(
         init (bool, optional): Re-save each critical page's current state as its baseline. Defaults to False.
 
     Returns:
-        WebsiteScanResult | None: The updates to the website's critical pages, or None if nothing changed.
+        WebsiteScanResult | None: What the check of the website's critical pages found, or None if nothing changed.
     """
-    critical_page_updates = await gather_critical_page_updates(client, stored_website.critical_pages, init)
-    return _critical_page_only_update(stored_website, critical_page_updates)
+    critical_page_results = await check_critical_pages(client, stored_website.critical_pages, init)
+    return _critical_page_only_result(stored_website, critical_page_results)
 
 
 def _without_failed_checks(
-    critical_page_updates: dict[uuid.UUID, CriticalPageScanResult],
+    critical_page_results: dict[uuid.UUID, CriticalPageScanResult],
 ) -> dict[uuid.UUID, CriticalPageScanResult]:
     """Leaves out the critical pages that could not be checked, keeping changes, baselines and pages back after failing.
 
@@ -104,31 +106,35 @@ def _without_failed_checks(
     report the pages as unreachable after a couple of such scans.
 
     Args:
-        critical_page_updates: The updates for each critical page that changed, saved a baseline, failed or recovered.
+        critical_page_results: The result of each critical page that changed, saved a baseline, failed or recovered.
 
     Returns:
-        The updates of the pages that were checked.
+        The results of the pages that were checked.
     """
-    return {page_id: update for page_id, update in critical_page_updates.items() if not update.consecutive_failures}
+    return {
+        page_id: page_result
+        for page_id, page_result in critical_page_results.items()
+        if not page_result.consecutive_failures
+    }
 
 
-def _critical_page_only_update(
-    stored_website: WebsiteRead, critical_page_updates: dict[uuid.UUID, CriticalPageScanResult]
+def _critical_page_only_result(
+    stored_website: WebsiteRead, critical_page_results: dict[uuid.UUID, CriticalPageScanResult]
 ) -> WebsiteScanResult | None:
-    """Wraps what a check of a website's critical pages found as an update of the website.
+    """Wraps what a check of a website's critical pages found as the result of a scan of the website.
 
     Args:
         stored_website: The current state of the website retrieved from the database.
-        critical_page_updates: The updates for each critical page that changed, saved a baseline, failed or recovered.
+        critical_page_results: The result of each critical page that changed, saved a baseline, failed or recovered.
 
     Returns:
-        The update, or None if nothing changed.
+        The scan's result, or None if nothing changed.
     """
-    updates = WebsiteScanResult(critical_page_updates=critical_page_updates or None)
-    return updates if _website_has_been_updated(updates) else None
+    scan_result = WebsiteScanResult(critical_page_results=critical_page_results or None)
+    return scan_result if _has_anything_to_save(scan_result) else None
 
 
-async def get_website_updates(
+async def scan_whole_website(
     client: AsyncClient,
     stored_website: WebsiteRead,
     stored_internal_links: Sequence[HttpUrl],
@@ -138,9 +144,9 @@ async def get_website_updates(
     init: bool = False,
     accept_missing_pages: bool = False,
 ) -> WebsiteScanResult | None:
-    """Crawls a website to detect changes in internal links and updates its monitored critical pages.
+    """Checks a website's critical pages, then crawls the website to detect changes in its internal links.
 
-    Iterates through all associated critical pages to fetch their updates, and crawls the primary
+    Iterates through all associated critical pages to check them for changes, and crawls the primary
     website URL to map its current internal linking structure. Computes differences in internal
     links compared to the stored state.
 
@@ -156,8 +162,8 @@ async def get_website_updates(
             missing, e.g. because they have been missing for several scans in a row. Defaults to False.
 
     Returns:
-        WebsiteScanResult: A schema object containing updates to critical pages and computed
-        differences for internal links (added/removed).
+        WebsiteScanResult | None: What the critical pages' check found and the internal links added and removed, or
+        None if nothing changed.
 
     Raises:
         CrawlFailedError: If the crawl was rate limited, could not reach the website, could not find most of the
@@ -166,13 +172,13 @@ async def get_website_updates(
             but none of the crawl's pages are reported as removed. Critical pages that could not be checked are left
             out, unless the website was too large, as then the website did answer.
     """
-    updates = WebsiteScanResult()
-    critical_page_updates: dict[uuid.UUID, CriticalPageScanResult] = await gather_critical_page_updates(
+    scan_result = WebsiteScanResult()
+    critical_page_results: dict[uuid.UUID, CriticalPageScanResult] = await check_critical_pages(
         client=client,
         critical_pages=stored_website.critical_pages,
         init=init,
     )
-    updates.critical_page_updates = critical_page_updates or None
+    scan_result.critical_page_results = critical_page_results or None
 
     try:
         current_internal_links: list[HttpUrl] = URL_LIST_ADAPTER.validate_python(
@@ -187,29 +193,29 @@ async def get_website_updates(
             )
         )
     except WebsiteTooLargeError as error:
-        raise CrawlFailedError(error, _critical_page_only_update(stored_website, critical_page_updates)) from error
+        raise CrawlFailedError(error, _critical_page_only_result(stored_website, critical_page_results)) from error
     except (TrafficError, WebConnectionError) as error:  # Most pages missing is only found once the crawl is done
-        checked_pages: dict[uuid.UUID, CriticalPageScanResult] = _without_failed_checks(critical_page_updates)
-        raise CrawlFailedError(error, _critical_page_only_update(stored_website, checked_pages)) from error
+        checked_pages: dict[uuid.UUID, CriticalPageScanResult] = _without_failed_checks(critical_page_results)
+        raise CrawlFailedError(error, _critical_page_only_result(stored_website, checked_pages)) from error
 
     if init or not stored_internal_links:
-        updates.initial_internal_links = current_internal_links
-        logger.info(f"{len(updates.initial_internal_links)=}")
+        scan_result.baseline_internal_links = current_internal_links
+        logger.info(f"{len(scan_result.baseline_internal_links)=}")
     else:
         # Comparing tens of thousands of pages takes about a second, so it is done in a thread, keeping the dashboard
         # responsive
-        updates.recent_added_internal_links, updates.recent_removed_internal_links = await asyncio.to_thread(
+        scan_result.internal_links_added, scan_result.internal_links_removed = await asyncio.to_thread(
             find_url_difference, stored_internal_links, current_internal_links
         )
         # Only the counts are logged, as a website can have thousands of pages
-        added_count: int = len(updates.recent_added_internal_links or [])
-        missing_count: int = len(updates.recent_removed_internal_links or [])
+        added_count: int = len(scan_result.internal_links_added or [])
+        missing_count: int = len(scan_result.internal_links_removed or [])
         logger.info(f"{stored_website.url}: {added_count} pages added and {missing_count} pages removed.")
         if not accept_missing_pages and _has_lost_most_pages(len(stored_internal_links), missing_count):
             raise CrawlFailedError(
                 MostPagesMissingError(str(stored_website.url), missing_count, len(stored_internal_links)),
-                _critical_page_only_update(stored_website, _without_failed_checks(critical_page_updates)),
+                _critical_page_only_result(stored_website, _without_failed_checks(critical_page_results)),
             )
 
-    if _website_has_been_updated(updates):
-        return updates
+    if _has_anything_to_save(scan_result):
+        return scan_result

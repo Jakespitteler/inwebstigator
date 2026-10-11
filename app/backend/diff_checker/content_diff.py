@@ -3,7 +3,7 @@ from collections.abc import Sequence
 
 from app.backend.diff_checker.block_comparison import find_changed_regions, match_text_found_on_both_pages, pair_edits
 from app.backend.diff_checker.models import ContentDiff, DiffSettings, LinkDiff, MatchedText, PageContent
-from app.backend.diff_checker.page_parser import normalize_text
+from app.backend.diff_checker.page_parser import normalise_text
 from app.core.urls import page_key
 from app.models.content_block_models import ContentBlock
 
@@ -154,7 +154,7 @@ def _without_matches(text: str, patterns: Sequence[re.Pattern[str]]) -> str:
     """
     for pattern in patterns:
         text = pattern.sub("", text)
-    return normalize_text(text)
+    return normalise_text(text)
 
 
 def without_ignored_text(content: PageContent, ignore_rules: Sequence[str]) -> PageContent:

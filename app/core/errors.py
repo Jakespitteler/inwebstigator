@@ -2,13 +2,13 @@ import uuid
 from typing import Any
 
 
-class DataBaseError(Exception):
+class DatabaseError(Exception):
     """Base class for all custom database-related exceptions in the application."""
 
     ...
 
 
-class NotFoundError(DataBaseError):
+class NotFoundError(DatabaseError):
     """Exception raised when a requested database record cannot be found.
 
     Handles initialisation via either a primary key UUID or a dictionary of
@@ -34,7 +34,7 @@ class NotFoundError(DataBaseError):
             super().__init__("not found.")
 
 
-class IntegrityError(DataBaseError):
+class IntegrityError(DatabaseError):
     """Exception raised when database integrity or unique constraints are violated.
 
     Attributes:
@@ -45,7 +45,7 @@ class IntegrityError(DataBaseError):
         super().__init__("Data validation error. Ensure all referenced IDs exist and unique constraints are met.")
 
 
-class WebsiteAlreadyMonitoredError(DataBaseError):
+class WebsiteAlreadyMonitoredError(DatabaseError):
     """Exception raised when adding a website that is already being monitored.
 
     The address can be written differently, e.g. with or without "www.", a trailing "/", or http instead of https.

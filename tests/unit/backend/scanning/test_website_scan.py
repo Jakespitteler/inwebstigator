@@ -13,7 +13,7 @@ from pydantic import HttpUrl
 from pytest_mock import MockerFixture
 from sqlalchemy.orm import Session
 
-from app.backend.email_service.html_bodies import generate_scan_report_html
+from app.backend.email_service.html_bodies import scan_report_html
 from app.backend.scanning.change_detection import CrawlFailedError
 from app.backend.scanning.scan_queue import ScanQueue
 from app.backend.scanning.website_scan import scan_website
@@ -30,7 +30,7 @@ from app.models.website_models import DeactivationReason, WebsiteCreate, Website
 
 def _report(scan_run: ScanRunRead) -> str:
     """Writes a scan's report the way its recipients would be emailed it."""
-    return generate_scan_report_html("https://example.com", scan_run)
+    return scan_report_html("https://example.com", scan_run)
 
 
 @pytest.mark.anyio
@@ -235,12 +235,12 @@ async def test_scan_after_a_failed_first_scan_saves_a_baseline_instead_of_report
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    "website_updates",
+    "scan_result",
     [
         None,
-        WebsiteScanResult(initial_internal_links=[HttpUrl("https://www.test_website.com/")]),
+        WebsiteScanResult(baseline_internal_links=[HttpUrl("https://www.test_website.com/")]),
         WebsiteScanResult(
-            critical_page_updates={
+            critical_page_results={
                 uuid.uuid4(): CriticalPageScanResult(
                     url=HttpUrl("https://www.test_website.com/new-page"),
                     text_body="<p>New page.</p>",
@@ -253,12 +253,12 @@ async def test_scan_after_a_failed_first_scan_saves_a_baseline_instead_of_report
     ids=["nothing-changed", "internal-link-baseline", "new-page-baseline"],
 )
 async def test_scan_website_without_changes_has_no_report(
-    session: Session, populated_website: WebsiteRead, mocker: MockerFixture, website_updates: WebsiteScanResult | None
+    session: Session, populated_website: WebsiteRead, mocker: MockerFixture, scan_result: WebsiteScanResult | None
 ):
     """Tests a scan that finds nothing, or only saves baselines, has no report but is still recorded in the website's
     history, and still clears past failures."""
     mocker.patch("app.backend.scanning.website_scan.db_context", side_effect=lambda: nullcontext(session))
-    mocker.patch("app.backend.scanning.website_scan.get_website_updates", return_value=website_updates)
+    mocker.patch("app.backend.scanning.website_scan.scan_whole_website", return_value=scan_result)
     mocker.patch.object(WebsiteService, "update", return_value=populated_website)
     mock_save_scan_result = mocker.patch.object(WebsiteService, "save_scan_result")
     mock_reset_failed_attempts = mocker.patch.object(WebsiteService, "reset_failed_attempts")
@@ -269,7 +269,7 @@ async def test_scan_website_without_changes_has_no_report(
     assert scan_run.status is ScanStatus.SUCCESS
     assert ScanRunService(session).get_latest_for_website(populated_website.id, limit=10) == [scan_run]
     saved_results = [call.kwargs["scan_result"] for call in mock_save_scan_result.call_args_list]
-    assert any(result is website_updates for result in saved_results) is (website_updates is not None)  # baselines
+    assert any(result is scan_result for result in saved_results) is (scan_result is not None)  # baselines
     mock_reset_failed_attempts.assert_called_once_with(populated_website.id)
 
 
@@ -281,7 +281,7 @@ async def test_scan_website_traffic_error_handling(
     mocker.patch("app.backend.scanning.website_scan.db_context", side_effect=lambda: nullcontext(session))
     mock_client = mocker.AsyncMock(spec=httpx2.AsyncClient)
     mocker.patch(
-        "app.backend.scanning.website_scan.get_website_updates",
+        "app.backend.scanning.website_scan.scan_whole_website",
         side_effect=CrawlFailedError(TrafficError(url=str(populated_website.url), status_code=429), None),
     )
     mock_handle_traffic = mocker.patch(
@@ -306,7 +306,7 @@ async def test_scan_website_traffic_error_re_raised_with_params(
     """Tests that TrafficError is re-raised when delay or concurrent parameters are provided."""
     mock_client = mocker.AsyncMock(spec=httpx2.AsyncClient)
     mocker.patch(
-        "app.backend.scanning.website_scan.get_website_updates",
+        "app.backend.scanning.website_scan.scan_whole_website",
         side_effect=CrawlFailedError(TrafficError(url=str(populated_website.url), status_code=429), None),
     )
 
@@ -327,7 +327,7 @@ async def test_scan_website_connection_error_handling(
     mocker.patch("app.backend.scanning.website_scan.db_context", side_effect=lambda: nullcontext(session))
     mock_client = mocker.AsyncMock(spec=httpx2.AsyncClient)
     mocker.patch(
-        "app.backend.scanning.website_scan.get_website_updates",
+        "app.backend.scanning.website_scan.scan_whole_website",
         side_effect=CrawlFailedError(WebConnectionError("Connection timed out"), None),
     )
     mock_handle_conn = mocker.patch(
@@ -490,7 +490,7 @@ async def test_cancelling_a_scan_stops_it_and_saves_nothing(
         first_crawl_started.set()
         await asyncio.Event().wait()  # Runs until cancelled
 
-    mocker.patch("app.backend.scanning.website_scan.get_website_updates", side_effect=crawl)
+    mocker.patch("app.backend.scanning.website_scan.scan_whole_website", side_effect=crawl)
     mock_update = mocker.patch.object(WebsiteService, "update")
     queued_website = populated_website.model_copy(update={"url": "https://queued.com"})
     client = mocker.AsyncMock(spec=httpx2.AsyncClient)

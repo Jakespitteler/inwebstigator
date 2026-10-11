@@ -498,7 +498,7 @@ async def test_cancelling_run_all_scans_cancels_the_website_being_scanned(
         crawl_started.set()
         await asyncio.Event().wait()  # Runs until cancelled
 
-    mocker.patch("app.backend.scanning.website_scan._find_updates", side_effect=crawl)
+    mocker.patch("app.backend.scanning.website_scan._scan_for_changes", side_effect=crawl)
     mock_update = mocker.patch.object(WebsiteService, "update")
     run_all = asyncio.create_task(scan_all_websites_now())
     await crawl_started.wait()

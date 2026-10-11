@@ -52,11 +52,11 @@ INLINE_TAGS: frozenset[str] = frozenset(
 NO_HEADING: str = "No heading"
 
 
-def normalize_text(text: str) -> str:
+def normalise_text(text: str) -> str:
     """Removes extra whitespace and newlines from a string.
 
     Args:
-        text: The raw string to clean and normalize.
+        text: The raw string to clean and normalise.
 
     Returns:
         A single-line string with all continuous whitespace collapsed into
@@ -72,10 +72,10 @@ def parse_standard_text(tag: Tag) -> str:
         tag: The BeautifulSoup Tag object to extract text content from.
 
     Returns:
-        The normalized text content extracted from the tag, with space-separated
+        The normalised text content extracted from the tag, with space-separated
         text nodes.
     """
-    return normalize_text(tag.get_text(" ", strip=True))
+    return normalise_text(tag.get_text(" ", strip=True))
 
 
 def parse_table_row(tag: Tag) -> str:
@@ -88,7 +88,7 @@ def parse_table_row(tag: Tag) -> str:
         A pipe-delimited string representing the row contents (e.g., "Col 1 | Col 2").
     """
     cells = tag.find_all(["th", "td"])
-    return " | ".join(normalize_text(cell.get_text(" ", strip=True)) for cell in cells)
+    return " | ".join(normalise_text(cell.get_text(" ", strip=True)) for cell in cells)
 
 
 BLOCK_PARSERS: dict[HTMLBlockType, Callable[[Tag], str]] = {
@@ -108,7 +108,7 @@ def clean_html(soup: BeautifulSoup) -> BeautifulSoup:
     """Removes non-content elements, HTML comments, and embedded raw HTML text nodes from a DOM tree.
 
     Args:
-        soup: The BeautifulSoup DOM tree to sanitize.
+        soup: The BeautifulSoup DOM tree to sanitise.
 
     Returns:
         The mutated BeautifulSoup object with unwanted tags, comments, and raw text HTML elements removed.
@@ -140,7 +140,7 @@ def extract_last_updated(container: Tag) -> str | None:
         container: The root Tag or BeautifulSoup object to search.
 
     Returns:
-        The normalized text from the immediate sibling element of the 'Last Updated:' heading,
+        The normalised text from the immediate sibling element of the 'Last Updated:' heading,
         or None if no matching heading or sibling date element is found.
     """
     heading: Tag | None = container.find(
@@ -219,14 +219,14 @@ def _page_pieces(container: Tag, ignore_parents: frozenset[str]) -> Iterator[Tag
     line_parts: list[str] = []
     for child in container.children:
         if isinstance(child, Tag) and not _is_inline(child):
-            if loose_text := normalize_text(" ".join(line_parts)):
+            if loose_text := normalise_text(" ".join(line_parts)):
                 yield loose_text
             line_parts = []
             yield from _pieces_of_tag(child, ignore_parents)
         else:
             line_parts.append(_text_of(child))
 
-    if loose_text := normalize_text(" ".join(line_parts)):
+    if loose_text := normalise_text(" ".join(line_parts)):
         yield loose_text
 
 

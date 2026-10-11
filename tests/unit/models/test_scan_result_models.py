@@ -23,7 +23,7 @@ def test_a_page_result_with_new_text_has_changes() -> None:
     """Tests text found on the page that was not there before is reported as a change."""
     new_text = ContentBlock(block_type=HTMLBlockType.PARAGRAPH, text="Late fee is $20.")
 
-    assert CriticalPageScanResult(url=PAGE_URL, recent_text_added=[new_text]).has_changes
+    assert CriticalPageScanResult(url=PAGE_URL, text_added=[new_text]).has_changes
 
 
 @pytest.mark.parametrize(
@@ -59,7 +59,7 @@ def test_only_the_page_as_it_is_now_is_saved_from_a_page_result() -> None:
     """Tests what changed on a page is left out of what is saved over the page's saved copy, as it goes in the scan's
     history instead, and values the scan did not set are left as they are."""
     new_text = ContentBlock(block_type=HTMLBlockType.PARAGRAPH, text="Late fee is $20.")
-    result = CriticalPageScanResult(url=PAGE_URL, text_body="<p>Late fee is $20.</p>", recent_text_added=[new_text])
+    result = CriticalPageScanResult(url=PAGE_URL, text_body="<p>Late fee is $20.</p>", text_added=[new_text])
 
     assert result.as_critical_page_update().model_dump(exclude_unset=True) == {
         "url": PAGE_URL,
@@ -68,12 +68,12 @@ def test_only_the_page_as_it_is_now_is_saved_from_a_page_result() -> None:
 
 
 def test_a_link_that_is_not_a_url_cannot_be_set_on_a_critical_page_scan_result() -> None:
-    """Tests a value set on an update after it is made is checked, so a bad link is refused when it is found rather
+    """Tests a value set on a result after it is made is checked, so a bad link is refused when it is found rather
     than saved and then failing every later scan of the website when it is read back."""
-    update = CriticalPageScanResult(url=HttpUrl("https://example.com/"))
+    result = CriticalPageScanResult(url=HttpUrl("https://example.com/"))
 
     with pytest.raises(ValidationError):
-        update.recent_links_added = ["sms:+61400000000"]  # pyright: ignore[reportAttributeAccessIssue]
+        result.links_added = ["sms:+61400000000"]  # pyright: ignore[reportAttributeAccessIssue]
 
 
 # ======================================
@@ -85,22 +85,26 @@ BASELINE_PAGE_ID = uuid.uuid4()
 
 
 @pytest.mark.parametrize(
-    ("updates", "changed_page_ids", "has_changes"),
+    ("scan_result", "changed_page_ids", "has_changes"),
     [
         (WebsiteScanResult(), set[uuid.UUID](), False),
-        (WebsiteScanResult(initial_internal_links=[HttpUrl("https://www.test_website.com/")]), set[uuid.UUID](), False),
-        (WebsiteScanResult(recent_added_internal_links=[], recent_removed_internal_links=[]), set[uuid.UUID](), False),
         (
-            WebsiteScanResult(recent_removed_internal_links=[HttpUrl("https://www.test_website.com/old")]),
+            WebsiteScanResult(baseline_internal_links=[HttpUrl("https://www.test_website.com/")]),
+            set[uuid.UUID](),
+            False,
+        ),
+        (WebsiteScanResult(internal_links_added=[], internal_links_removed=[]), set[uuid.UUID](), False),
+        (
+            WebsiteScanResult(internal_links_removed=[HttpUrl("https://www.test_website.com/old")]),
             set[uuid.UUID](),
             True,
         ),
         (
             WebsiteScanResult(
-                critical_page_updates={
+                critical_page_results={
                     CHANGED_PAGE_ID: CriticalPageScanResult(
                         url=HttpUrl("https://www.test_website.com/fees"),
-                        recent_links_added=[HttpUrl("https://www.test_website.com/new")],
+                        links_added=[HttpUrl("https://www.test_website.com/new")],
                     ),
                     BASELINE_PAGE_ID: CriticalPageScanResult(
                         url=HttpUrl("https://www.test_website.com/new-page"),
@@ -117,8 +121,8 @@ BASELINE_PAGE_ID = uuid.uuid4()
     ids=["empty", "internal-link-baseline", "empty-link-diff", "link-removed", "changed-and-baseline-pages"],
 )
 def test_website_scan_result_change_detection(
-    updates: WebsiteScanResult, changed_page_ids: set[uuid.UUID], has_changes: bool
+    scan_result: WebsiteScanResult, changed_page_ids: set[uuid.UUID], has_changes: bool
 ):
     """Tests only real changes count as changes, and pages that only saved a baseline are not reported."""
-    assert updates.changed_page_ids == changed_page_ids
-    assert updates.has_changes is has_changes
+    assert scan_result.changed_page_ids == changed_page_ids
+    assert scan_result.has_changes is has_changes

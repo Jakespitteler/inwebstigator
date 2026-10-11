@@ -176,7 +176,7 @@ def _has_been_a_stand_in_for_too_long(stored_page: CriticalPageRead) -> bool:
     )
 
 
-async def get_critical_page_updates(
+async def check_critical_page(
     client: AsyncClient,
     stored_page: CriticalPageRead,
     init: bool = False,
@@ -194,8 +194,9 @@ async def get_critical_page_updates(
         init (bool, optional): Re-save the page's current state as its baseline. Defaults to False.
 
     Returns:
-        CriticalPageScanResult | None: A schema object containing the updated fields (text_body, links, documents)
-        and the computed recent differences (added/removed links, text changes), or None if nothing changed.
+        CriticalPageScanResult | None: The page as it is now where it needs saving (text_body, links, documents),
+        and what changed since the last scan (links, documents and text added, removed or edited), or None if nothing
+        changed.
 
     Raises:
         StandInPageError: If the page loaded but has lost most of its text, so it is almost certainly a stand-in
@@ -222,48 +223,43 @@ async def get_critical_page_updates(
         logger.warning(f"{stored_page.url} has lost most of its content for several scans, so it is accepted as real.")
 
     links_anywhere: PageLinks = await asyncio.to_thread(_links_on_page, page_url, text_body)
-    updates = CriticalPageScanResult(url=stored_page.url)
+    page_result = CriticalPageScanResult(url=stored_page.url)
 
-    updates.recent_documents_added, updates.recent_documents_removed = _find_url_changes(
+    page_result.documents_added, page_result.documents_removed = _find_url_changes(
         previous_urls=stored_page.documents or [],
         main_content_urls=main_links.documents,
         page_urls=links_anywhere.documents,
     )
     if _saved_urls_are_out_of_date(stored_page.documents or [], main_links.documents):
-        updates.documents = main_links.documents
+        page_result.documents = main_links.documents
 
-    updates.recent_links_added, updates.recent_links_removed = _find_url_changes(
+    page_result.links_added, page_result.links_removed = _find_url_changes(
         previous_urls=stored_page.links or [],
         main_content_urls=main_links.links,
         page_urls=links_anywhere.links,
     )
     if _saved_urls_are_out_of_date(stored_page.links or [], main_links.links):
-        updates.links = main_links.links
+        page_result.links = main_links.links
 
-    updates.recent_text_added, updates.recent_text_removed, updates.recent_text_changed = await asyncio.to_thread(
+    page_result.text_added, page_result.text_removed, page_result.text_changed = await asyncio.to_thread(
         compare_page_content,
         old_content=old_content,
         new_content=new_content,
         settings=diff_settings,
     )
 
-    if updates.recent_text_added or updates.recent_text_removed or updates.recent_text_changed:
-        updates.text_body = text_body
+    if page_result.text_added or page_result.text_removed or page_result.text_changed:
+        page_result.text_body = text_body
 
-    if not updates.has_changes:
+    if not page_result.has_changes:
         # Links that moved out of the main content are dropped from the saved page without being reported
-        return updates if updates.links is not None or updates.documents is not None else None
+        return page_result if page_result.links is not None or page_result.documents is not None else None
     # Only how many of each change are logged, as a redesigned page can have hundreds of blocks of text
-    change_counts: dict[str, int] = {
-        kind: len(changes)
-        for kind in CriticalPageScanResult.model_fields
-        if kind.startswith("recent_") and (changes := getattr(updates, kind))
-    }
-    logger.info(f"Changes found on {stored_page.url}: {change_counts}")
-    return updates
+    logger.info(f"Changes found on {stored_page.url}: {page_result.change_counts}")
+    return page_result
 
 
-def _failed_check_update(stored_page: CriticalPageRead, error: UnreachablePageError) -> CriticalPageScanResult:
+def _failed_check_result(stored_page: CriticalPageRead, error: UnreachablePageError) -> CriticalPageScanResult:
     """Records a failed check of a critical page. Its saved content is kept to compare with once it is back.
 
     A missing (404) or gone (410) page counts as having failed enough checks to be reported straight away.
@@ -302,7 +298,7 @@ def _failed_check_update(stored_page: CriticalPageRead, error: UnreachablePageEr
     return CriticalPageScanResult(url=stored_page.url, consecutive_failures=failures, last_failure_reason=reason)
 
 
-async def gather_critical_page_updates(
+async def check_critical_pages(
     client: AsyncClient,
     critical_pages: Sequence[CriticalPageRead],
     init: bool,
@@ -320,18 +316,18 @@ async def gather_critical_page_updates(
         init (bool): Re-save each page's current state as its baseline.
 
     Returns:
-        dict[uuid.UUID, CriticalPageScanResult]: The updates for each page that changed, saved a baseline,
+        dict[uuid.UUID, CriticalPageScanResult]: The result of each page that changed, saved a baseline,
         failed or recovered, by page ID.
     """
     results = await asyncio.gather(
-        *(get_critical_page_updates(client, stored_page, init) for stored_page in critical_pages),
+        *(check_critical_page(client, stored_page, init) for stored_page in critical_pages),
         return_exceptions=True,
     )
-    critical_page_updates: dict[uuid.UUID, CriticalPageScanResult] = {}
+    critical_page_results: dict[uuid.UUID, CriticalPageScanResult] = {}
     for critical_page, result in zip(critical_pages, results, strict=True):
         if isinstance(result, UNREACHABLE_PAGE_ERRORS):
             logger.warning(f"Critical page {critical_page.url} could not be fetched this scan: {result!r}")
-            critical_page_updates[critical_page.id] = _failed_check_update(critical_page, result)
+            critical_page_results[critical_page.id] = _failed_check_result(critical_page, result)
             continue
         if isinstance(result, BaseException):
             # Anything that is not an Exception (e.g. cancellation on shutdown) must not be swallowed.
@@ -346,5 +342,5 @@ async def gather_critical_page_updates(
             result.consecutive_failures = 0
             result.last_failure_reason = None
         if result is not None:
-            critical_page_updates[critical_page.id] = result
-    return critical_page_updates
+            critical_page_results[critical_page.id] = result
+    return critical_page_results

@@ -10,8 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.backend.scanning.change_detection import (
     CrawlFailedError,
-    get_critical_page_only_updates,
-    get_website_updates,
+    scan_critical_pages_only,
+    scan_whole_website,
 )
 from app.backend.scanning.found_changes import changes_found_by
 from app.backend.scanning.scan_failures import handle_connection_error, handle_too_large, handle_traffic_error
@@ -41,7 +41,7 @@ MISSING_PAGES_ACCEPTED_AFTER: str = (
 )
 
 
-async def _find_updates(
+async def _scan_for_changes(
     client: AsyncClient,
     website: WebsiteRead,
     max_pages: int | None,
@@ -63,17 +63,17 @@ async def _find_updates(
         init: Re-save the website's current state as its baseline.
 
     Returns:
-        The updates found, or None if nothing changed.
+        What the scan found, or None if nothing changed.
     """
     if not website.active:
-        return await get_critical_page_only_updates(client, website, init)
+        return await scan_critical_pages_only(client, website, init)
 
     with db_context() as session:
         stored_internal_links: list[HttpUrl] = URL_LIST_ADAPTER.validate_python(
             InternalLinkService(session).get_urls_for_website(website.id)
         )
         accept_missing_pages: bool = _has_had_pages_missing_for_too_long(session, website.id)
-    return await get_website_updates(
+    return await scan_whole_website(
         client, website, stored_internal_links, max_pages, delay, concurrent, init, accept_missing_pages
     )
 
@@ -205,7 +205,7 @@ async def _record_failed_crawl(
     Raises:
         TrafficError: If the website rate limited a scan that was given its own delay or concurrency.
     """
-    found_before_failing: WebsiteScanResult | None = failure.critical_page_updates
+    found_before_failing: WebsiteScanResult | None = failure.found_before_failing
     match failure.error:
         case TrafficError() as error:
             logger.error("Temporary ban or severe rate limit detected for %s: %s", website.url, error)
@@ -259,7 +259,7 @@ async def _record_failed_crawl(
 
 
 def _deactivate_too_large_website(
-    website: WebsiteRead, max_pages: int, critical_page_updates: WebsiteScanResult | None
+    website: WebsiteRead, max_pages: int, found_before_failing: WebsiteScanResult | None
 ) -> ScanRunRead:
     """Deactivates a website with more pages than the crawler will scan, then saves what its critical pages' check
     found, as they are still watched while it is inactive.
@@ -270,19 +270,19 @@ def _deactivate_too_large_website(
     Args:
         website: The website found to be too large.
         max_pages: The most pages the crawler would scan.
-        critical_page_updates: What the critical pages' check found, or None if nothing changed.
+        found_before_failing: What the critical pages' check found, or None if nothing changed.
 
     Returns:
         The recorded scan.
     """
     with db_context() as session:
         too_large_message: str = handle_too_large(WebsiteService(session), website.id, max_pages)
-    return _save_updates(website, critical_page_updates, ScanStatus.TOO_LARGE, too_large_message)
+    return _save_scan_result(website, found_before_failing, ScanStatus.TOO_LARGE, too_large_message)
 
 
-def _save_updates(
+def _save_scan_result(
     website: WebsiteRead,
-    website_updates: WebsiteScanResult | None,
+    scan_result: WebsiteScanResult | None,
     status: ScanStatus = ScanStatus.SUCCESS,
     message: str | None = None,
 ) -> ScanRunRead:
@@ -293,7 +293,7 @@ def _save_updates(
 
     Args:
         website: The website that was scanned.
-        website_updates: What the scan found, or None if nothing changed.
+        scan_result: What the scan found, or None if nothing changed.
         status: How the scan went. Defaults to a normal scan.
         message: What the app did about a scan that did not go normally.
 
@@ -302,11 +302,11 @@ def _save_updates(
     """
     with db_context() as session:
         website_service = WebsiteService(session)
-        if website_updates:
-            website_service.save_scan_result(id=website.id, scan_result=website_updates)
+        if scan_result:
+            website_service.save_scan_result(id=website.id, scan_result=scan_result)
         website_service.reset_failed_attempts(website.id)
         _save_card_title(website_service, website.id)
-        scan_run: ScanRunRead = record_scan(session, website, status, message, changes_found_by(website_updates))
+        scan_run: ScanRunRead = record_scan(session, website, status, message, changes_found_by(scan_result))
     return scan_run
 
 
@@ -343,14 +343,14 @@ async def scan_website(
         ScanCancelledError: If the scan was cancelled before it finished.
     """
     try:
-        website_updates: WebsiteScanResult | None = await scan_queue.run(
-            str(website.url), lambda: _find_updates(client, website, max_pages, delay, concurrent, init)
+        scan_result: WebsiteScanResult | None = await scan_queue.run(
+            str(website.url), lambda: _scan_for_changes(client, website, max_pages, delay, concurrent, init)
         )
     except CrawlFailedError as failure:
         return await _record_failed_crawl(website, failure, delay, concurrent)
 
     # Saving a large website's links can take a few seconds, so it is done in a thread, keeping the dashboard responsive
-    scan_run: ScanRunRead = await asyncio.to_thread(_save_updates, website, website_updates)
+    scan_run: ScanRunRead = await asyncio.to_thread(_save_scan_result, website, scan_result)
     if not scan_run.has_report:
         logger.info("No changes found for %s", website.url)
     return scan_run

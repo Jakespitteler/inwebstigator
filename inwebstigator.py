@@ -52,9 +52,6 @@ SINGLE_INSTANCE_MUTEX: str = "Global\\Inwebstigator_SingleInstance"
 ERROR_ALREADY_EXISTS: int = 183
 MB_ICON_INFORMATION: int = 0x40
 
-# The type of function Windows calls when a console event (e.g. Ctrl+C) happens
-ConsoleCtrlHandler = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)
-
 # Application icon used by the system tray.
 ICON_PATH: Path = resource_path("app", "frontend", "static", "favicon.ico")
 
@@ -296,8 +293,8 @@ class DesktopApp:
         self._is_quitting: bool = False
         self._window: webview.Window = create_window()
         self._tray_icon: TrayIcon = self._create_tray_icon()
-        # Kept for as long as the app runs, as Windows calls it through a pointer to it
-        self._ctrl_c_handler = ConsoleCtrlHandler(self._quit_on_ctrl_c)
+        # The Ctrl+C handler Windows calls, kept for as long as the app runs (see `_listen_for_ctrl_c`)
+        self._ctrl_c_handler: object | None = None
 
     def _create_tray_icon(self) -> TrayIcon:
         """Creates the system tray icon, whose menu opens, hides or quits the app. Clicking the icon opens it.
@@ -367,6 +364,13 @@ class DesktopApp:
             self._window.destroy()
         return True
 
+    def _listen_for_ctrl_c(self) -> None:
+        """Lets Ctrl+C in the terminal quit the app (see `_quit_on_ctrl_c`). Only Windows sends these console events."""
+        console_ctrl_handler = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)
+        # Kept for as long as the app runs, as Windows calls it through a pointer to it
+        self._ctrl_c_handler = console_ctrl_handler(self._quit_on_ctrl_c)
+        ctypes.windll.kernel32.SetConsoleCtrlHandler(self._ctrl_c_handler, True)
+
     def _show_app_when_ready(self) -> None:
         """Opens the dashboard once the web server is ready, or explains that the app could not start."""
         if self._server.wait_until_ready(STARTUP_TIMEOUT_SECONDS):
@@ -377,7 +381,7 @@ class DesktopApp:
     def run(self) -> None:
         """Shows the window and the tray icon until the app quits, then stops the tray icon and the web server."""
         self._window.events.closing += self._on_window_closing
-        ctypes.windll.kernel32.SetConsoleCtrlHandler(self._ctrl_c_handler, True)
+        self._listen_for_ctrl_c()
         # The tray icon's loop blocks, so it runs in its own thread
         threading.Thread(target=self._tray_icon.run, name="system-tray", daemon=True).start()
 
