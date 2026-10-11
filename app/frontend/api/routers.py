@@ -8,7 +8,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import HttpUrl
 
 from app.backend.email_service.delivery import EmailSender, get_email_sender
-from app.backend.scanning.all_websites_scan import cancel_run_all, run_all_in_progress, scan_all_websites_now
+from app.backend.scanning.all_websites_scan import run_all_scans, scan_all_websites_now
 from app.backend.scanning.manual_scan import scan_website_now
 from app.backend.scanning.scan_queue import scan_queue
 from app.backend.scanning.scheduler import next_scheduled_check
@@ -100,7 +100,7 @@ def get_dashboard(session: SessionDep, request: Request):
             "queued_website_urls": set(scan_queue.queued_urls),
             "api_token": config.api_token,
             "api_token_header": API_TOKEN_HEADER,
-            "run_all_in_progress": run_all_in_progress(),
+            "run_all_in_progress": run_all_scans.in_progress,
         },
     )
 
@@ -183,7 +183,7 @@ async def scan_websites(email_sender: EmailSenderDep) -> str | None:
     Raises:
         HTTPException: 409 if "Run All Scans" is already running.
     """
-    if run_all_in_progress():
+    if run_all_scans.in_progress:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Run All Scans is already running.")
 
     return await scan_all_websites_now(email_sender=email_sender)
@@ -198,7 +198,7 @@ async def cancel_all_scans() -> bool:
     Returns:
         bool: True if it was cancelled, or False if "Run All Scans" was not running.
     """
-    return cancel_run_all()
+    return run_all_scans.cancel()
 
 
 @SCANNER_ROUTER.post("/run", response_model=str | None)

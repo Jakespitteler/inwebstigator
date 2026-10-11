@@ -48,6 +48,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+; Ticked by default, so scans carry on after the computer restarts
+Name: "startatsignin"; Description: "Start {#MyAppName} when I sign in to Windows"; GroupDescription: "Starting {#MyAppName}:"
 
 [Files]
 ; The app, as packaged by PyInstaller (uv run pyinstaller inwebstigator.spec)
@@ -59,11 +61,15 @@ Source: ".env"; DestDir: "{app}"; Flags: ignoreversion
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 ; Starts the app when the person signs in to Windows, so scans carry on after a restart
-Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: startatsignin
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+
+[InstallDelete]
+; Updating the app with the box unticked removes the shortcut an earlier install added
+Type: files; Name: "{userstartup}\{#MyAppName}.lnk"; Tasks: not startatsignin
 
 [UninstallDelete]
 ; The saved websites, scan history and logs (the app's user_data_dir in app/core/config.py)

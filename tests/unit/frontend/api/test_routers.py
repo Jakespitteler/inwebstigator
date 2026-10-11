@@ -17,6 +17,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.backend.email_service.message_builder import OutgoingEmail
+from app.backend.scanning.all_websites_scan import run_all_scans
 from app.backend.scanning.scan_queue import ScanQueue, scan_queue
 from app.core.config import config
 from app.core.errors import ScanAlreadyQueuedError, ScanCancelledError, UndeliverableEmailError, WebsiteTooLargeError
@@ -516,7 +517,7 @@ def test_run_all_is_refused_while_run_all_scans_is_already_running(
     api_client: TestClient, mocker: MockerFixture
 ) -> None:
     """Tests a second "Run All Scans" is refused rather than run alongside the first."""
-    mocker.patch("app.frontend.api.routers.run_all_in_progress", return_value=True)
+    mocker.patch("app.frontend.api.routers.run_all_scans", in_progress=True)
     mock_scan_all_websites_now = mocker.patch("app.frontend.api.routers.scan_all_websites_now")
 
     response = api_client.post("/scanner/run_all")
@@ -528,7 +529,7 @@ def test_run_all_is_refused_while_run_all_scans_is_already_running(
 
 def test_cancel_all_reports_whether_run_all_scans_was_cancelled(api_client: TestClient, mocker: MockerFixture) -> None:
     """Tests "Cancel" on Run All Scans cancels it, and says so when it wasn't running."""
-    mocker.patch("app.frontend.api.routers.cancel_run_all", side_effect=[True, False])
+    mocker.patch.object(run_all_scans, "cancel", side_effect=[True, False])
 
     assert api_client.post("/scanner/cancel_all").json() is True
     assert api_client.post("/scanner/cancel_all").json() is False
@@ -540,7 +541,7 @@ def test_dashboard_shows_run_all_cancel_button_only_while_run_all_scans_is_runni
 ) -> None:
     """Tests the Cancel button for Run All Scans shows, and Run All Scans is disabled, only while it is running,
     even after a refresh."""
-    mocker.patch("app.frontend.api.routers.run_all_in_progress", return_value=running)
+    mocker.patch("app.frontend.api.routers.run_all_scans", in_progress=running)
 
     dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
 

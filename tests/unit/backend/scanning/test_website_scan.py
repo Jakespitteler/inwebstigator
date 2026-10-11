@@ -22,7 +22,8 @@ from app.core.errors import ScanCancelledError, TrafficError, WebConnectionError
 from app.db.services.internal_link_service import InternalLinkService
 from app.db.services.scan_run_service import ScanRunService
 from app.db.services.website_service import WebsiteService
-from app.models.critical_page_models import CriticalPageRead, CriticalPageUpdate
+from app.models.critical_page_models import CriticalPageRead
+from app.models.scan_result_models import CriticalPageScanResult, WebsiteScanResult
 from app.models.scan_run_models import ChangeKind, ScanRunRead, ScanStatus
 from app.models.website_models import DeactivationReason, WebsiteCreate, WebsiteRead, WebsiteUpdate
 
@@ -237,10 +238,10 @@ async def test_scan_after_a_failed_first_scan_saves_a_baseline_instead_of_report
     "website_updates",
     [
         None,
-        WebsiteUpdate(initial_internal_links=[HttpUrl("https://www.test_website.com/")]),
-        WebsiteUpdate(
+        WebsiteScanResult(initial_internal_links=[HttpUrl("https://www.test_website.com/")]),
+        WebsiteScanResult(
             critical_page_updates={
-                uuid.uuid4(): CriticalPageUpdate(
+                uuid.uuid4(): CriticalPageScanResult(
                     url=HttpUrl("https://www.test_website.com/new-page"),
                     text_body="<p>New page.</p>",
                     links=[],
@@ -252,13 +253,14 @@ async def test_scan_after_a_failed_first_scan_saves_a_baseline_instead_of_report
     ids=["nothing-changed", "internal-link-baseline", "new-page-baseline"],
 )
 async def test_scan_website_without_changes_has_no_report(
-    session: Session, populated_website: WebsiteRead, mocker: MockerFixture, website_updates: WebsiteUpdate | None
+    session: Session, populated_website: WebsiteRead, mocker: MockerFixture, website_updates: WebsiteScanResult | None
 ):
     """Tests a scan that finds nothing, or only saves baselines, has no report but is still recorded in the website's
     history, and still clears past failures."""
     mocker.patch("app.backend.scanning.website_scan.db_context", side_effect=lambda: nullcontext(session))
     mocker.patch("app.backend.scanning.website_scan.get_website_updates", return_value=website_updates)
-    mock_update = mocker.patch.object(WebsiteService, "update", return_value=populated_website)
+    mocker.patch.object(WebsiteService, "update", return_value=populated_website)
+    mock_save_scan_result = mocker.patch.object(WebsiteService, "save_scan_result")
     mock_reset_failed_attempts = mocker.patch.object(WebsiteService, "reset_failed_attempts")
 
     scan_run = await scan_website(client=mocker.AsyncMock(spec=httpx2.AsyncClient), website=populated_website)
@@ -266,8 +268,8 @@ async def test_scan_website_without_changes_has_no_report(
     assert not scan_run.has_report
     assert scan_run.status is ScanStatus.SUCCESS
     assert ScanRunService(session).get_latest_for_website(populated_website.id, limit=10) == [scan_run]
-    saved_updates = [call.kwargs["model_update"] for call in mock_update.call_args_list]
-    assert any(update is website_updates for update in saved_updates) is (website_updates is not None)  # baselines
+    saved_results = [call.kwargs["scan_result"] for call in mock_save_scan_result.call_args_list]
+    assert any(result is website_updates for result in saved_results) is (website_updates is not None)  # baselines
     mock_reset_failed_attempts.assert_called_once_with(populated_website.id)
 
 

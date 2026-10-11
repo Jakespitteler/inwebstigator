@@ -11,8 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.backend.scanning.all_websites_scan import (
     SCAN_FAILED_MESSAGE,
-    cancel_run_all,
-    run_all_in_progress,
+    run_all_scans,
     scan_all_websites,
     scan_all_websites_now,
 )
@@ -441,8 +440,8 @@ async def test_scan_all_websites_continues_when_a_failed_scan_cannot_be_recorded
 
 def test_cancel_run_all_does_nothing_when_run_all_scans_is_not_running() -> None:
     """Tests cancelling says so when there is no "Run All Scans" to cancel."""
-    assert not run_all_in_progress()
-    assert not cancel_run_all()
+    assert not run_all_scans.in_progress
+    assert not run_all_scans.cancel()
 
 
 @pytest.mark.anyio
@@ -463,8 +462,8 @@ async def test_cancelling_run_all_scans_skips_the_rest_but_still_emails_changes_
     async def scan(client: object, website: WebsiteRead) -> ScanRunRead:
         if website.url == first.url:
             return _scan_finding("https://first.com/new")
-        assert run_all_in_progress()
-        cancel_results.append(cancel_run_all())  # Cancelled while this website is being scanned
+        assert run_all_scans.in_progress
+        cancel_results.append(run_all_scans.cancel())  # Cancelled while this website is being scanned
         raise ScanCancelledError(str(website.url))
 
     mock_scan_website = mocker.patch("app.backend.scanning.all_websites_scan.scan_website", side_effect=scan)
@@ -477,7 +476,7 @@ async def test_cancelling_run_all_scans_skips_the_rest_but_still_emails_changes_
     mock_send_reports.assert_called_once()
     assert [call.kwargs["id"] for call in mock_update.call_args_list] == [first.id]
     assert result is not None and "https://first.com/new" in result
-    assert not run_all_in_progress()
+    assert not run_all_scans.in_progress
 
 
 @pytest.mark.anyio
@@ -504,11 +503,11 @@ async def test_cancelling_run_all_scans_cancels_the_website_being_scanned(
     run_all = asyncio.create_task(scan_all_websites_now())
     await crawl_started.wait()
 
-    assert cancel_run_all()
-    assert not cancel_run_all()  # Already cancelled
+    assert run_all_scans.cancel()
+    assert not run_all_scans.cancel()  # Already cancelled
 
     assert await run_all is None
     assert crawls_started == [str(scanning.url)]
     mock_update.assert_not_called()
     assert empty_scan_queue.queued_urls == []
-    assert not run_all_in_progress()
+    assert not run_all_scans.in_progress

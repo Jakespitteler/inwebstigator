@@ -69,7 +69,8 @@ it catches up on any missed scans shortly after you next open it.
 
 **After restarting the computer,** there is nothing to do: Inwebstigator
 starts by itself when you sign in to Windows, and catches up on any scans
-missed while the computer was off.
+missed while the computer was off. (If you unticked "Start Inwebstigator when
+I sign in to Windows" when installing, open it from the Start menu instead.)
 
 **Emails you'll receive** (they come from the Inwebstigator email account, not
 from a person):

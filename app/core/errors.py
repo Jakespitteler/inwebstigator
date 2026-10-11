@@ -245,7 +245,13 @@ class WebsiteTooLargeError(WebCrawlerError):
         super().__init__(f"{url} has more than {max_pages:,} pages, which is more than the crawler will scan.")
 
 
-class ScanAlreadyQueuedError(WebCrawlerError):
+class ScanError(Exception):
+    """Base class for the errors of the queue that runs website scans one at a time (see `ScanQueue`)."""
+
+    ...
+
+
+class ScanAlreadyQueuedError(ScanError):
     """Exception raised when a scan is requested for a website that is already queued or being scanned.
 
     Attributes:
@@ -257,7 +263,7 @@ class ScanAlreadyQueuedError(WebCrawlerError):
         super().__init__(f"{url} is already queued or being scanned.")
 
 
-class ScanCancelledError(WebCrawlerError):
+class ScanCancelledError(ScanError):
     """Exception raised when a website's scan is cancelled before it finished.
 
     Attributes:

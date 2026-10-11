@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Generator, Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -37,31 +38,53 @@ class RunAllScans:
     website_url: str | None = None
 
 
-# The dashboard's "Run All Scans" in progress, if there is one
-current_run_all: RunAllScans | None = None
-
-
-def cancel_run_all() -> bool:
-    """Cancels the dashboard's "Run All Scans": the website being scanned is cancelled and the rest are skipped.
-
-    Websites already scanned keep their results, and their changes are still emailed.
-
-    Returns:
-        True if it was cancelled, or False if no "Run All Scans" was running.
+class RunAllScansTracker:
+    """Keeps track of the dashboard's "Run All Scans", so it can be cancelled part way through and the dashboard can
+    show its Cancel button. Only one runs at a time.
     """
-    run_all: RunAllScans | None = current_run_all
-    if run_all is None or run_all.cancelled:
-        return False
 
-    run_all.cancelled = True
-    if run_all.website_url:
-        scan_queue.cancel(run_all.website_url)
-    return True
+    def __init__(self) -> None:
+        self._current: RunAllScans | None = None
+
+    @property
+    def in_progress(self) -> bool:
+        """Whether "Run All Scans" is running, so the dashboard can show its Cancel button."""
+        return self._current is not None
+
+    @contextmanager
+    def track(self) -> Generator[RunAllScans]:
+        """Keeps track of a "Run All Scans" while it runs, so it can be cancelled.
+
+        Yields:
+            The run, which the scans check to see whether it has been cancelled.
+        """
+        run_all = RunAllScans()
+        self._current = run_all
+        try:
+            yield run_all
+        finally:
+            self._current = None
+
+    def cancel(self) -> bool:
+        """Cancels the dashboard's "Run All Scans": the website being scanned is cancelled and the rest are skipped.
+
+        Websites already scanned keep their results, and their changes are still emailed.
+
+        Returns:
+            True if it was cancelled, or False if no "Run All Scans" was running.
+        """
+        run_all: RunAllScans | None = self._current
+        if run_all is None or run_all.cancelled:
+            return False
+
+        run_all.cancelled = True
+        if run_all.website_url:
+            scan_queue.cancel(run_all.website_url)
+        return True
 
 
-def run_all_in_progress() -> bool:
-    """Checks whether the dashboard's "Run All Scans" is running, so the dashboard can show its Cancel button."""
-    return current_run_all is not None
+# The dashboard's "Run All Scans", shared by the scan and the dashboard
+run_all_scans: RunAllScansTracker = RunAllScansTracker()
 
 
 def _latest_state(website: WebsiteRead) -> WebsiteRead | None:
@@ -212,7 +235,7 @@ async def scan_all_websites(
 
 
 async def scan_all_websites_now(email_sender: EmailSender | None = None) -> str | None:
-    """Scans every website now for the dashboard's "Run All Scans", in a way `cancel_run_all()` can stop.
+    """Scans every website now for the dashboard's "Run All Scans", in a way `run_all_scans.cancel()` can stop.
 
     Websites not due a scan yet are included, while websites on cooldown are still skipped.
 
@@ -222,11 +245,5 @@ async def scan_all_websites_now(email_sender: EmailSender | None = None) -> str 
     Returns:
         The reports of this run's scans as HTML if any changes were found, otherwise None.
     """
-    global current_run_all
-
-    run_all = RunAllScans()
-    current_run_all = run_all
-    try:
+    with run_all_scans.track() as run_all:
         return await scan_all_websites(ignore_schedule=True, email_sender=email_sender, run_all=run_all)
-    finally:
-        current_run_all = None

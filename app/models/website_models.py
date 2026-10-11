@@ -7,7 +7,7 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, EmailStr, Field, Ht
 
 from app.core.config import config
 from app.core.urls import add_missing_scheme, resolve_critical_page_url
-from app.models.critical_page_models import CriticalPageRead, CriticalPageUpdate
+from app.models.critical_page_models import CriticalPageRead
 from app.models.recipient_models import RecipientRead
 
 DEFAULT_DELAY: float = config.web_crawler_default_delay
@@ -90,8 +90,8 @@ class WebsiteRead(BaseModel):
 
 
 class WebsiteUpdate(BaseModel):
-    # Values set after the update is made (e.g. by the change detection) are checked too, so a bad link cannot be saved
-    model_config = ConfigDict(validate_assignment=True)
+    """The values saved for a website: its settings, what the app keeps track of (e.g. its cooldown), and which
+    recipients to add or remove. What a scan found is saved separately (see `WebsiteScanResult`)."""
 
     url: HttpUrl | None = None
 
@@ -106,24 +106,8 @@ class WebsiteUpdate(BaseModel):
     on_cooldown_until: datetime | None = None
     card_title: str | None = None
 
-    critical_page_updates: dict[uuid.UUID, CriticalPageUpdate] | None = None
-
     add_recipient_emails: list[EmailStr] | None = None
     remove_recipient_emails: list[EmailStr] | None = None
-
-    initial_internal_links: list[HttpUrl] | None = None
-    recent_added_internal_links: list[HttpUrl] | None = None
-    recent_removed_internal_links: list[HttpUrl] | None = None
-
-    @property
-    def changed_page_ids(self) -> set[uuid.UUID]:
-        """IDs of the critical pages a scan found changes on, excluding pages that only saved a baseline."""
-        return {page_id for page_id, page in (self.critical_page_updates or {}).items() if page.has_changes}
-
-    @property
-    def has_changes(self) -> bool:
-        """Whether a scan found changes worth reporting, as opposed to only saving baselines."""
-        return bool(self.changed_page_ids or self.recent_added_internal_links or self.recent_removed_internal_links)
 
 
 class WebsiteSettingsUpdate(BaseModel):

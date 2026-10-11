@@ -16,6 +16,7 @@ from app.db.services.internal_link_service import InternalLinkService
 from app.db.services.recipient_service import RecipientService
 from app.models.critical_page_models import CriticalPageCreate
 from app.models.recipient_models import RecipientCreate
+from app.models.scan_result_models import WebsiteScanResult
 from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteUpdate
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -129,28 +130,27 @@ class WebsiteService(BaseCRUDService[DBWebsite, WebsiteRead, WebsiteCreate, Webs
             recipient_service.link_recipient_and_website(website_id=website_id, recipient_id=recipient.id)
 
     def update(self, id: uuid.UUID, model_update: WebsiteUpdate) -> WebsiteRead:
-        """Updates attributes of an existing website record and syncs its sub-resources.
+        """Updates attributes of an existing website record and which recipients are emailed about it.
 
-        Handles updates to website URLs, batch updates for monitored critical pages,
-        and batch additions/removals of internal links. Re-activating an inactive website clears
-        why it was deactivated and its failed attempts, so one more rate limit does not switch it off again.
+        Re-activating an inactive website clears why it was deactivated and its failed attempts, so one more rate
+        limit does not switch it off again.
 
         Args:
             id: The UUID identifier of the website record to update.
-            model_update: The WebsiteUpdate schema containing modified fields and sub-resource updates.
+            model_update: The WebsiteUpdate schema containing modified fields and the recipients to add or remove.
 
         Returns:
             The refreshed WebsiteRead data model instance following updates.
 
         Raises:
-            NotFoundError: If the website record or any referenced sub-resource does not exist.
+            NotFoundError: If the website record or a recipient being removed does not exist.
             IntegrityError: If updated attributes violate database constraints.
         """
         website_record: DBWebsite = repository.get(self._db, table=DBWebsite, id=id)
 
         update_data = model_update.model_dump(
             exclude_unset=True,
-            exclude={"critical_page_updates", "recipient_emails"},
+            exclude={"add_recipient_emails", "remove_recipient_emails"},
         )
         if model_update.active and not website_record.active:
             update_data |= {"deactivated_reason": None, "failed_attempts_at_min_speed": 0}
@@ -165,32 +165,35 @@ class WebsiteService(BaseCRUDService[DBWebsite, WebsiteRead, WebsiteCreate, Webs
                 recipient_service.unlink_recipient_and_website(website_id=website_record.id, recipient_id=recipient.id)
 
         if update_data:
-            website_record = repository.update(self._db, record=website_record, updates=update_data)
+            repository.update(self._db, record=website_record, updates=update_data)
 
-        if model_update.critical_page_updates:
-            critical_page_service = CriticalPageService(self._db)
-            for critical_page_id, critical_page_updates in model_update.critical_page_updates.items():
-                critical_page_service.update(id=critical_page_id, model_update=critical_page_updates)
+        website_record: DBWebsite = repository.get(self._db, table=DBWebsite, id=id)
+        return WebsiteRead.model_validate(website_record)
+
+    def save_scan_result(self, id: uuid.UUID, scan_result: WebsiteScanResult) -> None:
+        """Saves what a scan of a website found: each critical page as it is now, and the pages found on the website.
+
+        What changed is not saved here, but in the scan's history (see `ScanRunService`).
+
+        Args:
+            id: The UUID identifier of the website that was scanned.
+            scan_result: What the scan found.
+
+        Raises:
+            NotFoundError: If one of the critical pages does not exist.
+            IntegrityError: If a page found on the website is already saved for it.
+        """
+        critical_page_service = CriticalPageService(self._db)
+        for critical_page_id, page_result in (scan_result.critical_page_updates or {}).items():
+            critical_page_service.update(id=critical_page_id, model_update=page_result.as_critical_page_update())
 
         internal_link_service = InternalLinkService(self._db)
-        if model_update.initial_internal_links:
-            internal_link_service.create_batch(
-                urls=model_update.initial_internal_links,
-                website_id=website_record.id,
-            )
-        if model_update.recent_added_internal_links:
-            internal_link_service.create_batch(
-                urls=model_update.recent_added_internal_links,
-                website_id=website_record.id,
-            )
-        if model_update.recent_removed_internal_links:
-            internal_link_service.delete_batch(
-                urls=model_update.recent_removed_internal_links,
-                website_id=website_record.id,
-            )
-        website_record: DBWebsite = repository.get(self._db, table=DBWebsite, id=id)
-
-        return WebsiteRead.model_validate(website_record)
+        if scan_result.initial_internal_links:
+            internal_link_service.create_batch(urls=scan_result.initial_internal_links, website_id=id)
+        if scan_result.recent_added_internal_links:
+            internal_link_service.create_batch(urls=scan_result.recent_added_internal_links, website_id=id)
+        if scan_result.recent_removed_internal_links:
+            internal_link_service.delete_batch(urls=scan_result.recent_removed_internal_links, website_id=id)
 
     def delete(self, id: uuid.UUID) -> None:
         """Deletes a website record and associated resources from the database by its primary key.

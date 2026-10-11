@@ -29,6 +29,7 @@ from app.db.services.internal_link_service import InternalLinkService
 from app.db.services.scan_run_service import ScanRunService
 from app.db.services.website_service import WebsiteService
 from app.db.session import db_context
+from app.models.scan_result_models import WebsiteScanResult
 from app.models.scan_run_models import ChangeCreate, ScanRunCreate, ScanRunRead, ScanStatus
 from app.models.website_models import URL_LIST_ADAPTER, WebsiteRead, WebsiteUpdate
 
@@ -47,7 +48,7 @@ async def _find_updates(
     delay: float | None,
     concurrent: int | None,
     init: bool,
-) -> WebsiteUpdate | None:
+) -> WebsiteScanResult | None:
     """Finds what has changed on a website since its last scan.
 
     An inactive website only has its critical pages checked, as crawling the rest of the website
@@ -155,7 +156,7 @@ def _handle_scan_failure(
     website: WebsiteRead,
     status: ScanStatus,
     handle_failure: Callable[[WebsiteService], str],
-    found_before_failing: WebsiteUpdate | None = None,
+    found_before_failing: WebsiteScanResult | None = None,
 ) -> ScanRunRead:
     """Saves how the app responds to a failed scan (e.g. a cooldown), then records the scan with a message saying
     what was done.
@@ -175,7 +176,7 @@ def _handle_scan_failure(
     with db_context() as session:
         website_service = WebsiteService(session)
         if found_before_failing:
-            website_service.update(id=website.id, model_update=found_before_failing)
+            website_service.save_scan_result(id=website.id, scan_result=found_before_failing)
         action_message: str = handle_failure(website_service)
         _save_card_title(website_service, website.id)
         scan_run: ScanRunRead = record_scan(
@@ -204,7 +205,7 @@ async def _record_failed_crawl(
     Raises:
         TrafficError: If the website rate limited a scan that was given its own delay or concurrency.
     """
-    found_before_failing: WebsiteUpdate | None = failure.critical_page_updates
+    found_before_failing: WebsiteScanResult | None = failure.critical_page_updates
     match failure.error:
         case TrafficError() as error:
             logger.error("Temporary ban or severe rate limit detected for %s: %s", website.url, error)
@@ -258,7 +259,7 @@ async def _record_failed_crawl(
 
 
 def _deactivate_too_large_website(
-    website: WebsiteRead, max_pages: int, critical_page_updates: WebsiteUpdate | None
+    website: WebsiteRead, max_pages: int, critical_page_updates: WebsiteScanResult | None
 ) -> ScanRunRead:
     """Deactivates a website with more pages than the crawler will scan, then saves what its critical pages' check
     found, as they are still watched while it is inactive.
@@ -281,7 +282,7 @@ def _deactivate_too_large_website(
 
 def _save_updates(
     website: WebsiteRead,
-    website_updates: WebsiteUpdate | None,
+    website_updates: WebsiteScanResult | None,
     status: ScanStatus = ScanStatus.SUCCESS,
     message: str | None = None,
 ) -> ScanRunRead:
@@ -302,7 +303,7 @@ def _save_updates(
     with db_context() as session:
         website_service = WebsiteService(session)
         if website_updates:
-            website_service.update(id=website.id, model_update=website_updates)
+            website_service.save_scan_result(id=website.id, scan_result=website_updates)
         website_service.reset_failed_attempts(website.id)
         _save_card_title(website_service, website.id)
         scan_run: ScanRunRead = record_scan(session, website, status, message, changes_found_by(website_updates))
@@ -342,7 +343,7 @@ async def scan_website(
         ScanCancelledError: If the scan was cancelled before it finished.
     """
     try:
-        website_updates: WebsiteUpdate | None = await scan_queue.run(
+        website_updates: WebsiteScanResult | None = await scan_queue.run(
             str(website.url), lambda: _find_updates(client, website, max_pages, delay, concurrent, init)
         )
     except CrawlFailedError as failure:

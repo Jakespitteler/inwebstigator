@@ -22,8 +22,8 @@ class Config(BaseSettings):
     app_name: str = "inwebstigator"
     automatic_scans: bool = True
 
+    # Created when the app starts (see `prepare_database` and `setup_logging`), not when the settings are read
     user_data_dir: Path = Path.home() / "AppData" / "Local" / app_name
-    user_data_dir.mkdir(parents=True, exist_ok=True)
 
     db_name: str = f"{app_name}.db"
     db_path: Path = user_data_dir / db_name
@@ -103,12 +103,8 @@ class Config(BaseSettings):
 
     @property
     def db_url(self) -> str:
-        self.user_data_dir.mkdir(parents=True, exist_ok=True)
+        """The address SQLAlchemy opens the app's database at."""
         return f"sqlite:///{self.db_path.as_posix()}"
-
-    @property
-    def test_db_url(self) -> str:
-        return "sqlite:///:memory:"
 
 
 config = Config()

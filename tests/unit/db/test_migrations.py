@@ -300,3 +300,12 @@ def test_times_are_converted_from_the_computers_own_time_zone_by_default(tmp_pat
     expected_utc_time = local_time.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")
     assert _saved_scan_time(engine) == expected_utc_time
     engine.dispose()
+
+
+def test_prepare_database_creates_the_folder_the_database_is_kept_in(tmp_path: Path) -> None:
+    """Tests a database in a folder that does not exist yet (e.g. on a new computer) is still created."""
+    db_path: Path = tmp_path / "new folder" / "inwebstigator.db"
+
+    prepare_database(create_engine(f"sqlite:///{db_path.as_posix()}"))
+
+    assert db_path.is_file()

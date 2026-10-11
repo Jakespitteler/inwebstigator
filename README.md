@@ -100,7 +100,7 @@ reports           records the scan, then emails its report to the website's reci
 | stage | code |
 | --- | --- |
 | crawler | `app/backend/crawler/` |
-| change detection | `app/backend/scanning/change_detection.py`, with `app/backend/diff_checker/` comparing the text of each critical page |
+| change detection | `app/backend/scanning/change_detection.py` compares the crawl with the last scan, and `app/backend/scanning/critical_page_checks.py` checks each critical page, with `app/backend/diff_checker/` comparing its text |
 | reports | `app/backend/scanning/website_scan.py` records the scan, `app/backend/scanning/scan_reports.py` emails it, and `app/backend/email_service/` writes and sends the emails |
 
 A website's first scan, when it is added, only saves each page as a starting
@@ -235,8 +235,8 @@ PyInstaller only builds for the system it runs on.
 - The installer installs for the person running it (in
   `%LOCALAPPDATA%\Programs\Inwebstigator`), so it needs no administrator
   access. It adds a Start menu shortcut, an optional desktop shortcut and a
-  shortcut that starts the app at sign-in, and asks for the app to be quit
-  first if it is running. Uninstalling also deletes the app's data in
+  shortcut that starts the app at sign-in (a box in the installer, ticked by
+  default), and asks for the app to be quit first if it is running. Uninstalling also deletes the app's data in
   `%LOCALAPPDATA%\inwebstigator`.
 - The app is built without a console window, as it runs in the system tray.
   Its log file (above) records what a console would have shown.

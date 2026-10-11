@@ -1,5 +1,6 @@
 import logging
 from datetime import UTC, datetime, tzinfo
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import (
@@ -248,13 +249,27 @@ def record_why_rate_limited_websites_were_switched_off(engine: Engine, max_faile
         connection.exec_driver_sql(f"PRAGMA user_version = {RATE_LIMITED_REASON_VERSION}")
 
 
+def _create_database_folder(engine: Engine) -> None:
+    """Creates the folder the database file is kept in, as SQLite only creates the file itself.
+
+    An in-memory database (e.g. in the tests) has no folder.
+
+    Args:
+        engine: The engine of the database.
+    """
+    database: str | None = engine.url.database
+    if database and database != ":memory:":
+        Path(database).parent.mkdir(parents=True, exist_ok=True)
+
+
 def prepare_database(engine: Engine) -> None:
-    """Creates any tables the database is missing, then brings a database made by an older version of the app up
-    to date.
+    """Creates the database's folder and any tables the database is missing, then brings a database made by an
+    older version of the app up to date.
 
     Args:
         engine: The engine of the database to prepare.
     """
+    _create_database_folder(engine)
     Base.metadata.create_all(bind=engine)
     add_missing_columns(engine, Base.metadata)
     drop_outdated_unique_indexes(engine, OUTDATED_UNIQUE_INDEXES)

@@ -2,9 +2,8 @@ from collections.abc import Iterator, Sequence
 
 from pydantic import HttpUrl
 
-from app.models.critical_page_models import CriticalPageUpdate
+from app.models.scan_result_models import CriticalPageScanResult, WebsiteScanResult
 from app.models.scan_run_models import ChangeCreate, ChangeKind
-from app.models.website_models import WebsiteUpdate
 
 
 def _url_changes(
@@ -24,7 +23,7 @@ def _url_changes(
         yield ChangeCreate(kind=kind, page_url=page_url, url=url)
 
 
-def _critical_page_changes(page_update: CriticalPageUpdate) -> Iterator[ChangeCreate]:
+def _critical_page_changes(page_update: CriticalPageScanResult) -> Iterator[ChangeCreate]:
     """Makes a change for each thing a scan found on one critical page.
 
     A page that has just failed enough checks in a row is reported once, as unreachable. A page that only saved a
@@ -64,7 +63,7 @@ def _critical_page_changes(page_update: CriticalPageUpdate) -> Iterator[ChangeCr
         )
 
 
-def changes_found_by(website_updates: WebsiteUpdate | None) -> list[ChangeCreate]:
+def changes_found_by(website_updates: WebsiteScanResult | None) -> list[ChangeCreate]:
     """Lists everything a scan found, to save in the website's history.
 
     Baselines (e.g. a new website's first crawl) are not changes, so they are left out.

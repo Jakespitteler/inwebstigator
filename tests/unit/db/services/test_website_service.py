@@ -12,8 +12,9 @@ from app.db.schema import DBRecipient
 from app.db.services.critical_page_service import CriticalPageService
 from app.db.services.internal_link_service import InternalLinkService
 from app.db.services.website_service import WebsiteService
-from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead, CriticalPageUpdate
+from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead
 from app.models.internal_link_models import InternalLinkCreate, InternalLinkRead
+from app.models.scan_result_models import CriticalPageScanResult, WebsiteScanResult
 from app.models.website_models import DeactivationReason, WebsiteCreate, WebsiteRead, WebsiteUpdate
 
 
@@ -222,9 +223,9 @@ def test_get_website_counts_its_internal_links(session: Session, test_website: W
     assert "internal_links" not in WebsiteRead.model_fields
 
 
-def test_update_website_internal_links(session: Session, test_website: WebsiteRead) -> None:
+def test_save_scan_result_saves_internal_links_added_and_removed(session: Session, test_website: WebsiteRead) -> None:
     """
-    Tests updating a website with added and removed internal links.
+    Tests saving a scan that found internal links added and removed.
 
     Args:
         session: The database session fixture.
@@ -235,20 +236,16 @@ def test_update_website_internal_links(session: Session, test_website: WebsiteRe
     internal_link_service.create_batch(urls=[existing_link_url], website_id=test_website.id)
 
     new_link_url = HttpUrl(f"{test_website.url}link_to_add")
-    model_update = WebsiteUpdate(
+    scan_result = WebsiteScanResult(
         recent_added_internal_links=[new_link_url],
         recent_removed_internal_links=[existing_link_url],
     )
 
-    updated_website = WebsiteService(session).update(id=test_website.id, model_update=model_update)
+    WebsiteService(session).save_scan_result(id=test_website.id, scan_result=scan_result)
+    updated_website = WebsiteService(session).get(test_website.id)
 
-    # Confirm added link exists
-    added_link = internal_link_service.get_by_url(url=new_link_url)
-    assert added_link.website_id == test_website.id
-
-    # Confirm deleted link is gone
-    with pytest.raises(NotFoundError):
-        internal_link_service.get_by_url(url=existing_link_url)
+    # Confirm the added link is saved and the removed link is gone
+    assert internal_link_service.get_urls_for_website(test_website.id) == [str(new_link_url)]
 
     # Confirm the website read model counts its links, rather than loading them all
     assert updated_website.internal_link_count == len(internal_link_service.get_urls_for_website(test_website.id))
@@ -314,9 +311,9 @@ def test_delete_website_cascades(session: Session, test_website: WebsiteRead) ->
         CriticalPageService(session).get(id=created_critical_page.id)
 
 
-def test_update_website_critical_page_updates(session: Session, test_website: WebsiteRead) -> None:
+def test_save_scan_result_saves_each_critical_page_as_it_is_now(session: Session, test_website: WebsiteRead) -> None:
     """
-    Tests updating a website's critical pages using critical_page_updates.
+    Tests saving a scan saves each critical page's new state.
 
     Args:
         session: The database session fixture.
@@ -331,9 +328,9 @@ def test_update_website_critical_page_updates(session: Session, test_website: We
     )
 
     updated_url = HttpUrl(f"{test_website.url}critical_1_updated")
-    model_update = WebsiteUpdate(critical_page_updates={created_page.id: CriticalPageUpdate(url=updated_url)})
+    scan_result = WebsiteScanResult(critical_page_updates={created_page.id: CriticalPageScanResult(url=updated_url)})
 
-    WebsiteService(session).update(id=test_website.id, model_update=model_update)
+    WebsiteService(session).save_scan_result(id=test_website.id, scan_result=scan_result)
 
     fetched_page = critical_page_service.get(id=created_page.id)
     assert fetched_page.url == updated_url

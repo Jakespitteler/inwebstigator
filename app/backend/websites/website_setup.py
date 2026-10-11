@@ -8,7 +8,7 @@ from pydantic import HttpUrl
 from app.backend.crawler.page_fetcher import new_http_client
 from app.backend.email_service.delivery import EmailSender
 from app.backend.email_service.html_bodies import monitoring_started_html, recipient_added_html
-from app.backend.scanning.change_detection import get_critical_page_updates
+from app.backend.scanning.critical_page_checks import get_critical_page_updates
 from app.backend.scanning.scan_queue import scan_queue
 from app.backend.scanning.website_scan import scan_website
 from app.backend.websites.page_checks import check_pages_exist
@@ -28,7 +28,8 @@ from app.db.services.critical_page_service import CriticalPageService
 from app.db.services.recipient_service import RecipientService
 from app.db.services.website_service import WebsiteService
 from app.db.session import db_context
-from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead, CriticalPageUpdate
+from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead
+from app.models.scan_result_models import CriticalPageScanResult
 from app.models.website_models import WebsiteCreate, WebsiteRead, WebsiteSettingsUpdate, WebsiteUpdate
 
 MONITORING_STARTED_SUBJECT: str = "Website monitoring started"
@@ -186,14 +187,14 @@ async def add_critical_page(website_id: uuid.UUID, page_url: str) -> CriticalPag
         with db_context() as session:
             critical_page: CriticalPageRead = CriticalPageService(session).create(model_create)
         try:
-            baseline: CriticalPageUpdate | None = await get_critical_page_updates(client, critical_page, init=True)
+            baseline: CriticalPageScanResult | None = await get_critical_page_updates(client, critical_page, init=True)
         except Exception:
             _discard_critical_page(critical_page.id)
             raise
 
     if baseline:
         with db_context() as session:
-            CriticalPageService(session).update(id=critical_page.id, model_update=baseline)
+            CriticalPageService(session).update(id=critical_page.id, model_update=baseline.as_critical_page_update())
     return critical_page
 
 
