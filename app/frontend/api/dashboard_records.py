@@ -1,3 +1,5 @@
+"""What the dashboard shows: each website's recent scans ready for the updates page, and how its times are written."""
+
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime

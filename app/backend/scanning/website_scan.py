@@ -14,6 +14,7 @@ from app.backend.scanning.change_detection import (
     get_website_updates,
 )
 from app.backend.scanning.found_changes import changes_found_by
+from app.backend.scanning.scan_failures import handle_connection_error, handle_too_large, handle_traffic_error
 from app.backend.scanning.scan_queue import scan_queue
 from app.backend.websites.website_titles import saved_home_page_html, website_card_title
 from app.core.config import config
@@ -165,7 +166,7 @@ def _handle_scan_failure(
     Args:
         website: The website whose scan failed.
         status: How the scan failed.
-        handle_failure: Makes the response to the failure and describes it, e.g. `WebsiteService.handle_traffic_error`.
+        handle_failure: Makes the response to the failure and describes it, e.g. `handle_traffic_error`.
         found_before_failing: What the scan found before it failed, or None if nothing changed.
 
     Returns:
@@ -217,7 +218,7 @@ async def _record_failed_crawl(
                 _handle_scan_failure,
                 website,
                 ScanStatus.TRAFFIC_ERROR,
-                lambda websites: websites.handle_traffic_error(website),
+                lambda websites: handle_traffic_error(websites, website),
                 found_before_failing,
             )
         case WebsiteUnavailableError() as error:
@@ -227,7 +228,7 @@ async def _record_failed_crawl(
                 _handle_scan_failure,
                 website,
                 ScanStatus.CONNECTION_ERROR,
-                lambda websites: f"{unavailable_message} {websites.handle_connection_error(website.id)}",
+                lambda websites: f"{unavailable_message} {handle_connection_error(websites, website.id)}",
                 found_before_failing,
             )
         case WebConnectionError() as error:
@@ -236,7 +237,7 @@ async def _record_failed_crawl(
                 _handle_scan_failure,
                 website,
                 ScanStatus.CONNECTION_ERROR,
-                lambda websites: websites.handle_connection_error(website.id),
+                lambda websites: handle_connection_error(websites, website.id),
                 found_before_failing,
             )
         case MostPagesMissingError() as error:
@@ -246,7 +247,7 @@ async def _record_failed_crawl(
                 _handle_scan_failure,
                 website,
                 ScanStatus.PAGES_MISSING,
-                lambda websites: f"{missing_message} {websites.handle_connection_error(website.id)}",
+                lambda websites: f"{missing_message} {handle_connection_error(websites, website.id)}",
                 found_before_failing,
             )
         case WebsiteTooLargeError() as error:
@@ -274,7 +275,7 @@ def _deactivate_too_large_website(
         The recorded scan.
     """
     with db_context() as session:
-        too_large_message: str = WebsiteService(session).handle_too_large(website.id, max_pages)
+        too_large_message: str = handle_too_large(WebsiteService(session), website.id, max_pages)
     return _save_updates(website, critical_page_updates, ScanStatus.TOO_LARGE, too_large_message)
 
 

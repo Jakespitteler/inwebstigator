@@ -6,6 +6,7 @@ from collections.abc import Callable
 
 from playwright.sync_api import Locator, Page, expect
 
+from app.backend.scanning.scan_failures import handle_too_large
 from app.backend.scanning.scan_queue import scan_queue
 from app.db.services.website_service import WebsiteService
 from tests.e2e.conftest import API_HEADERS, RunningApp
@@ -262,7 +263,7 @@ def test_saving_one_setting_keeps_what_the_app_changed_since_the_page_loaded(
     page = open_dashboard()
     with app_server.session() as session:
         [website] = app_server.saved_websites()
-        WebsiteService(session).handle_too_large(website.id, max_pages=50_000)
+        handle_too_large(WebsiteService(session), website.id, max_pages=50_000)
         session.commit()
 
     card = _open_card(page)

@@ -2,7 +2,12 @@ import random
 from collections import Counter
 from collections.abc import Iterable
 
-from app.backend.diff_checker.content_diff import compare_page_content, find_link_difference
+from app.backend.diff_checker.content_diff import (
+    compare_page_content,
+    find_added_links,
+    find_link_difference,
+    find_removed_links,
+)
 from app.backend.diff_checker.models import DiffSettings, PageContent
 from app.backend.diff_checker.page_parser import parse_html
 from app.models.content_block_models import ChangedBlock, ContentBlock, HTMLBlockType
@@ -440,6 +445,53 @@ def test_find_link_difference() -> None:
     added, removed = find_link_difference(previous, current)
     assert added == ["/page3"]
     assert removed == ["/page1"]
+
+
+def test_find_added_links() -> None:
+    previous: list[str] = ["/page1", "/page2"]
+    current: list[str] = ["/page1", "/page2", "/page3"]
+    added: list[str] = find_added_links(previous, current)
+    assert added == ["/page3"]
+
+
+def test_find_added_links_no_changes() -> None:
+    previous: list[str] = ["/page1", "/page2"]
+    current: list[str] = ["/page1", "/page2"]
+    added: list[str] = find_added_links(previous, current)
+    assert added == []
+
+
+def test_find_removed_links() -> None:
+    previous: list[str] = ["/page1", "/page2", "/page3"]
+    current: list[str] = ["/page1", "/page2"]
+    removed: list[str] = find_removed_links(previous, current)
+    assert removed == ["/page3"]
+
+
+def test_find_removed_links_no_changes() -> None:
+    previous: list[str] = ["/page1", "/page2"]
+    current: list[str] = ["/page1", "/page2"]
+    removed: list[str] = find_removed_links(previous, current)
+    assert removed == []
+
+
+def test_links_written_differently_for_the_same_page_are_not_added_or_removed() -> None:
+    """Test a link now written with or without "www." or with different capitals in the domain is not reported as
+    a page added or removed, while real changes still are."""
+    previous = ["https://example.com/news", "https://example.com/about"]
+    current = ["https://www.example.com/news", "https://Example.com/about", "https://example.com/contact"]
+
+    assert find_added_links(previous, current) == ["https://example.com/contact"]
+    assert find_removed_links(previous, current) == []
+    assert find_removed_links(current, previous) == ["https://example.com/contact"]
+
+
+def test_found_links_are_listed_once_in_their_original_order() -> None:
+    """Tests a link found more than once is reported once, in the order the links were found."""
+    current: list[str] = ["https://example.com/c", "https://example.com/a", "https://example.com/c"]
+
+    assert find_added_links([], current) == ["https://example.com/c", "https://example.com/a"]
+    assert find_removed_links(current, []) == ["https://example.com/c", "https://example.com/a"]
 
 
 def test_compare_similarity_exactly_at_the_threshold_is_an_edit() -> None:

@@ -2,40 +2,10 @@ import pytest
 
 from app.backend.crawler.links import (
     extract_links_from_html,
-    find_added_links,
-    find_removed_links,
     is_document,
     is_internal_web_page,
     separate_document_links,
 )
-
-
-def test_find_added_links() -> None:
-    previous: list[str] = ["/page1", "/page2"]
-    current: list[str] = ["/page1", "/page2", "/page3"]
-    added: list[str] = find_added_links(previous, current)
-    assert added == ["/page3"]
-
-
-def test_find_added_links_no_changes() -> None:
-    previous: list[str] = ["/page1", "/page2"]
-    current: list[str] = ["/page1", "/page2"]
-    added: list[str] = find_added_links(previous, current)
-    assert added == []
-
-
-def test_find_removed_links() -> None:
-    previous: list[str] = ["/page1", "/page2", "/page3"]
-    current: list[str] = ["/page1", "/page2"]
-    removed: list[str] = find_removed_links(previous, current)
-    assert removed == ["/page3"]
-
-
-def test_find_removed_links_no_changes() -> None:
-    previous: list[str] = ["/page1", "/page2"]
-    current: list[str] = ["/page1", "/page2"]
-    removed: list[str] = find_removed_links(previous, current)
-    assert removed == []
 
 
 @pytest.mark.parametrize(
@@ -206,17 +176,6 @@ def test_is_internal_web_page_treats_www_as_same_site(site_url: str, check_url: 
     assert is_internal_web_page(site_url, check_url) is expected
 
 
-def test_links_written_differently_for_the_same_page_are_not_added_or_removed() -> None:
-    """Test a link now written with or without "www." or with different capitals in the domain is not reported as
-    a page added or removed, while real changes still are."""
-    previous = ["https://example.com/news", "https://example.com/about"]
-    current = ["https://www.example.com/news", "https://Example.com/about", "https://example.com/contact"]
-
-    assert find_added_links(previous, current) == ["https://example.com/contact"]
-    assert find_removed_links(previous, current) == []
-    assert find_removed_links(current, previous) == ["https://example.com/contact"]
-
-
 def test_extract_links_from_html_lists_each_page_once() -> None:
     """Test a page linked as both example.com and www.example.com is only listed once, and domains are written in
     lower case."""
@@ -273,14 +232,6 @@ def test_pages_with_a_dot_in_their_name_are_crawled(path: str, is_page: bool) ->
 def test_a_page_whose_path_only_starts_with_the_same_letters_is_not_under_the_website() -> None:
     """Tests paths are compared folder by folder, so "/newsletter" is not under a website at "/news"."""
     assert is_internal_web_page("https://example.com/news", "https://example.com/newsletter") is False
-
-
-def test_found_links_are_listed_once_in_their_original_order() -> None:
-    """Tests a link found more than once is reported once, in the order the links were found."""
-    current: list[str] = ["https://example.com/c", "https://example.com/a", "https://example.com/c"]
-
-    assert find_added_links([], current) == ["https://example.com/c", "https://example.com/a"]
-    assert find_removed_links(current, []) == ["https://example.com/c", "https://example.com/a"]
 
 
 def test_extract_links_from_html_normalises_each_link() -> None:

@@ -1,5 +1,6 @@
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable, Coroutine
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
@@ -63,142 +64,46 @@ app.mount(
 )
 
 
-@app.exception_handler(NotFoundError)
-async def not_found_exception_handler(request: Request, exc: NotFoundError):
-    """
-    Handles NotFoundError exceptions by returning a 404 status.
+# The status each of the app's errors is answered with. The error's own message is what the dashboard shows.
+ERROR_STATUS_CODES: dict[type[Exception], int] = {
+    NotFoundError: status.HTTP_404_NOT_FOUND,
+    IntegrityError: status.HTTP_400_BAD_REQUEST,
+    # A website could not be reached, or a scan finished but its report could not be emailed (so the user is not
+    # told the scan itself failed)
+    WebConnectionError: status.HTTP_502_BAD_GATEWAY,
+    ReportNotEmailedError: status.HTTP_502_BAD_GATEWAY,
+    # A website or critical page that is already watched, or a scan that is already queued or was cancelled
+    WebsiteAlreadyMonitoredError: status.HTTP_409_CONFLICT,
+    AlreadyWatchedError: status.HTTP_409_CONFLICT,
+    ScanAlreadyQueuedError: status.HTTP_409_CONFLICT,
+    ScanCancelledError: status.HTTP_409_CONFLICT,
+    # A website or critical page that cannot be added (not a valid page, or cannot be loaded), or a website's main
+    # page, which cannot be deleted
+    InvalidPageError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+    PageNotLoadedError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+    MainPageNotDeletableError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+}
+
+
+def error_response(status_code: int) -> Callable[[Request, Exception], Coroutine[Any, Any, JSONResponse]]:
+    """Builds an exception handler that answers with a status code and the error's message.
 
     Args:
-        request: The incoming request.
-        exc: The NotFoundError exception.
+        status_code: The HTTP status to answer with, e.g. 404.
 
     Returns:
-        A JSONResponse with a 404 status.
+        The exception handler.
     """
-    return JSONResponse(
-        status_code=status.HTTP_404_NOT_FOUND,
-        content={"detail": str(exc)},
-    )
+
+    async def respond_with_error(request: Request, exc: Exception) -> JSONResponse:
+        """Answers a request that raised an error with the status code and the error's message."""
+        return JSONResponse(status_code=status_code, content={"detail": str(exc)})
+
+    return respond_with_error
 
 
-@app.exception_handler(WebConnectionError)
-async def web_connection_exception_handler(request: Request, exc: WebConnectionError):
-    """
-    Handles WebConnectionError exceptions by returning a 502 status.
-
-    Args:
-        request: The incoming request.
-        exc: The WebConnectionError exception.
-
-    Returns:
-        A JSONResponse with a 502 status.
-    """
-    return JSONResponse(
-        status_code=status.HTTP_502_BAD_GATEWAY,
-        content={"detail": str(exc)},
-    )
-
-
-@app.exception_handler(ReportNotEmailedError)
-async def report_not_emailed_handler(request: Request, exc: ReportNotEmailedError):
-    """
-    Handles a scan that finished but whose report could not be emailed by returning a 502 status, with a message
-    the dashboard shows, so the user is not told the scan itself failed.
-
-    Args:
-        request: The incoming request.
-        exc: The ReportNotEmailedError exception.
-
-    Returns:
-        A JSONResponse with a 502 status.
-    """
-    return JSONResponse(
-        status_code=status.HTTP_502_BAD_GATEWAY,
-        content={"detail": str(exc)},
-    )
-
-
-@app.exception_handler(IntegrityError)
-async def integrity_error_handler(request: Request, exc: IntegrityError):
-    """
-    Handles IntegrityError exceptions by returning a 400 status.
-
-    Args:
-        request: The incoming request.
-        exc: The IntegrityError exception.
-
-    Returns:
-        A JSONResponse with a 400 status.
-    """
-    return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        content={"detail": str(exc)},
-    )
-
-
-@app.exception_handler(AlreadyWatchedError)
-@app.exception_handler(ScanAlreadyQueuedError)
-@app.exception_handler(ScanCancelledError)
-async def scan_not_run_handler(
-    request: Request, exc: AlreadyWatchedError | ScanAlreadyQueuedError | ScanCancelledError
-):
-    """
-    Handles a critical page that is already watched, or a scan that is already queued or was cancelled, by
-    returning a 409 status.
-
-    Args:
-        request: The incoming request.
-        exc: The AlreadyWatchedError, ScanAlreadyQueuedError or ScanCancelledError exception.
-
-    Returns:
-        A JSONResponse with a 409 status.
-    """
-    return JSONResponse(
-        status_code=status.HTTP_409_CONFLICT,
-        content={"detail": str(exc)},
-    )
-
-
-@app.exception_handler(InvalidPageError)
-@app.exception_handler(PageNotLoadedError)
-@app.exception_handler(MainPageNotDeletableError)
-async def page_not_added_handler(
-    request: Request, exc: InvalidPageError | PageNotLoadedError | MainPageNotDeletableError
-):
-    """
-    Handles a website or critical page that cannot be added, because it is not a valid page or cannot be loaded, or a
-    website's main page that cannot be deleted, by returning a 422 status.
-
-    Args:
-        request: The incoming request.
-        exc: The InvalidPageError, PageNotLoadedError or MainPageNotDeletableError exception, whose message says what
-            is wrong.
-
-    Returns:
-        A JSONResponse with a 422 status.
-    """
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-        content={"detail": str(exc)},
-    )
-
-
-@app.exception_handler(WebsiteAlreadyMonitoredError)
-async def website_already_monitored_handler(request: Request, exc: WebsiteAlreadyMonitoredError):
-    """
-    Handles WebsiteAlreadyMonitoredError exceptions by returning a 409 status, with a message the dashboard shows.
-
-    Args:
-        request: The incoming request.
-        exc: The WebsiteAlreadyMonitoredError exception.
-
-    Returns:
-        A JSONResponse with a 409 status.
-    """
-    return JSONResponse(
-        status_code=status.HTTP_409_CONFLICT,
-        content={"detail": str(exc)},
-    )
+for error_type, status_code in ERROR_STATUS_CODES.items():
+    app.add_exception_handler(error_type, error_response(status_code))
 
 
 @app.exception_handler(UndeliverableEmailError)

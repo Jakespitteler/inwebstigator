@@ -29,15 +29,15 @@ from app.db.services.recipient_service import RecipientService
 from app.db.services.scan_run_service import ScanRunService
 from app.db.services.website_service import WebsiteService
 from app.db.session import db_context
-from app.frontend.api.db_router_factory import SessionDep, create_crud_router
-from app.frontend.api.request_guard import API_TOKEN_HEADER
-from app.frontend.api.utils import (
+from app.frontend.api.dashboard_records import (
     WebsiteHistoryRecord,
     format_timestamp,
     newest_first,
     scan_time,
     website_history_record,
 )
+from app.frontend.api.db_router_factory import SessionDep, create_crud_router
+from app.frontend.api.request_guard import API_TOKEN_HEADER
 from app.models.critical_page_models import (
     CriticalPageCreate,
     CriticalPageRead,

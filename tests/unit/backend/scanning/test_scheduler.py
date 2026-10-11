@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from pytest_mock import MockerFixture
 
 from app.backend.scanning import scheduler as scheduler_module
-from app.backend.scanning.all_websites_scan import latest_check_time
+from app.backend.scanning.scan_schedule import latest_check_time
 from app.backend.scanning.scheduler import (
     SCAN_JOB_ID,
     next_scheduled_check,

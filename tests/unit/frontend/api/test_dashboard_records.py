@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.frontend.api.utils import format_timestamp, scan_time
+from app.frontend.api.dashboard_records import format_timestamp, scan_time
 
 
 @pytest.mark.parametrize(

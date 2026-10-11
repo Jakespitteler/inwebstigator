@@ -120,7 +120,8 @@ on every critical page.
 
 The wording (subjects, times) is in `email_service/email_wording.py`, and the
 HTML is in `email_service/templates/`, rendered by `email_service/html_bodies.py`,
-which also copies the CSS onto each tag, as many email apps ignore `<style>`.
+and `email_service/style_inliner.py` copies the CSS onto each tag, as many email
+apps ignore `<style>`.
 
 ### Email format
 

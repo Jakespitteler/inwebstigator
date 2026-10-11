@@ -9,8 +9,10 @@ import httpx2
 from plot_crawl_runs import plot_runs
 
 from app.backend.crawler.site_crawler import crawl_site
+from app.core.logging_setup import quiet_chatty_loggers
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s - %(message)s")
+quiet_chatty_loggers()
 logger: logging.Logger = logging.getLogger(__name__)
 
 HEADERS = {

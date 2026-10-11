@@ -7,8 +7,9 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler  # pyright: ignore[r
 from fastapi import FastAPI
 
 from app.backend.email_service.delivery import EmailSender, get_email_sender
-from app.backend.scanning.all_websites_scan import latest_check_time, scan_all_websites
+from app.backend.scanning.all_websites_scan import scan_all_websites
 from app.backend.scanning.health_checks import send_due_health_checks
+from app.backend.scanning.scan_schedule import latest_check_time
 from app.core.config import config
 
 SCAN_JOB_ID: str = "scan_then_send_health_checks"

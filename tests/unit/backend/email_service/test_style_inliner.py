@@ -1,4 +1,4 @@
-from app.backend.email_service.html_bodies import inline_styles, parse_stylesheet
+from app.backend.email_service.style_inliner import inline_styles, parse_stylesheet
 
 RULES = parse_stylesheet(
     """

@@ -1,13 +1,10 @@
-import logging
 from pathlib import PurePosixPath
 from urllib.parse import ParseResult, urljoin, urlparse
 
 from bs4 import BeautifulSoup, Tag
 from bs4.filter import SoupStrainer
 
-from app.core.urls import normalise_url, page_key, remove_repeated_pages, site_host
-
-logging.getLogger("httpx2").setLevel(logging.WARNING)
+from app.core.urls import normalise_url, remove_repeated_pages, site_host
 
 WEB_SCHEMES: frozenset[str] = frozenset({"http", "https"})
 
@@ -35,58 +32,6 @@ NON_PAGE_EXTENSIONS: frozenset[str] = frozenset(
         *(".exe", ".msi", ".dmg", ".apk", ".iso", ".epub"),
     }
 )
-
-
-def _links_to_pages_not_in(links: list[str], other_links: list[str]) -> list[str]:
-    """Finds the links that go to a page none of the other links go to.
-
-    Links are compared as pages (see `page_key`), so a link written differently for a page the other links
-    also go to (e.g. with "www.") is not counted. Links found exactly as written in the other links are skipped
-    first, so the slower page comparison only runs when something has changed.
-
-    Args:
-        links: URL strings to check.
-        other_links: URL strings to check them against.
-
-    Returns:
-        The links, each only once and in their original order, whose page is not among the other links.
-    """
-    other_link_set: set[str] = set(other_links)
-    unmatched_links: list[str] = [link for link in dict.fromkeys(links) if link not in other_link_set]
-    if not unmatched_links:
-        return []
-    other_pages: set[str] = {page_key(link) for link in other_links}
-    return [link for link in unmatched_links if page_key(link) not in other_pages]
-
-
-def find_added_links(previous_state: list[str], current_state: list[str]) -> list[str]:
-    """Identifies links that were added between a previous state and a current state.
-
-    A link now written differently for a page it already had (e.g. with "www.") is not counted as added.
-
-    Args:
-        previous_state: A list of URL strings representing the initial state.
-        current_state: A list of URL strings representing the updated state.
-
-    Returns:
-        A list of URL strings for pages in current_state but missing from previous_state.
-    """
-    return _links_to_pages_not_in(current_state, previous_state)
-
-
-def find_removed_links(previous_state: list[str], current_state: list[str]) -> list[str]:
-    """Identifies links that were removed between a previous state and a current state.
-
-    A link now written differently for a page it still has (e.g. without "www.") is not counted as removed.
-
-    Args:
-        previous_state: A list of URL strings representing the initial state.
-        current_state: A list of URL strings representing the updated state.
-
-    Returns:
-        A list of URL strings for pages in previous_state but missing from current_state.
-    """
-    return _links_to_pages_not_in(previous_state, current_state)
 
 
 def is_document(link: str) -> bool:

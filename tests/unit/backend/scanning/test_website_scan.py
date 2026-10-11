@@ -3,6 +3,7 @@ import uuid
 from collections.abc import Generator
 from contextlib import contextmanager, nullcontext
 from datetime import UTC, datetime
+from unittest.mock import ANY
 
 import httpx2
 import pytest
@@ -281,12 +282,14 @@ async def test_scan_website_traffic_error_handling(
         "app.backend.scanning.website_scan.get_website_updates",
         side_effect=CrawlFailedError(TrafficError(url=str(populated_website.url), status_code=429), None),
     )
-    mock_handle_traffic = mocker.patch.object(WebsiteService, "handle_traffic_error", return_value="Cooldown applied")
+    mock_handle_traffic = mocker.patch(
+        "app.backend.scanning.website_scan.handle_traffic_error", return_value="Cooldown applied"
+    )
     mock_reset_failed_attempts = mocker.patch.object(WebsiteService, "reset_failed_attempts")
 
     scan_run = await scan_website(client=mock_client, website=populated_website)
 
-    mock_handle_traffic.assert_called_once_with(populated_website)
+    mock_handle_traffic.assert_called_once_with(ANY, populated_website)
     mock_reset_failed_attempts.assert_not_called()
     assert scan_run.status is ScanStatus.TRAFFIC_ERROR
     assert scan_run.message == "Cooldown applied"
@@ -325,12 +328,14 @@ async def test_scan_website_connection_error_handling(
         "app.backend.scanning.website_scan.get_website_updates",
         side_effect=CrawlFailedError(WebConnectionError("Connection timed out"), None),
     )
-    mock_handle_conn = mocker.patch.object(WebsiteService, "handle_connection_error", return_value="Site unreachable")
+    mock_handle_conn = mocker.patch(
+        "app.backend.scanning.website_scan.handle_connection_error", return_value="Site unreachable"
+    )
     mock_reset_failed_attempts = mocker.patch.object(WebsiteService, "reset_failed_attempts")
 
     scan_run = await scan_website(client=mock_client, website=populated_website)
 
-    mock_handle_conn.assert_called_once_with(populated_website.id)
+    mock_handle_conn.assert_called_once_with(ANY, populated_website.id)
     mock_reset_failed_attempts.assert_not_called()
     assert scan_run.status is ScanStatus.CONNECTION_ERROR
     assert "Site unreachable" in _report(scan_run)
