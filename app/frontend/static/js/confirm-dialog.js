@@ -43,6 +43,13 @@ confirmDialogInput.addEventListener("input", () => {
         enteredText === "" || matches;
 });
 
+confirmDialogInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !confirmDialogButton.disabled) {
+        event.preventDefault();
+        confirmDialog.close("confirm");
+    }
+});
+
 // A click on the backdrop lands on the dialog element itself
 confirmDialog.addEventListener("click", (event) => {
     if (event.target === confirmDialog) {
