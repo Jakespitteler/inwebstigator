@@ -4,7 +4,15 @@
     aria-labelledby="updates-tab" tabindex="0" hidden>
 <div class="section-heading">
 
-    <h2 class="section-title">Scan History</h2>
+    <div class="updates-title-and-tags">
+        <h2 class="section-title">Scan History</h2>
+        <div id="updates-tag-filters" class="tag-filters" role="group" aria-label="Filter scan history by tag">
+            <button type="button" class="tag-filter active" data-tag-id="" aria-pressed="true">All</button>
+            {% for tag in tags %}
+            <button type="button" class="tag-filter" data-tag-id="{{ tag.id }}" aria-pressed="false" title="{{ tag.name }}">{{ tag.name }}</button>
+            {% endfor %}
+        </div>
+    </div>
 
     {% if next_check %}
         <p class="week-range">
@@ -13,6 +21,10 @@
     {% endif %}
 
 </div>
+
+<p id="updates-result-count" role="status" aria-live="polite" {% if not website_records %}hidden{% endif %}>
+    {{ website_records | length }} of {{ website_records | length }} {{ "website" if website_records | length == 1 else "websites" }}
+</p>
 
 <!-- SCAN HISTORY -->
 <section id="scan-history">
@@ -34,6 +46,8 @@
         </p>
 
     {% endif %}
+
+    <p id="no-matching-updates" class="no-matching-websites" hidden>No scan history matches this tag.</p>
 
 </section>
 
