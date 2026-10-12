@@ -33,6 +33,7 @@ function readAddWebsiteForm() {
         url: document.getElementById("website-url").value.trim(),
         criticalPages: filledValues(".critical-page-input"),
         recipientEmails: filledValues(".recipient-email-input"),
+        tagIds: filledValues('#new-website-tag-options input:checked'),
         daysBetweenScans: document.getElementById("new-website-days").value,
         delay: document.getElementById("new-website-delay").value,
         concurrent: document.getElementById("new-website-concurrent").value,
@@ -40,8 +41,8 @@ function readAddWebsiteForm() {
 }
 
 function addWebsiteFormIsEmpty() {
-    const { url, criticalPages, recipientEmails } = readAddWebsiteForm();
-    return !url && !criticalPages.length && !recipientEmails.length;
+    const { url, criticalPages, recipientEmails, tagIds } = readAddWebsiteForm();
+    return !url && !criticalPages.length && !recipientEmails.length && !tagIds.length;
 }
 
 // Puts the add website form back to how it started, ready for the next website
@@ -74,6 +75,9 @@ function fillAddWebsiteForm(values) {
     document.getElementById("new-website-days").value = values.daysBetweenScans;
     document.getElementById("new-website-delay").value = values.delay;
     document.getElementById("new-website-concurrent").value = values.concurrent;
+    document.querySelectorAll('#new-website-tag-options input').forEach(input => {
+        input.checked = values.tagIds.includes(input.value);
+    });
 
     if (addWebsiteForm.hidden && addWebsiteToggle) {
         addWebsiteToggle.click();  // Opens the form
@@ -197,6 +201,7 @@ if (addWebsiteForm) {
                                     values.criticalPages,
                                 recipient_emails:
                                     values.recipientEmails,
+                                tag_ids: values.tagIds,
                                 recommended_delay: parseFloat(values.delay),
                                 recommended_concurrent: parseInt(values.concurrent, 10),
                                 days_between_scans: parseFloat(values.daysBetweenScans)

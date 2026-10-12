@@ -21,6 +21,8 @@ function renderGuideReview() {
     const review = document.getElementById("guide-review");
     const rows = [
         ["Website", [document.getElementById("website-url").value.trim()]],
+        ["Tags", Array.from(document.querySelectorAll('#new-website-tag-options input:checked'))
+            .map(input => input.closest("label").querySelector(".website-tag-name").textContent)],
         ["Critical pages", filledValues(".critical-page-input")],
         ["Notification emails", filledValues(".recipient-email-input")],
         ["Days between scans", [document.getElementById("new-website-days").value]],

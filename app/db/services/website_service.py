@@ -9,11 +9,12 @@ from sqlalchemy import select
 from app.core.errors import NotFoundError, WebsiteAlreadyMonitoredError
 from app.core.urls import is_same_page, page_key, remove_repeated_pages
 from app.db import repository
-from app.db.schema import DBWebsite
+from app.db.schema import DBWebsite, DBWebsiteTag
 from app.db.services.base_crud_service import BaseCRUDService
 from app.db.services.critical_page_service import CriticalPageService
 from app.db.services.internal_link_service import InternalLinkService
 from app.db.services.recipient_service import RecipientService
+from app.db.services.tag_service import TagService
 from app.models.critical_page_models import CriticalPageCreate
 from app.models.recipient_models import RecipientCreate
 from app.models.scan_result_models import WebsiteScanResult
@@ -23,7 +24,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 
 
 class WebsiteService(BaseCRUDService[DBWebsite, WebsiteRead, WebsiteCreate, WebsiteUpdate]):
-    """Reads and writes the monitored websites, with their critical pages, recipients and internal links."""
+    """Reads and writes the monitored websites, with their critical pages, recipients, tags and internal links."""
 
     table = DBWebsite
     read_model = WebsiteRead
@@ -71,8 +72,13 @@ class WebsiteService(BaseCRUDService[DBWebsite, WebsiteRead, WebsiteCreate, Webs
 
         raise NotFoundError(attributes={"url": url})
 
+    def check_tag_ids(self, tag_ids: Sequence[uuid.UUID]) -> None:
+        """Checks selected tags still exist before a website is saved or its recipients are emailed."""
+        for tag_id in dict.fromkeys(tag_ids):
+            repository.get(self._db, table=DBWebsiteTag, id=tag_id)
+
     def create(self, model_create: WebsiteCreate) -> WebsiteRead:
-        """Creates and persists a new website record along with any associated critical pages.
+        """Creates and persists a new website record along with its critical pages, recipients and optional tags.
 
         Args:
             model_create: The WebsiteCreate payload containing website attributes and critical page URLs.
@@ -82,6 +88,7 @@ class WebsiteService(BaseCRUDService[DBWebsite, WebsiteRead, WebsiteCreate, Webs
 
         Raises:
             WebsiteAlreadyMonitoredError: If the website is already being monitored, even if written differently.
+            NotFoundError: If a selected tag no longer exists. Nothing is added.
             IntegrityError: If the record violates database constraints or already exists.
         """
         try:
@@ -91,7 +98,10 @@ class WebsiteService(BaseCRUDService[DBWebsite, WebsiteRead, WebsiteCreate, Webs
         else:
             raise WebsiteAlreadyMonitoredError(str(existing_website.url))
 
-        website_record: DBWebsite = DBWebsite(**model_create.model_dump(exclude={"critical_pages", "recipient_emails"}))
+        self.check_tag_ids(model_create.tag_ids)
+        website_record: DBWebsite = DBWebsite(
+            **model_create.model_dump(exclude={"critical_pages", "recipient_emails", "tag_ids"})
+        )
         repository.add(self._db, record=website_record)
 
         critical_page_service = CriticalPageService(self._db)
@@ -110,6 +120,9 @@ class WebsiteService(BaseCRUDService[DBWebsite, WebsiteRead, WebsiteCreate, Webs
         self._db.expire(website_record, ["critical_pages"])
 
         self._link_recipients(website_record.id, model_create.recipient_emails)
+        tag_service = TagService(self._db)
+        for tag_id in dict.fromkeys(model_create.tag_ids):
+            tag_service.set_assignment(website_record.id, tag_id, assigned=True)
         return WebsiteRead.model_validate(website_record)
 
     def _link_recipients(self, website_id: uuid.UUID, recipient_emails: Sequence[str]) -> None:

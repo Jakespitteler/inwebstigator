@@ -79,6 +79,13 @@ class IntegrityError(DatabaseError):
         super().__init__("Data validation error. Ensure all referenced IDs exist and unique constraints are met.")
 
 
+class TagAlreadyExistsError(DatabaseError):
+    """A tag name is already used, ignoring case and extra spaces."""
+
+    def __init__(self) -> None:
+        super().__init__("A tag with that name already exists. Choose another name.")
+
+
 class WebsiteAlreadyMonitoredError(DatabaseError):
     """Exception raised when adding a website that is already being monitored.
 

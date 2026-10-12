@@ -7,6 +7,9 @@
     data-card-key="website:{{ website.id }}"
     data-card-name="{{ website_names[website.url | string] }}"
     data-website-name="{{ website_names[website.url | string] }}"
+    data-website-id="{{ website.id }}"
+    data-website-url="{{ website.url }}"
+    data-tag-ids="{{ website_tag_ids.get(website.id, []) | tojson | forceescape }}"
 >
 
     <div class="website-card-header card-header">
@@ -131,10 +134,27 @@
 
     <div class="website-summary">
 
-        <p>
-            Internal pages:
-            <strong>{{ website.internal_link_count }}</strong>
-        </p>
+        <div class="website-summary-info">
+            <p>
+                Internal pages:
+                <strong>{{ website.internal_link_count }}</strong>
+            </p>
+
+            <div class="website-tag-row" role="group" aria-label="Tags for {{ website_names[website.url | string] }}">
+                <span class="website-tags-label">Tags:</span>
+                <span class="website-tag-chips">
+                    {% for tag in tags if (tag.id | string) in website_tag_ids.get(website.id, []) %}
+                    <span class="website-tag" title="{{ tag.name }}">
+                        <span class="website-tag-name">{{ tag.name }}</span>
+                        <button type="button" class="remove-website-tag" data-tag-id="{{ tag.id }}"
+                            aria-label="Remove {{ tag.name }} tag from {{ website_names[website.url | string] }}">&times;</button>
+                    </span>
+                    {% endfor %}
+                </span>
+                <button type="button" class="add-website-tags tag-add-button"
+                    aria-label="Edit tags for {{ website_names[website.url | string] }}" title="Add or remove tags">+</button>
+            </div>
+        </div>
 
         <button
             type="button"

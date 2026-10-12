@@ -87,7 +87,7 @@ async def add_website(model_create: WebsiteCreate, email_sender: EmailSender) ->
     A website too large to scan is kept but deactivated, and only its critical pages are watched.
 
     Args:
-        model_create: The website, its critical pages, its recipients and its scan settings.
+        model_create: The website, its critical pages, its recipients, its optional tags and its scan settings.
         email_sender: Sends the emails to the recipients.
 
     Returns:
@@ -95,12 +95,16 @@ async def add_website(model_create: WebsiteCreate, email_sender: EmailSender) ->
 
     Raises:
         WebsiteAlreadyMonitoredError: If the website is already being watched. Nothing is added.
+        NotFoundError: If a selected tag no longer exists. Nothing is added.
         PageNotLoadedError: If the website or one of its critical pages could not be loaded. Nothing is added.
         UndeliverableEmailError: If an email to one of its recipients could not be delivered. Nothing is added.
         ScanCancelledError: If the first scan was cancelled. The website is not kept.
         ScanAlreadyQueuedError: If the same website is already being added or scanned. The website is not kept.
     """
     _refuse_website_already_watched(model_create.url)
+    if model_create.tag_ids:
+        with db_context() as session:
+            WebsiteService(session).check_tag_ids(model_create.tag_ids)
     async with new_http_client() as client:
         await check_pages_exist(client, [str(model_create.url), *model_create.critical_pages])
     await confirm_addresses_can_receive_email(

@@ -56,6 +56,25 @@
                 >
             </div>
 
+            <fieldset class="form-group new-website-tags">
+                <legend>Tags <span>(optional)</span></legend>
+                <div class="new-website-tag-picker">
+                    <div id="new-website-tag-options" class="new-website-tag-options">
+                        {% for tag in tags %}
+                        <label class="new-website-tag-choice website-tag" title="{{ tag.name }}">
+                            <input type="checkbox" name="tag_ids" value="{{ tag.id }}">
+                            <span class="website-tag-name">{{ tag.name }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                    <button type="button" id="new-website-manage-tags" class="tag-add-button"
+                        aria-label="Create or manage tags" title="Create or manage tags">+</button>
+                </div>
+                <p id="new-website-tags-empty" class="scan-setting-help" {% if tags %}hidden{% endif %}>
+                    You can skip tags or use + to create one.
+                </p>
+            </fieldset>
+
             <div class="form-group">
                 <label>
                     Critical Pages

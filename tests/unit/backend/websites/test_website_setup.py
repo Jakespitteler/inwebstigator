@@ -144,6 +144,25 @@ def _count(session: Session, table: type[DBWebsite | DBRecipient | DBCriticalPag
 
 
 @pytest.mark.anyio
+async def test_missing_website_tags_are_refused_before_loading_pages_or_emailing(
+    session: Session, mocker: MockerFixture, bouncing_addresses: set[str], email_sender: FakeEmailSender
+) -> None:
+    """A stale tag selection does not start a scan, send confirmations or save part of a website."""
+    requested_urls = _put_online(mocker, _serve({HOME_PAGE: HOME_HTML}))
+
+    with pytest.raises(NotFoundError):
+        await add_website(
+            _new_website(url=HOME_PAGE, recipient_emails=["a@example.com"], tag_ids=[uuid.uuid4()]),
+            email_sender,
+        )
+
+    assert requested_urls == []
+    assert email_sender.sent == []
+    for table in (DBWebsite, DBCriticalPage, DBRecipient):
+        assert _count(session, table) == 0
+
+
+@pytest.mark.anyio
 async def test_adding_a_website_saves_its_first_scan_as_the_baseline(
     session: Session, mocker: MockerFixture, bouncing_addresses: set[str], email_sender: FakeEmailSender
 ) -> None:

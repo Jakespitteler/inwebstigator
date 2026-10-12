@@ -55,6 +55,7 @@
     {% include "_footer.html" %}
 
     {% include "confirm_dialog.html" %}
+    {% include "websites/tag_dialog.html" %}
 
     <!-- The dashboard's scripts, split by feature. They share one scope, so the order matters: each script only
          uses what the scripts before it define -->
@@ -65,6 +66,7 @@
     <script src="{{ url_for('static', path='js/add-website-wizard.js') }}"></script>
     <script src="{{ url_for('static', path='js/collapsible-cards.js') }}"></script>
     <script src="{{ url_for('static', path='js/confirm-dialog.js') }}"></script>
+    <script src="{{ url_for('static', path='js/website-tags.js') }}"></script>
     <script src="{{ url_for('static', path='js/add-website.js') }}"></script>
     <script src="{{ url_for('static', path='js/critical-pages.js') }}"></script>
     <script src="{{ url_for('static', path='js/notification-emails.js') }}"></script>

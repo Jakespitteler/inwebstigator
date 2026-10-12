@@ -6,7 +6,10 @@
 <section class="websites-section">
 
     <div class="websites-header">
-        <h2 class="section-title">Monitored Websites</h2>
+        <div class="websites-title-and-tags">
+            <h2 class="section-title">Monitored Websites</h2>
+            {% include "websites/tag_filters.html" %}
+        </div>
 
         {% if websites %}
             <div class="websites-header-actions">
@@ -36,6 +39,19 @@
             </div>
         {% endif %}
     </div>
+
+    <div class="website-search-row">
+        <div class="website-search-field">
+            <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+                <circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" stroke-width="2"/>
+                <path d="m15 15 5 5" stroke="currentColor" stroke-width="2"/>
+            </svg>
+            <input type="search" id="website-search" aria-label="Search monitored websites"
+                placeholder="Search websites, URLs or tags" autocomplete="off">
+        </div>
+        <span id="website-result-count" role="status" aria-live="polite"></span>
+    </div>
+    <p id="tag-message" role="status" aria-live="polite"></p>
 
     <!-- A Run All Scans started before the page loaded keeps showing as in progress -->
     <p
@@ -79,15 +95,13 @@
 
     {% include "websites/add_website_wizard.html" %}
 
-    {% if websites %}
-
+    <div id="monitored-website-list">
         {% for website in websites %}
-
             {% include "websites/website_card.html" %}
-
         {% endfor %}
-
-    {% endif %}
+    </div>
+    <p id="no-matching-websites" class="no-matching-websites" hidden>No websites match your search or tag.</p>
+    <script type="application/json" id="website-tag-data">{{ tag_data | tojson }}</script>
 
 </section>
 

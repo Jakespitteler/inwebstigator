@@ -169,6 +169,29 @@ website_recipient_association = Table(
 )
 
 
+class DBWebsiteTag(Base):
+    """A reusable label; each website can have any number of tags."""
+
+    __tablename__ = "website_tags"
+
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
+    name_key: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+
+
+website_tag_association = Table(
+    "website_tag_association",
+    Base.metadata,
+    Column("website_id", PG_UUID(as_uuid=True), ForeignKey("websites.id", ondelete="CASCADE"), primary_key=True),
+    Column(
+        "tag_id",
+        PG_UUID(as_uuid=True),
+        ForeignKey("website_tags.id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    ),
+)
+
+
 class DBRecipient(Base):
     __tablename__ = "recipients"
 
