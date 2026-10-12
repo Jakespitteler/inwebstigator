@@ -362,7 +362,9 @@ What a check finds is saved as rows in `changes`, and the new HTML replaces
 | Too large | More than 50,000 pages found | Made **inactive** with the reason `too_large`. Its critical pages are still checked. |
 
 Paused websites (`on_cooldown_until`) are skipped by scheduled runs and **Run
-All Scans**. Page fetches (`backend/crawler/page_fetcher.py`) are retried with
+All Scans**, but **Run scan** still scans them. Any scan that succeeds ends the
+pause (`end_cooldown()`), while the slower crawl speed is kept so the website
+isn't rate limited again. Page fetches (`backend/crawler/page_fetcher.py`) are retried with
 exponential backoff (5 attempts) before any of this, waiting longer when a
 server sends `Retry-After` (up to 60 seconds). Each problem is recorded as the
 scan's status and goes in its report, so recipients hear about it.
