@@ -74,19 +74,26 @@ async def test_pages_that_load_are_accepted() -> None:
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    "news_page",
-    [_missing, _broken, _rate_limited, _unreachable, _protocol_error],
+    ("news_page", "reason"),
+    [
+        (_missing, "HTTP 404 Not Found, so the page does not exist or has moved"),
+        (_broken, "HTTP 500 Internal Server Error, so the website had an error"),
+        (_rate_limited, "HTTP 429 Too Many Requests, so the website is limiting how often it can be loaded"),
+        (_unreachable, "The website refused the connection"),
+        (_protocol_error, "The request failed (Protocol error)"),
+    ],
     ids=["missing", "server error", "rate limited", "unreachable", "protocol error"],
 )
-async def test_a_page_that_cannot_be_loaded_is_refused_by_name(news_page: RequestHandler) -> None:
+async def test_a_page_that_cannot_be_loaded_is_refused_by_name(news_page: RequestHandler, reason: str) -> None:
     """Tests a page that cannot be loaded, for whatever reason, is refused with an error naming that page (not the
-    pages that loaded), so the user is told which one to fix."""
+    pages that loaded) and saying why, so the user is told which one to fix and what is wrong with it."""
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(_website_where_news_page(news_page))) as client:
         with pytest.raises(PageNotLoadedError) as refused:
             await check_pages_exist(client, [HOME_PAGE, NEWS_PAGE])
 
     assert refused.value.url == NEWS_PAGE
-    assert str(refused.value) == f"{NEWS_PAGE} could not be loaded. Check it exists and the URL is correct."
+    assert refused.value.reason == reason
+    assert str(refused.value) == f"{NEWS_PAGE} could not be loaded. {reason}."
 
 
 @pytest.mark.anyio

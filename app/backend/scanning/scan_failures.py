@@ -15,6 +15,48 @@ from app.models.website_models import DeactivationReason, WebsiteRead, WebsiteUp
 logger: logging.Logger = logging.getLogger(__name__)
 
 
+def _plural(count: float, singular: str, plural: str) -> str:
+    """Writes a count with the right form of a word, e.g. "1 hour" or "24 hours".
+
+    Args:
+        count: How many there are.
+        singular: The word for one.
+        plural: The word for more than one.
+
+    Returns:
+        The count and the word.
+    """
+    return f"{count:g} {singular if count == 1 else plural}"
+
+
+def _crawl_speed(delay: float, concurrent: int) -> str:
+    """Describes how gently a website is crawled, e.g. "1.5 seconds between requests, 2 at a time".
+
+    Args:
+        delay: Seconds waited before each request.
+        concurrent: The most requests made at once.
+
+    Returns:
+        The description.
+    """
+    return f"{_plural(delay, 'second', 'seconds')} between requests, {concurrent} at a time"
+
+
+def _paused_for(hours: int) -> str:
+    """Says how long scheduled scans of a website are paused for after a problem.
+
+    Args:
+        hours: How long the cooldown is.
+
+    Returns:
+        A sentence saying so.
+    """
+    return (
+        f"Scheduled scans and Run All Scans will skip it for the next {_plural(hours, 'hour', 'hours')} "
+        "(Run scan still scans it straight away)."
+    )
+
+
 def throttle_and_cooldown(website_service: WebsiteService, id: uuid.UUID, hours: int = 24) -> WebsiteRead:
     """Increases crawler delay, decreases concurrency limits, and sets a cooldown period.
 
@@ -65,33 +107,50 @@ def handle_traffic_error(website_service: WebsiteService, website: WebsiteRead) 
         website: The website record that encountered a traffic rate-limiting error.
 
     Returns:
-        Status action message summarising the mitigation applied (throttled, cooldown, or deactivated).
+        What was done about it, for the user: how much the website's scans were slowed down, how long they are paused
+        for, or that it was deactivated.
     """
-
+    hours: int = config.website_cooldown_hours_after_throttle
     is_at_min_speed: bool = (
         website.recommended_concurrent <= config.web_crawler_min_concurrent
         and website.recommended_delay >= config.web_crawler_max_delay
     )
 
     if not is_at_min_speed:
-        throttle_and_cooldown(website_service, id=website.id, hours=config.website_cooldown_hours_after_throttle)
-        return "Website throttled and placed on cooldown."
+        throttled: WebsiteRead = throttle_and_cooldown(website_service, id=website.id, hours=hours)
+        return (
+            "To go easier on the website, its scans have been slowed down to "
+            f"{_crawl_speed(throttled.recommended_delay, throttled.recommended_concurrent)} "
+            f"(was {_crawl_speed(website.recommended_delay, website.recommended_concurrent)}). " + _paused_for(hours)
+        )
 
     # At minimum speed, manage consecutive failures
-    website_service.set_cooldown(id=website.id, hours=config.website_cooldown_hours_after_throttle)
+    website_service.set_cooldown(id=website.id, hours=hours)
+    slowest_speed: str = _crawl_speed(website.recommended_delay, website.recommended_concurrent)
 
     if website.failed_attempts_at_min_speed >= config.web_crawler_max_failed_attempts_at_min_speed:
         website_service.update(
             id=website.id,
             model_update=WebsiteUpdate(active=False, deactivated_reason=DeactivationReason.RATE_LIMITED),
         )
-        return f"Failed {website.failed_attempts_at_min_speed} times. Deactivating: {website.url}"
+        logger.warning(f"Website {website.url} deactivated as it kept rate limiting the crawler.")
+        return (
+            f"Its scans were already as slow as they go ({slowest_speed}), and it has now rate limited "
+            f"{_plural(website.failed_attempts_at_min_speed + 1, 'scan', 'scans')} in a row at that speed, "
+            "so it has been deactivated. Its critical pages are still checked for changes, but the rest of the "
+            "website is no longer scanned. Turn it back on in its scan settings to try again."
+        )
 
     website_service.update(
         id=website.id,
         model_update=WebsiteUpdate(failed_attempts_at_min_speed=website.failed_attempts_at_min_speed + 1),
     )
-    return "Website placed on cooldown."
+    scans_left: int = config.web_crawler_max_failed_attempts_at_min_speed - website.failed_attempts_at_min_speed
+    return (
+        f"Its scans are already as slow as they go ({slowest_speed}), so they can't be slowed down further. "
+        f"{_paused_for(hours)} If it rate limits {_plural(scans_left, 'more scan', 'more scans')} in a row, "
+        "it will be deactivated."
+    )
 
 
 def handle_too_large(website_service: WebsiteService, id: uuid.UUID, max_pages: int) -> str:
@@ -126,7 +185,7 @@ def handle_connection_error(website_service: WebsiteService, website_id: uuid.UU
         website_id: Unique identifier of the unreachable website.
 
     Returns:
-        Status action message confirming cooldown placement.
+        What was done about it, for the user: how long its scheduled scans are paused for.
     """
     website_service.set_cooldown(id=website_id, hours=config.website_cooldown_hours_after_unreachable)
-    return "Website placed on cooldown."
+    return _paused_for(config.website_cooldown_hours_after_unreachable)

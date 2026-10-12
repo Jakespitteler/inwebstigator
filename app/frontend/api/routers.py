@@ -1,5 +1,6 @@
 import uuid
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, Form, HTTPException, Request, status
@@ -85,6 +86,9 @@ def get_dashboard(session: SessionDep, request: Request):
         name="index.html",
         context={
             "website_records": newest_first(record for record in website_records if record.scans),
+            # Each website's card says if its latest scan ran into a problem, e.g. the website rate limited it
+            "latest_scans": {str(record.website_url): record.scans[0] for record in website_records if record.scans},
+            "now": datetime.now(UTC),
             "scans_kept_per_website": config.scans_kept_per_website,
             "next_check": next_scheduled_check(),
             "websites": websites,

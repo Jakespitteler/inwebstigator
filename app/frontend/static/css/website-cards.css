@@ -124,3 +124,9 @@
     background: var(--danger-bg);
     border-color: var(--danger-border);
 }
+
+/* Until when a website whose last scan failed is skipped, on its own line under why */
+.latest-scan-problem .cooldown-notice {
+    display: block;
+    margin-top: 6px;
+}

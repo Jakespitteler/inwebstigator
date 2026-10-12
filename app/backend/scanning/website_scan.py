@@ -23,7 +23,6 @@ from app.core.errors import (
     TrafficError,
     WebConnectionError,
     WebsiteTooLargeError,
-    WebsiteUnavailableError,
 )
 from app.db.services.internal_link_service import InternalLinkService
 from app.db.services.scan_run_service import ScanRunService
@@ -213,32 +212,25 @@ async def _record_failed_crawl(
                 raise TrafficError(
                     url=str(website.url),
                     status_code=error.status_code,
-                    message="Scan aborted, try increasing delay or reducing concurrent (may be banned)",
+                    message=f"{error} The scan was stopped. Try a longer delay or fewer requests at once, "
+                    "as the website may have blocked the scanner for a while.",
                 ) from error
+            traffic_message: str = str(error)
             return await asyncio.to_thread(
                 _handle_scan_failure,
                 website,
                 ScanStatus.TRAFFIC_ERROR,
-                lambda websites: handle_traffic_error(websites, website),
+                lambda websites: f"{traffic_message} {handle_traffic_error(websites, website)}",
                 found_before_failing,
             )
-        case WebsiteUnavailableError() as error:
-            logger.error("Home page could not be loaded: %s", error)
-            unavailable_message: str = str(error)
-            return await asyncio.to_thread(
-                _handle_scan_failure,
-                website,
-                ScanStatus.CONNECTION_ERROR,
-                lambda websites: f"{unavailable_message} {handle_connection_error(websites, website.id)}",
-                found_before_failing,
-            )
-        case WebConnectionError() as error:
+        case WebConnectionError() as error:  # Including the home page not loading (WebsiteUnavailableError)
             logger.error("Site unreachable: %s", error)
+            unreachable_message: str = str(error)
             return await asyncio.to_thread(
                 _handle_scan_failure,
                 website,
                 ScanStatus.CONNECTION_ERROR,
-                lambda websites: handle_connection_error(websites, website.id),
+                lambda websites: f"{unreachable_message} {handle_connection_error(websites, website.id)}",
                 found_before_failing,
             )
         case MostPagesMissingError() as error:

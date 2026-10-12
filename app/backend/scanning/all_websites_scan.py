@@ -25,6 +25,19 @@ SCAN_FAILED_MESSAGE: str = (
 )
 
 
+def scan_failed_message(error: Exception) -> str:
+    """Says a scan failed unexpectedly, and the error it failed with, so the team can be told what went wrong.
+
+    Args:
+        error: The error the scan raised.
+
+    Returns:
+        The message for the website's recipients.
+    """
+    detail: str = f"{type(error).__name__}: {error}" if str(error) else type(error).__name__
+    return f"{SCAN_FAILED_MESSAGE} The error was {detail}"
+
+
 @dataclass
 class RunAllScans:
     """A "Run All Scans" started from the dashboard, so it can be cancelled part way through.
@@ -154,21 +167,22 @@ def _record_scan_time(website: WebsiteRead, run_started_at: datetime) -> None:
         logger.exception("Could not record when %s was scanned, so it may be scanned again early.", website.url)
 
 
-def _record_failed_scan(website: WebsiteRead) -> ScanRunRead | None:
-    """Records a scan that failed unexpectedly, so the website's recipients are told it failed rather than being left
-    to think nothing changed.
+def _record_failed_scan(website: WebsiteRead, error: Exception) -> ScanRunRead | None:
+    """Records a scan that failed unexpectedly, so the website's recipients are told it failed, and why, rather than
+    being left to think nothing changed.
 
     A failure to record it is logged rather than raised, so the other websites are still scanned.
 
     Args:
         website: The website whose scan failed.
+        error: The error the scan raised.
 
     Returns:
         The recorded scan, or None if it could not be recorded.
     """
     try:
         with db_context() as session:
-            scan_run: ScanRunRead = record_scan(session, website, ScanStatus.SCAN_ERROR, SCAN_FAILED_MESSAGE)
+            scan_run: ScanRunRead = record_scan(session, website, ScanStatus.SCAN_ERROR, scan_failed_message(error))
     except Exception:
         logger.exception("Could not record that the scan of %s failed.", website.url)
         return None
@@ -219,9 +233,9 @@ async def scan_all_websites(
             except (ScanAlreadyQueuedError, ScanCancelledError) as error:
                 logger.info("A website has been skipped: %s", error)
                 continue
-            except Exception:
+            except Exception as error:
                 logger.exception("Scan failed for %s, continuing with the remaining websites.", website.url)
-                scan_run = _record_failed_scan(website)
+                scan_run = _record_failed_scan(website, error)
             finally:
                 if run_all:
                     run_all.website_url = None

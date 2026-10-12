@@ -890,6 +890,84 @@ def test_dashboard_explains_inactive_websites_only_have_critical_pages_scanned(
         assert _run_scan_button_text(api_client, url) == "Run scan"
 
 
+def _card_notices(api_client: TestClient, url: str) -> list[str]:
+    """Returns every notice on a website's dashboard card, e.g. why it was deactivated or why its last scan failed."""
+    dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
+    button = dashboard.select_one(f'.run-scan-button[data-website-url="{HttpUrl(url)}"]')
+    assert button is not None
+    card = button.find_parent(class_="website-card")
+    assert card is not None
+    return [" ".join(notice.get_text().split()) for notice in card.select(".website-notice")]
+
+
+def test_dashboard_card_says_why_the_latest_scan_did_not_go_normally(api_client: TestClient, session: Session) -> None:
+    """Tests a website whose latest scan was rate limited says so on its card, with what was done about it, while a
+    website whose problem was followed by a normal scan shows nothing."""
+    rate_limited_message = "https://limited.example.com/ kept answering HTTP 429 Too Many Requests. Slowed down."
+    session.add_all(
+        [
+            DBWebsite(
+                url="https://limited.example.com",
+                scan_runs=[
+                    DBScanRun(scanned_at=datetime(2026, 10, 1, 9, 0).astimezone(), status=ScanStatus.SUCCESS),
+                    DBScanRun(
+                        scanned_at=datetime(2026, 10, 2, 9, 0).astimezone(),
+                        status=ScanStatus.TRAFFIC_ERROR,
+                        message=rate_limited_message,
+                    ),
+                ],
+            ),
+            DBWebsite(
+                url="https://recovered.example.com",
+                scan_runs=[
+                    DBScanRun(
+                        scanned_at=datetime(2026, 10, 1, 9, 0).astimezone(),
+                        status=ScanStatus.CONNECTION_ERROR,
+                        message="Could not be reached.",
+                    ),
+                    DBScanRun(scanned_at=datetime(2026, 10, 2, 9, 0).astimezone(), status=ScanStatus.SUCCESS),
+                ],
+            ),
+        ]
+    )
+    session.flush()
+
+    assert _card_notices(api_client, "https://limited.example.com") == [
+        f"Last scan: Rate limited. {rate_limited_message}"
+    ]
+    assert _card_notices(api_client, "https://recovered.example.com") == []
+
+
+def test_dashboard_card_says_until_when_a_website_is_paused(api_client: TestClient, session: Session) -> None:
+    """Tests a website on cooldown says on its card until when scheduled scans skip it, and one whose cooldown has
+    ended says nothing."""
+    paused_until = datetime(2099, 1, 2, 3, 4, tzinfo=UTC)
+    session.add_all(
+        [
+            DBWebsite(url="https://paused.example.com", on_cooldown_until=paused_until),
+            DBWebsite(url="https://resumed.example.com", on_cooldown_until=datetime(2020, 1, 1, tzinfo=UTC)),
+        ]
+    )
+    session.flush()
+
+    [paused_notice] = _card_notices(api_client, "https://paused.example.com")
+    assert paused_notice.startswith(f"Paused until {routers.format_timestamp(paused_until)}.")
+    assert "Scheduled scans and Run All Scans skip it" in paused_notice
+    assert _card_notices(api_client, "https://resumed.example.com") == []
+
+
+def test_dashboard_explains_a_website_deactivated_for_rate_limiting(api_client: TestClient, session: Session) -> None:
+    """Tests a website deactivated because it kept rate limiting the crawler says so on its card."""
+    session.add(DBWebsite(url="https://strict.example.com", active=False, deactivated_reason="rate_limited"))
+    session.flush()
+
+    notice = _website_notice(api_client, "https://strict.example.com")
+
+    assert notice is not None
+    assert notice.startswith("Blocked the crawler.")
+    assert "Only its critical pages are checked" in notice
+
+
 def test_scan_settings_explain_what_inactive_means(api_client: TestClient, test_website: website_models.WebsiteRead):
     """Tests the "Active" setting explains that an inactive website still has its critical pages checked."""
     dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")

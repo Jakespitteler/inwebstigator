@@ -133,7 +133,8 @@ Each website has its own box. Click it to open or close it. In the box you can:
 - **Add Email** to send this website's reports to another address, or
   **Delete** one.
 - **Delete Website** to stop watching it. This also removes its saved
-  history, so you'll be asked to type `CONFIRM` first.
+  history, so you'll be asked to type `CONFIRM`, then press **Delete** or
+  **Enter**.
 
 **Run All Scans** at the top scans every website straight away.
 
@@ -168,8 +169,8 @@ you to send them this file.
 | Inwebstigator shows an error or closes when opened | Contact the team and send them the log file. It's most likely an email setting on our side. |
 | "Inwebstigator is already running" | It's open in the system tray. Click the tray icon and choose **Open**. |
 | "We can't send an email to …" | Check the email address is spelt correctly. |
-| A website can't be added | Check the address is correct and that the website isn't already on your list. |
-| A scan says **Could not connect** or **Rate limited** | The website was down or asked Inwebstigator to slow down. It's tried again on the next scan. |
+| A website can't be added | The message says why. **HTTP 404 Not Found** or "the website's address could not be found" usually means the address is wrong. **HTTP 403 Forbidden** means the website is blocking Inwebstigator. Also check the website isn't already on your list. |
+| A scan says **Could not connect** or **Rate limited** | The website's box says why (e.g. what the website answered) and until when its scheduled scans are paused. A website that asks Inwebstigator to slow down is scanned more slowly from then on. If it keeps asking even at the slowest speed, it's made inactive; tick **Crawler Active** to try again. |
 | A scan says **Most pages missing** | Most of the website's pages couldn't be found, which is usually a problem with the website rather than real changes. If it keeps happening for 3 scans, the pages are treated as really removed. |
 | No emails for over a week | Check Spam/Junk, and make sure Inwebstigator is running (look for its icon in the system tray). |
 | Slow to open | It's catching up on a missed scan. Give it a few minutes. |

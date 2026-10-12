@@ -105,6 +105,24 @@ def test_run_scan_finds_a_change_and_refreshes_the_dashboard(
     assert "$120" in website.critical_pages[0].text_body
 
 
+def test_a_scan_that_cannot_load_the_website_says_why_on_its_card(
+    open_dashboard: Callable[..., Page], app_server: RunningApp
+) -> None:
+    """Tests a scan whose home page can't be loaded is shown on the website's card after the dashboard reloads,
+    saying what the website answered and until when its scheduled scans are paused."""
+    app_server.add_website(WEBSITE_URL)  # Its home page isn't set, so it answers 404
+    page = open_dashboard()
+
+    with page.expect_navigation():
+        _card(page).locator(".run-scan-button").click()
+
+    card = _card(page)
+    problem = card.locator(".latest-scan-problem")
+    expect(problem).to_contain_text("Last scan: Could not connect.")
+    expect(problem).to_contain_text("HTTP 404 Not Found, so the page does not exist or has moved")
+    expect(card.locator(".cooldown-notice")).to_contain_text("Paused until")
+
+
 def test_cancelling_a_scan_from_its_card(open_dashboard: Callable[..., Page], app_server: RunningApp) -> None:
     """Tests a running scan can be cancelled from the website's card, which then lets it be run again."""
     app_server.add_website(WEBSITE_URL)

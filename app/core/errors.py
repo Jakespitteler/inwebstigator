@@ -1,5 +1,39 @@
 import uuid
+from http import HTTPStatus
 from typing import Any
+
+# What a status code means for the website, for the ones a scan commonly gets back
+HTTP_STATUS_EXPLANATIONS: dict[int, str] = {
+    401: "the page needs a login",
+    403: "the website refused access and may be blocking the scanner",
+    404: "the page does not exist or has moved",
+    410: "the page has been removed",
+    429: "the website is limiting how often it can be loaded",
+    500: "the website had an error",
+    502: "the website may be down, overloaded or under maintenance",
+    503: "the website may be down, overloaded or under maintenance",
+    504: "the website may be down, overloaded or under maintenance",
+}
+
+
+def describe_http_status(status_code: int) -> str:
+    """Says what an error status code from a website means, e.g. "HTTP 403 Forbidden, so the website refused access
+    and may be blocking the scanner".
+
+    Args:
+        status_code: The status code the website answered with.
+
+    Returns:
+        The status code, its name and, for the common ones, what it means.
+    """
+    try:
+        label: str = f"HTTP {status_code} {HTTPStatus(status_code).phrase}"
+    except ValueError:
+        label = f"HTTP {status_code}"
+    explanation: str | None = HTTP_STATUS_EXPLANATIONS.get(status_code)
+    if explanation is None and status_code >= 500:
+        explanation = HTTP_STATUS_EXPLANATIONS[500]
+    return f"{label}, so {explanation}" if explanation else label
 
 
 class DatabaseError(Exception):
@@ -127,11 +161,16 @@ class PageNotLoadedError(WebCrawlerError):
 
     Attributes:
         url: The URL of the page that could not be loaded.
+        reason: Why it could not be loaded, e.g. "HTTP 404 Not Found, so the page does not exist or has moved".
     """
 
-    def __init__(self, url: str) -> None:
+    def __init__(self, url: str, reason: str | None = None) -> None:
         self.url: str = url
-        super().__init__(f"{url} could not be loaded. Check it exists and the URL is correct.")
+        self.reason: str | None = reason
+        if reason:
+            super().__init__(f"{url} could not be loaded. {reason}.")
+        else:
+            super().__init__(f"{url} could not be loaded. Check it exists and the URL is correct.")
 
 
 class TrafficError(WebCrawlerError):
@@ -140,6 +179,8 @@ class TrafficError(WebCrawlerError):
     Attributes:
         url: The target URL string that triggered the traffic error.
         status_code: The HTTP status code returned by the server (e.g., 429, 403, 503).
+        message: What happened, if it says more than the page answering with the status code, e.g. that many pages
+            answered 403 at once.
         retry_after_seconds: How long the server asked to be left before the next request, if it said.
     """
 
@@ -151,11 +192,7 @@ class TrafficError(WebCrawlerError):
         self.message: str | None = message
         self.retry_after_seconds: float | None = retry_after_seconds
 
-        error_message: str = f"Traffic issue ({status_code}) at {url=}. Crawler is overwhelming the server.."
-        if message:
-            error_message += message
-
-        super().__init__(error_message)
+        super().__init__(message or f"{url} kept answering {describe_http_status(status_code)}.")
 
 
 class WebConnectionError(WebCrawlerError):
@@ -163,10 +200,13 @@ class WebConnectionError(WebCrawlerError):
 
     Attributes:
         url: The target URL string that failed to establish or maintain a connection.
+        reason: Why it could not be reached, e.g. "The website took too long to answer", if known.
     """
 
-    def __init__(self, url: str) -> None:
-        super().__init__(f"Network traffic issue (Timeout/Connection drop) reaching {url=}.")
+    def __init__(self, url: str, reason: str | None = None) -> None:
+        self.url: str = url
+        self.reason: str | None = reason
+        super().__init__(f"{url} could not be reached. {reason or 'The connection failed or timed out'}.")
 
 
 class WebsiteUnavailableError(WebConnectionError):
@@ -177,11 +217,15 @@ class WebsiteUnavailableError(WebConnectionError):
 
     Attributes:
         url: The URL of the website's home page.
+        reason: Why the home page could not be loaded, e.g. "HTTP 403 Forbidden, so the website refused access and
+            may be blocking the scanner", if known.
     """
 
-    def __init__(self, url: str) -> None:
+    def __init__(self, url: str, reason: str | None = None) -> None:
         self.url: str = url
-        WebCrawlerError.__init__(self, f"The home page {url} could not be loaded, so the website could not be scanned.")
+        self.reason: str | None = reason
+        message: str = f"The home page {url} could not be loaded, so the website could not be scanned."
+        WebCrawlerError.__init__(self, f"{message} {reason}." if reason else message)
 
 
 class MostPagesMissingError(WebCrawlerError):
