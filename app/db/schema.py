@@ -125,8 +125,27 @@ class UTCDateTime(TypeDecorator[datetime]):
         return None if value is None else value.replace(tzinfo=UTC)
 
 
+def new_id() -> uuid.UUID:
+    """Makes a random ID for a new row that SQLite cannot mistake for a number.
+
+    The ID columns are declared as UUID, which SQLite treats as numeric, so it saves an ID written only in digits (or
+    digits and one "e", e.g. 0552766137664137888039443795e762) as a number instead of the text. Such an ID cannot be
+    read back as a UUID, which breaks whatever loads the row (e.g. the dashboard), and most of them become infinity,
+    so a second one clashes with the first. About 1 in 700,000 random UUIDs is like this, so it happens once a
+    database has enough rows, e.g. a few hundred thousand internal links. An ID with any of the letters a, b, c, d or
+    f is never a number.
+
+    Returns:
+        A random UUID with at least one of those letters.
+    """
+    while True:
+        candidate: uuid.UUID = uuid.uuid4()
+        if any(character in "abcdf" for character in candidate.hex):
+            return candidate
+
+
 class Base(DeclarativeBase):
-    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(), primary_key=True, default=new_id)
 
     # CURRENT_TIMESTAMP is SQLite's current time in UTC
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), server_default=text("CURRENT_TIMESTAMP"))
