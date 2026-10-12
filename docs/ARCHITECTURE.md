@@ -90,8 +90,8 @@ uninstalling deletes it.
 (Jinja2). The page has two tabs:
 
 - **Websites:** a card per website, plus the Add Website wizard
-  (`templates/websites/`).
-- **Updates:** the last `SCANS_KEPT_PER_WEBSITE` (7) scans of each website,
+  (`templates/websites/`), tag filter buttons and a search box.
+- **Updates** ("Scan History"): the last `SCANS_KEPT_PER_WEBSITE` (7) scans of each website,
   newest first, then what each scan found on each critical page
   (`templates/updates/`).
 
@@ -125,6 +125,14 @@ Edited text is turned into highlighted word-by-word HTML by
   message, so scans started elsewhere (the scheduler, another window) show
   without a reload. A finished scan only says to press Refresh, rather than
   reloading by itself, so nothing being typed is lost.
+- **Tags and search:** `static/js/website-tags.js` creates, renames and
+  deletes tags in a dialog (`templates/websites/tag_dialog.html`), adds them
+  to and removes them from websites one at a time, and shows only the cards
+  matching the chosen tag and the search text. It hides cards rather than
+  removing them, so scans and forms on hidden cards keep working. The chosen
+  tag and search are kept in `sessionStorage`.
+- **Card warnings:** a website's card says why its latest scan didn't go
+  normally (until one does), and until when it's paused (`on_cooldown_until`).
 
 **Website names** are worked out two ways:
 
@@ -151,7 +159,8 @@ Edited text is turned into highlighted word-by-word HTML by
 | `POST /scanner/cancel_all` | Cancels a running **Run All Scans**: the website being scanned is cancelled and the rest skipped. Websites already scanned keep their results, and their reports are still emailed. |
 | `POST /scanner/cancel` | Cancels a website's queued or running scan. |
 | `GET /scanner/activity` | The website being scanned now, those waiting their turn, and whether **Run All Scans** is running, for the dashboard to show progress. |
-| `/websites`, `/critical_pages`, `/recipients` | Create, read, update and delete, from `create_crud_router()`. Updating a website confirms any added emails first. Deleting one cancels its scan. A website's main page can't be deleted (422). |
+| `/websites`, `/critical_pages`, `/recipients` | Read, from `create_crud_router()`, plus `PATCH` and `DELETE` for websites and critical pages. Websites and critical pages are only added through `/scanner/`, and recipients only through a website. Updating a website confirms any added emails first. Deleting one cancels its scan. A website's main page can't be deleted (422). |
+| `/tags`, `/websites/{id}/tags/{tag_id}` | Lists, creates, renames (`PATCH`) and deletes tags, and adds a tag to or removes it from a website (`frontend/api/tags.py`). A name already used, ignoring case and extra spaces, is refused (409). Deleting a tag never deletes a website. |
 
 FastAPI's own API docs are at `/docs`.
 
@@ -455,6 +464,7 @@ erDiagram
     websites ||--o{ scan_runs : has
     scan_runs ||--o{ changes : found
     websites }o--o{ recipients : "website_recipients"
+    websites }o--o{ website_tags : "website_tag_association"
 
     websites {
         string url
@@ -500,13 +510,23 @@ erDiagram
         datetime last_email_at
         float days_between_health_checks
     }
+    website_tags {
+        string name
+        string name_key "unique, ignoring case"
+    }
 ```
 
-- **Uniqueness:** recipients' emails are unique. A critical page's URL and an
+- **Uniqueness:** recipients' emails are unique, and so are tag names,
+  ignoring case and extra spaces (`name_key`). A critical page's URL and an
   internal link's URL are unique **within their website**, so overlapping
   websites (e.g. `uwa.edu.au` and `uwa.edu.au/news`) can share pages.
 - **Deleting** a website deletes its critical pages, internal links and scan
-  history. Recipients are shared between websites, so they're only unlinked.
+  history. Recipients and tags are shared between websites, so they're only
+  unlinked. Deleting a tag only unlinks it from its websites.
+- **IDs** are random UUIDs from `new_id()` in `db/schema.py`, which always
+  contain one of the letters a, b, c, d or f. SQLite would otherwise save an
+  ID written only in digits (or digits and one "e", about 1 in 700,000) as a
+  number, which breaks saving and reading that row.
 - **Times are saved in UTC** (`UTCDateTime` in `db/schema.py`). Saving a time
   without a time zone is an error. The dashboard shows times in the computer's
   time zone, and emails in `EMAIL_TIME_ZONE`.
@@ -531,5 +551,6 @@ erDiagram
 | What's emailed, and its wording | `backend/scanning/scan_reports.py`, `backend/email_service/` |
 | How a struggling website is handled | `backend/scanning/scan_failures.py` |
 | Adding websites, pages and emails | `backend/websites/` |
+| Tags, and filtering the Websites tab | `db/services/tag_service.py`, `frontend/api/tags.py`, `static/js/website-tags.js` |
 | Defaults and limits | `core/config.py` |
 | The database | `db/schema.py`, plus a one-off update in `db/migrations.py` if existing databases need changing |

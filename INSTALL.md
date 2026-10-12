@@ -16,6 +16,7 @@ the team know.
   - [Adding a website](#adding-a-website)
     - [If a website can't be added](#if-a-website-cant-be-added)
   - [The Websites tab](#the-websites-tab)
+    - [Tags and search](#tags-and-search)
     - [Scanning a website now](#scanning-a-website-now)
     - [Critical pages](#critical-pages)
     - [Notification emails](#notification-emails)
@@ -60,7 +61,7 @@ their history are kept.
 | Part | What it's for |
 | --- | --- |
 | **Websites** tab | The websites you're monitoring, and adding new ones. |
-| **Updates** tab | What each website's last 7 scans found. |
+| **Updates** tab | The scan history: what each website's last 7 scans found. A red number on the tab counts new results. |
 | **Refresh** (top right) | Reloads the dashboard to show the latest results, e.g. after a scan finished in the background. |
 | **Dark mode / Light mode** (top right) | Switches between a light and a dark look. Your choice is remembered. |
 | **Inwebstigator** (top left) | Takes you back to the dashboard from any page. |
@@ -81,6 +82,9 @@ open them again.
    wording, link and document changes. You can type a full address or just
    the part after the website, e.g. `/fees`. Use **+ Add another critical
    page** for more.
+
+   Under **Tags**, tick any tags the website belongs to, or click **+** to
+   make a new one. This is optional (see [Tags and search](#tags-and-search)).
 2. **Emails.** Enter who should be emailed about this website. This is
    optional, as changes always show on the dashboard. Addresses you've used
    before are suggested as you type. Use **+ Add another email** for more.
@@ -122,6 +126,29 @@ Each website has its own card. Its header shows the website's name and when it
 was last scanned. Click the card (or the arrow at its right) to open it. An
 open card also shows how many pages Inwebstigator found on the whole website
 (**Internal pages**).
+
+A card warns you when something needs your attention:
+
+| Card says | What it means |
+| --- | --- |
+| **Last scan:** *a problem*, e.g. **Could not connect** | The website's last scan didn't go normally, and why. The warning goes once a scan works again. |
+| **Paused until** *a time* | The website couldn't be scanned normally (e.g. it asked Inwebstigator to slow down), so scheduled scans and **Run All Scans** skip it until then. **Run scan** still scans it straight away, and if that works, the pause ends. |
+| **No notification emails** | Nobody is emailed this website's reports. |
+
+### Tags and search
+
+Tags group your websites, e.g. "News" or "Universities". A website can have
+any number of tags.
+
+- **To make, rename or delete tags,** click **+** next to the tag buttons at
+  the top of the Websites tab. Two tags can't have the same name, even with
+  different capitals. Deleting a tag only removes it from your websites; the
+  websites themselves are kept.
+- **To tag a website,** open its card and click **+** next to **Tags**, or
+  tick its tags when you add it. Click the **×** on a tag to take it off.
+- **To show only some websites,** click a tag button, or type in the search
+  box to find websites by name, address or tag. Click **All** to show every
+  website again.
 
 ### Scanning a website now
 
@@ -198,9 +225,9 @@ history.
 
 ## The Updates tab
 
-This shows the last 7 scans of each website, with the most recent changes
-first. **Next scheduled check** (at the top) shows when Inwebstigator next
-looks for websites that are due a scan.
+**Scan History** shows the last 7 scans of each website, with the most recent
+changes first. **Next scan scheduled for** (at the top) shows when
+Inwebstigator next looks for websites that are due a scan.
 
 A red number on the **Updates** tab counts the scans that found changes or a
 problem since you last opened it. When you open the tab, those scans (and

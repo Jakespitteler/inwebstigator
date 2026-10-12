@@ -27,7 +27,9 @@ Inwebstigator works, and has been given to the client.
   changed text, links and documents; crawl whole websites for added and
   removed pages; scan on a schedule; keep each website's last 7 scans; email
   each recipient one report, and resend reports that couldn't be sent; slow
-  down for or pause websites that struggle; and run as a Windows tray app,
+  down for or pause websites that struggle, saying why on the website's card;
+  group websites with tags and search them; show each scan's progress live
+  and count new results on the Updates tab; and run as a Windows tray app,
   installed with an installer that starts it at sign-in.
 - **It's tested by:** unit tests for each module, browser tests of the
   dashboard, GitHub Actions workflows that check every push and the Windows
@@ -160,8 +162,13 @@ about to send, on a Windows computer that has never run Inwebstigator:
 - [ ] The **About** page opens, and the app name leads back to the dashboard.
 - [ ] Close the window with the **X**. The tray icon stays, and **Open** brings
       the window back.
+- [ ] Give the website a tag. Clicking the tag's button at the top shows only
+      that website.
+- [ ] Change a page on the website, then **Run scan**. The dashboard reloads
+      with a red number on the **Updates** tab, and opening the tab clears it.
 - [ ] Switch to dark mode, choose **Quit** from the tray, and reopen the app.
-      It's still dark, and the website is still there.
+      It's still dark, the website and its tag are still there, and the
+      Updates tab's number hasn't come back.
 - [ ] Sign out of Windows and back in. Inwebstigator starts by itself.
 - [ ] Run the installer again while the app is open. It asks for the app to be
       closed, and the website is still there afterwards.
@@ -172,15 +179,29 @@ about to send, on a Windows computer that has never run Inwebstigator:
 
 ## Unfinished work
 
-Nothing was left in progress. Every branch was merged or closed, and every
-issue was closed except two that were marked out of scope:
+Nothing was left in progress. On 12 October 2026 every issue was closed except
+[#136](https://github.com/Jakespitteler/inwebstigator/issues/136), the final
+documentation pass, and no pull request was open. Two issues were closed as
+out of scope, and [Design choices](#design-choices) explains why:
 
 - [#12](https://github.com/Jakespitteler/inwebstigator/issues/12) Optimise the
   crawler with sitemaps.
 - [#9](https://github.com/Jakespitteler/inwebstigator/issues/9) Text hashing.
 
-[Design choices](#design-choices) explains why. What's left to do is in
-[Known issues](#known-issues) and [Ideas for what's next](#ideas-for-whats-next).
+[#116](https://github.com/Jakespitteler/inwebstigator/issues/116), scanning
+the websites in the queue at the same time, was closed too: scans still run
+one at a time (see [Design choices](#design-choices)).
+
+One piece of finished work wasn't merged. The `124-report-failed-crawl`
+branch warns on a website's card when its pages have almost no readable text,
+because they're built with JavaScript (e.g. youtube.com), so changes to them
+may be missed. It's tested, but needs merging with `main`, which has changed
+the same card since. The older branches on the original repository (from
+August to early October) are early versions of work that was later done on
+`main`.
+
+What's left to do is in [Known issues](#known-issues) and
+[Ideas for what's next](#ideas-for-whats-next).
 
 ---
 

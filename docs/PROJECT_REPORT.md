@@ -42,12 +42,12 @@ The project in numbers, as of 12 October 2026:
 | | |
 | --- | --- |
 | Development | 27 July to October 2026 |
-| Commits on `main` | 343 |
-| Pull requests merged | 37 |
-| Issues closed | 75 |
-| Application code (Python) | about 9,600 lines |
-| Test code | about 16,200 lines |
-| Automated tests | 1,067 (1,016 unit, 51 browser) |
+| Commits on `main` | 370 |
+| Pull requests merged | 45 |
+| Issues closed | 90 |
+| Application code (Python) | about 10,100 lines |
+| Test code | about 17,600 lines |
+| Automated tests | 1,155 (1,086 unit, 69 browser) |
 
 ---
 
@@ -61,10 +61,10 @@ The project in numbers, as of 12 October 2026:
 | **Watching whole websites** | Crawls up to 50,000 pages per website and reports pages added and removed. Overlapping websites (e.g. a website and one of its sections) can both be watched. |
 | **Avoiding false alarms** | Leaves out menus, side panels and each page's own header and footer. Doesn't trust a page that suddenly loses most of its text (often a "Just a moment…" check) or a website that suddenly loses most of its pages (often a partial outage) until it lasts 3 scans. Per-page rules can ignore text that changes on every visit. |
 | **Scheduling** | Scans at 8am and 8pm, catching up on any check missed while the computer was off. Each website has its own interval. Scans run one at a time, and can be cancelled. |
-| **Being polite to websites** | Slows down, and backs off for 24 hours, when a website rate limits or blocks it. Switches a website off after repeated blocking, and tells the user why. |
+| **Being polite to websites** | Slows down, and backs off for 24 hours, when a website rate limits or blocks it. Switches a website off after repeated blocking, and tells the user why. A website's card says why its last scan failed (e.g. "HTTP 403 Forbidden") and until when it's paused, and a successful **Run scan** ends the pause. |
 | **Emails** | One email per recipient covering all their websites, a weekly health check, and checks that a new address can receive email. A report that couldn't be sent is kept and sent later. |
-| **History** | Keeps each website's recent scans and what they found, shown on the dashboard's Updates tab. |
-| **The dashboard** | Adding websites in four steps, a card per website, Run and Cancel for one website or all of them, light and dark themes, and an About page. |
+| **History** | Keeps each website's recent scans and what they found, shown on the dashboard's Updates tab, which counts new results in a red bubble until it's opened. |
+| **The dashboard** | Adding websites in four steps, a card per website, Run and Cancel for one website or all of them, live progress of every scan (including scheduled ones), tags and search to group and find websites, light and dark themes, and an About page. |
 | **The desktop app** | A window and system tray icon, one copy at a time, starting at sign-in, logging to a file, and an installer that needs no administrator access. |
 
 ### Depth
@@ -80,7 +80,11 @@ Some areas went well beyond a first working version:
   - Reports survive the mail server being down.
   - Times are saved in UTC.
   - Databases made by older versions are upgraded on startup.
-  - A failed scan is reported as failed, rather than looking like "no changes".
+  - A failed scan is reported as failed, rather than looking like "no changes",
+    and says why in plain words (e.g. the website timed out, its address
+    couldn't be found, or it refused access).
+  - Row IDs can never be saved by SQLite as numbers, a rare fault (about 1 in
+    700,000 IDs) that would break a large database's scans.
 - **Security of a local app:** the app has no login, so a token on every
   request stops other websites open in the user's browser from using it (see
   [ARCHITECTURE.md](ARCHITECTURE.md#the-request-guard)).
@@ -92,6 +96,8 @@ Some areas went well beyond a first working version:
 | Finding pages from sitemaps (#12) | Crawling links works on any website, including those with missing or out-of-date sitemaps. Marked out of scope. |
 | Detecting changes by hashing pages (#9) | A hash only says a page changed, not what changed, which is what users need. Marked out of scope. |
 | A hosted, multi-user version | A desktop app needs no server, login or hosting costs, and keeps the client's data on their computer. Scans therefore only run while the computer is on. |
+| Scanning several websites at once (#116) | One at a time is gentler on the websites and simpler, as scans never compete for the database. |
+| A warning for pages built by JavaScript | Built and tested, but not merged in time (see [HANDOVER.md](HANDOVER.md#unfinished-work)). |
 | Reading `robots.txt` | Not done yet. See [Ethical choices](#ethical-choices). |
 
 ---
@@ -146,8 +152,8 @@ used in automated tests, so the tests replace them with fakes:
 
 | Level | What it covers | How it runs |
 | --- | --- | --- |
-| **Unit tests** (1,016) | Each module on its own: parsing pages, comparing text, crawling, scheduling rules, failure handling, emails, the database and upgrades, the API routes, and the desktop launcher's window and tray logic (with the window mocked). | `uv run pytest -m "not e2e"`, about a minute and a half. |
-| **Browser tests** (51) | The real dashboard in Chrome or Edge (driven by Playwright), against the real app running in the background: the Add Website steps, website cards, the Updates tab, Run All Scans and cancelling it, themes, the About page and Refresh. | `uv run pytest tests/e2e`, a few minutes. |
+| **Unit tests** (1,086) | Each module on its own: parsing pages, comparing text, crawling, scheduling rules, failure handling, emails, the database and upgrades, the API routes, and the desktop launcher's window and tray logic (with the window mocked). | `uv run pytest -m "not e2e"`, about a minute and a half. |
+| **Browser tests** (69) | The real dashboard in Chrome or Edge (driven by Playwright), against the real app running in the background: the Add Website steps, website cards, tags and search, the Updates tab and its count of new scans, live scan progress, Run All Scans and cancelling it, themes, the About page and Refresh. | `uv run pytest tests/e2e`, a few minutes. |
 | **Continuous integration** | Every push and pull request runs Ruff, Pyright and the unit tests on GitHub. Changes to the build also build the installer on a Windows machine and check the packaged app starts. | GitHub Actions. |
 | **Manual release checklist** | What can't be automated: the installer, the real window and tray, starting at sign-in, and real emails arriving. | By hand before each release ([HANDOVER.md](HANDOVER.md#release-checklist)). |
 
@@ -155,24 +161,27 @@ Unit tests by area:
 
 | Area | Test functions |
 | --- | --- |
-| Scanning, scheduling and reports | 136 |
-| Database and upgrades | 122 |
+| Scanning, scheduling and reports | 140 |
+| Database and upgrades | 130 |
+| Dashboard routes, display and tags | 105 |
 | Comparing page text | 97 |
 | Emails | 92 |
-| Dashboard routes and display | 90 |
-| Crawler | 62 |
-| Desktop launcher, app startup, overlapping websites and limits | 49 |
-| Adding websites | 28 |
-| Settings, URLs and logging | 28 |
-| Data models | 24 |
+| Crawler | 65 |
+| Desktop launcher, app startup, overlapping websites and limits | 51 |
+| Settings, URLs, errors and logging | 34 |
+| Adding websites | 29 |
+| Data models | 26 |
 
 (Some test functions run several cases each, which is why there are more tests
 than functions.)
 
 ### Results
 
-On 12 October 2026, all 1,015 runnable unit tests passed (1 is skipped), and
-all 51 browser tests passed in Chrome. Many bugs were fixed along with a test
+On 12 October 2026, the whole suite was run on Windows against the final
+`main`: all 1,086 unit tests passed, and 68 of the 69 browser tests passed in
+Chrome. The other timed out waiting 30 seconds for the dashboard to load while
+the computer was busy, and passed when the browser tests were run again, all
+69 passing. Lint, formatting and strict type checks were clean. Many bugs were fixed along with a test
 that reproduces them, so they can't quietly come back, e.g. overlapping
 websites failing to save, a hidden 100-website limit, and the same critical
 page being added twice with and without a trailing `/`.
