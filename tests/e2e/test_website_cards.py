@@ -134,7 +134,8 @@ def test_cancelling_a_scan_from_its_card(open_dashboard: Callable[..., Page], ap
     app_server.websites.delay_seconds = 0.5  # Slow the scan down enough to cancel it
     run_button.click()
     expect(run_button).to_be_disabled()
-    expect(card.locator(".run-scan-message")).to_contain_text("Scan queued")
+    # The dashboard's own check may already show it running
+    expect(card.locator(".run-scan-message")).to_contain_text(re.compile("Scan queued|Scanning now"))
 
     _wait_for_scan_to_start(WEBSITE_URL)
     cancel_button.click()

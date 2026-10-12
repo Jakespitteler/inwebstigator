@@ -46,7 +46,7 @@ from app.models.critical_page_models import (
     CriticalPageUpdate,
 )
 from app.models.recipient_models import RecipientCreate, RecipientUpdate
-from app.models.scan_run_models import ScanRunRead
+from app.models.scan_run_models import ScanActivity, ScanRunRead
 from app.models.website_models import NewHttpUrl, WebsiteCreate, WebsiteRead, WebsiteSettingsUpdate, WebsiteUpdate
 
 EmailSenderDep = Annotated[EmailSender, Depends(get_email_sender)]
@@ -102,6 +102,7 @@ def get_dashboard(session: SessionDep, request: Request):
             "minimum_days_between_scans": config.scheduler_minimum_days_between_scans,
             "max_pages": config.web_crawler_default_max_pages,
             "queued_website_urls": set(scan_queue.queued_urls),
+            "scanning_url": scan_queue.scanning_url,
             "api_token": config.api_token,
             "api_token_header": API_TOKEN_HEADER,
             "run_all_in_progress": run_all_scans.in_progress,
@@ -243,6 +244,22 @@ async def cancel_website_scan(url: Annotated[HttpUrl, Form()]) -> bool:
         bool: True if the scan was cancelled, or False if it had already finished.
     """
     return scan_queue.cancel(str(url))
+
+
+@SCANNER_ROUTER.get("/activity", response_model=ScanActivity)
+async def scan_activity() -> ScanActivity:
+    """Says which scans are running now, which the dashboard asks every few seconds to keep its cards up to date
+    without being reloaded, including for scans started elsewhere (e.g. scheduled scans).
+
+    Returns:
+        ScanActivity: The website being scanned now, those waiting their turn, and whether "Run All Scans" is running.
+    """
+    scanning_url: str | None = scan_queue.scanning_url
+    return ScanActivity(
+        scanning_url=scanning_url,
+        waiting_urls=[url for url in scan_queue.queued_urls if url != scanning_url],
+        run_all_in_progress=run_all_scans.in_progress,
+    )
 
 
 # ======================

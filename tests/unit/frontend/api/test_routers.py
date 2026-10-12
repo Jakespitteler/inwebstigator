@@ -330,7 +330,7 @@ def test_dashboard_shows_next_scheduled_check(api_client: TestClient, mocker: Mo
         "app.frontend.api.routers.next_scheduled_check", return_value=datetime(2026, 10, 5, 21, 30).astimezone()
     )
 
-    assert _next_check_text(api_client) == "Next scheduled check: 05 Oct 2026, 21:30"
+    assert _next_check_text(api_client) == "Showing the last 7 scans · Next scan scheduled for 05 Oct 2026, 21:30"
 
 
 def test_dashboard_hides_next_check_when_scans_are_not_scheduled(api_client: TestClient, mocker: MockerFixture) -> None:
@@ -435,7 +435,8 @@ def test_updates_show_only_the_latest_scans_and_which_are_waiting_to_be_emailed(
     assert updates_panel is not None
     scans = [" ".join(scan.get_text().split()) for scan in updates_panel.select(".scan-change-record")]
 
-    assert "Last 2 scans of each website" in updates_panel.get_text()
+    assert "Scan History" in updates_panel.get_text()
+
     assert len(scans) == 2
     assert "https://example.com/emailed" in scans[0] and "Email not sent yet" not in scans[0]
     assert "Could not connect" in scans[1] and "Website placed on cooldown." in scans[1]
@@ -1054,6 +1055,13 @@ async def test_another_website_can_be_added_while_one_is_being_scanned(
         first_url, second_url = scan_queue.queued_urls  # In the order they were added
         assert {website.url for website in session.scalars(select(DBWebsite))} == {first_url, second_url}
 
+        # The dashboard can see which website is being scanned and which is waiting its turn
+        assert (await client.get("/scanner/activity")).json() == {
+            "scanning_url": first_url,
+            "waiting_urls": [second_url],
+            "run_all_in_progress": False,
+        }
+
         # Cancelling the waiting website leaves the one being scanned alone
         assert (await client.post("/scanner/cancel", data={"url": second_url})).json() is True
         async with asyncio.timeout(5):
@@ -1066,6 +1074,37 @@ async def test_another_website_can_be_added_while_one_is_being_scanned(
 
     assert session.scalars(select(DBWebsite)).all() == []
     assert scan_queue.queued_urls == []
+    assert scan_queue.scanning_url is None
+
+
+def test_scan_activity_is_empty_when_nothing_is_being_scanned(api_client: TestClient) -> None:
+    """Tests the dashboard is told nothing is being scanned or waiting when no scan is running."""
+    response = api_client.get("/scanner/activity")
+
+    assert response.status_code == 200
+    assert response.json() == {"scanning_url": None, "waiting_urls": [], "run_all_in_progress": False}
+
+
+def test_the_dashboard_shows_which_website_is_being_scanned_and_which_are_waiting(
+    api_client: TestClient, session: Session, mocker: MockerFixture
+) -> None:
+    """Tests a dashboard opened while scans are running says which website is being scanned now and which are waiting
+    their turn, rather than the same "queued or running" for both."""
+    session.add_all([DBWebsite(url=f"https://{name}.example.com") for name in ["scanning", "waiting", "idle"]])
+    session.flush()
+    mocker.patch.object(ScanQueue, "queued_urls", ["https://scanning.example.com/", "https://waiting.example.com/"])
+    mocker.patch.object(ScanQueue, "scanning_url", "https://scanning.example.com/")
+
+    dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
+
+    messages = {
+        str(card.get("data-website-name")): " ".join(message.get_text().split())
+        for card in dashboard.select(".website-card")
+        if (message := card.select_one(".run-scan-message")) is not None
+    }
+    assert messages["Example Scanning"] == "Scanning now..."
+    assert messages["Example Waiting"].startswith("Scan queued.")
+    assert messages["Example Idle"] == ""
 
 
 def test_adding_an_email_to_a_website_counts_as_emailing_it(

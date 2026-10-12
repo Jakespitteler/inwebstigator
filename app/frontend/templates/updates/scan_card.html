@@ -7,9 +7,12 @@
 {% set internal_link_count = scan.internal_links_added | length
     + scan.internal_links_removed | length %}
 
-<!-- One card per scan. A scan that found nothing has no details to open. -->
+<!-- One card per scan. A scan that found nothing has no details to open. When it was scanned, and whether it found
+     anything, are for the Updates tab's count of new scans (updates-badge.js). -->
 <section
     class="change-record scan-change-record"
+    data-scanned-at="{{ scan.scanned_at.isoformat(timespec='milliseconds') }}"
+    data-found-something="{{ 'true' if scan.has_details else 'false' }}"
     {% if scan.has_details %}
         data-collapsible
         data-card-key="scan:{{ scan_key }}"
@@ -24,6 +27,7 @@
                 <time class="change-time" datetime="{{ scan.scanned_at.isoformat() }}">
                     Scanned {{ scan.scanned_at | format_timestamp }}
                 </time>
+                <span class="new-label" hidden>New</span>
                 {% if scan.is_problem %}
                     <span class="scan-problem">{{ scan.status_label }}</span>
                 {% endif %}

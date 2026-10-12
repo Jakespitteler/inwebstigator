@@ -66,11 +66,11 @@
         </div>
     </div>
 
-    <!-- A scan queued before the page loaded keeps showing as in progress -->
+    <!-- A scan queued before the page loaded keeps showing as in progress. scan-activity.js keeps it up to date. -->
     <p
         class="run-scan-message{% if (website.url | string) in queued_website_urls %} is-busy{% endif %}"
         aria-live="polite"
-    >{% if (website.url | string) in queued_website_urls %}Scan queued or running...{% endif %}</p>
+    >{% if (website.url | string) == scanning_url %}Scanning now...{% elif (website.url | string) in queued_website_urls %}Scan queued. It runs once the scan in progress has finished...{% endif %}</p>
 
     <!-- Inactive websites are still scanned, but only their critical pages -->
     {% if not website.active %}

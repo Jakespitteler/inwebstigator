@@ -682,6 +682,39 @@ async def test_a_website_that_rate_limits_or_cannot_be_reached_is_put_on_cooldow
 
 
 @pytest.mark.anyio
+async def test_a_successful_scan_ends_a_cooldown_but_keeps_the_slower_crawl_speed(
+    session: Session, mocker: MockerFixture
+) -> None:
+    """Tests a website put on cooldown after rate limiting the crawler comes off it once a scan (e.g. "Run Scan Now")
+    succeeds, so scheduled scans stop skipping it, while the crawler stays slowed down so it is not rate limited
+    again."""
+    main_url = "https://example.com"
+    mocker.patch("app.backend.scanning.website_scan.db_context", side_effect=lambda: nullcontext(session))
+    crawl = mocker.patch("app.backend.scanning.change_detection.crawl_site", return_value={main_url})
+    service = WebsiteService(session)
+    website = service.create(WebsiteCreate(url=HttpUrl(main_url)))
+
+    async with httpx2.AsyncClient(
+        transport=httpx2.MockTransport(lambda request: httpx2.Response(200, text="<p>Home page.</p>"))
+    ) as client:
+        await scan_website(client, website)  # baseline
+        crawl.side_effect = TrafficError(main_url, status_code=429)
+        await scan_website(client, service.get(website.id))
+        throttled = service.get(website.id)
+        crawl.side_effect = None
+        scan_run = await scan_website(client, throttled)
+
+    saved = service.get(website.id)
+    assert throttled.on_cooldown_until is not None
+    assert scan_run.status is ScanStatus.SUCCESS
+    assert saved.on_cooldown_until is None
+    assert (saved.recommended_delay, saved.recommended_concurrent) == (
+        throttled.recommended_delay,
+        throttled.recommended_concurrent,
+    )
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     "crawl_error",
     [TrafficError("https://example.com", status_code=429), WebConnectionError("https://example.com")],

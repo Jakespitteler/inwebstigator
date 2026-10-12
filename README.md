@@ -1,374 +1,327 @@
-# TODO
-- Updates page needs a parent card with the website and child card with the critical pages (currently they're all sequential) 
-- Each website card should have its own last scan date and time
-- Critical page count is unnecessary
-- On critical pages sometimes it will add and remove the same text
-- Initial scan saves to recent links added and all that so is showing up in the dashboard
-- UI isn't allowing days between scans to be a float
-- The add website card could probably be the same as the other website cards since Jay Jay wants to keep the advanced settings hidden
-- Make the running first scan text bold and add a spinning loading icon
-- Need a way to cancel the scan
-- Have something saying you can close the window and the scan will run in the background
-- Be able to add facebook.com without needing to write https://www.facebook.com
-- Maybe only add a website to the db once the scan is complete
-- "Daily changes" should be "Changes since last scan"
-- check if email when website is added changes the interval it says
+# Inwebstigator
 
+Inwebstigator monitors websites for changes. For each website it watches a set of
+**critical pages** for edited, added and removed text, links and documents, and
+crawls the rest of the site for pages that appear or disappear. Changes are shown
+on a dashboard and emailed to each website's notification addresses.
 
-### TODOs — Reviewed by JJ
+It's a Windows desktop app: a [FastAPI](https://fastapi.tiangolo.com/) web app
+running locally, shown in a native window by [pywebview](https://pywebview.flowrl.com/),
+with scheduled scans while it runs. Everything is stored in a local SQLite database.
 
-#### Scanning and scheduling
-
-- **Add a loading indicator when a scan is running.**
-- **Collapse the review/add-site UI while scanning.** After pressing "Run
-  Scan", replace or collapse the larger UI into something small such as
-  "Scanning [site]...".
-- **Allow sites to be queued while a scan is running.** The UI should remain
-  usable while another scan is in progress.
-- **Queue scan requests.** If multiple scan buttons are pressed while scans
-  are already running, requests should be queued rather than interrupting
-  existing scans.
-- **Prevent duplicate scan requests.** The same site should not be added to
-  the scan queue more than once at a time.
-- **Do not interrupt an existing scan when starting another scan.** Currently,
-  starting a scan for an existing site while another site is being scanned
-  appears to stop the current scan and start the new one. The desired behaviour
-  is to queue the new scan and allow the current scan to finish.
-- **Investigate scan queue persistence.** When a scan is interrupted/restarted,
-  it is unclear whether the queue of unexplored links is being maintained
-  correctly.
-
-#### Website display
-
-- **Make monitored websites collapsible.** Each website should initially show
-  only its name (and potentially its link) and a scan button. Clicking anywhere
-  in the website's box should expand it to show the additional information.
-  This should make the dashboard easier to use with multiple monitored sites.
-- **Website names (decided).** The emails and the add website form name a
-  website by its host name without "www.", then its path if it is only part of
-  a website, e.g. `teqsa.gov.au` or `example.gov.au/research` (`website_name`
-  in `app/core/urls.py`, and `displayName` in `add-website.js`). The
-  dashboard's cards show a friendlier title read from the saved home page,
-  e.g. `TEQSA`, `Education NSW` or `Example News` for news.example.com
-  (`website_card_title` in `app/backend/websites/website_titles.py`). Each
-  scan works the title out once and saves it, so the dashboard does not read
-  every home page each time it loads.
-- **Make the latest scan time per-site.** Currently the latest scan time appears
-  to be global and is displayed for all websites. Each monitored website
-  should display its own latest scan time.
-- **Add our application icon to the dashboard.**
-
-#### Buttons and UI
-
-- **Decide on the position of the "Add Critical Page" and "Add Email"
-  buttons.** The suggestion was to place them to the left of the input field,
-  alongside the scan button. JJ prefers either keeping the current layout or
-  placing them on the right, as that is closer to his mouse.
-- **Style the delete-website confirmation popup.**
-- **Make deletion safer.** Default to "Cancel" rather than "OK" in the delete
-  confirmation and make the destructive action harder to trigger accidentally.
-- **Hide or de-emphasise the delete button** to reduce accidental deletion.
-- **Add copyright and team information.** Consider adding a footer and/or an
-  About/Contact page containing relevant copyright, team, and contact
-  information.
-
-#### Scan history and change tracking
-
-- **Keep the history of the last 7 scans.** We need to keep track of the last 7 
-  scans according to JJ
-- **Investigate multiple changes per day.** Confirm whether all changes are
-  currently being captured. If not, ensure that earlier changes are preserved
-  rather than being replaced by the latest change.
-
-### TODOs — Not reviewed by JJ
-
-- **Allow the application to be quit from the terminal using `Ctrl+C`.**
-- **Consider allowing advanced users to configure the sender email address.**
-  Currently not considered necessary according to JJ.
-
-
-## Email notifications
-
-Each scan of a website runs in three stages:
-
-```
-crawler           finds the pages on the website, and loads each critical page
-change detection  compares them with the last scan, and lists the changes
-reports           records the scan, then emails its report to the website's recipients
-```
-
-| stage | code |
+| Document | For |
 | --- | --- |
-| crawler | `app/backend/crawler/` |
-| change detection | `app/backend/scanning/change_detection.py` compares the crawl with the last scan, and `app/backend/scanning/critical_page_checks.py` checks each critical page, with `app/backend/diff_checker/` comparing its text |
-| reports | `app/backend/scanning/website_scan.py` records the scan, `app/backend/scanning/scan_reports.py` emails it, and `app/backend/email_service/` writes and sends the emails |
+| [INSTALL.md](INSTALL.md) | People using the app: installing it and using the dashboard. |
+| This README | Developers: setting up, running, testing and building. |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the pieces fit together. |
+| [docs/HANDOVER.md](docs/HANDOVER.md) | A team taking the project over: status, decisions, known issues and next steps. |
+| [docs/EMAIL.md](docs/EMAIL.md) | Whoever looks after the app: fixing the emails if they stop, and handing over the email account. |
+| [docs/PROJECT_REPORT.md](docs/PROJECT_REPORT.md) | The project report: what was built, how it was tested, and the trade-offs and ethical choices made. |
 
-A website's first scan, when it is added, only saves each page as a starting
-point, so it reports nothing. Links in a page's `<nav>` and `<aside>` are left
-out, like its text, so a change to a menu shared by every page isn't reported
-on every critical page.
+**Contents:** [Setting up](#setting-up) · [Running](#running) ·
+[Configuration](#configuration) · [Email](#email) · [Logs](#logs) ·
+[Testing](#testing) · [Building the Windows app](#building-the-windows-app) ·
+[Project layout](#project-layout) · [Database](#database) ·
+[Contributing](#contributing)
 
-### The emails
+---
 
-| email | when it is sent |
-| --- | --- |
-| Website monitoring started | to each recipient when a website is added. It also checks the address: if it bounces, the website isn't added |
-| Email address added to website monitoring | to a recipient added to a website later |
-| Website update(s) | after a scheduled scan (or "Run All Scans") that found changes or ran into a problem. Each recipient gets one email covering all their websites |
-| Manual scan | after "Run Scan Now", if it found changes or ran into a problem |
-| Health check | to each recipient who hasn't been emailed for their `days_between_health_checks` (7 days by default), listing their websites and any that need attention |
+## Setting up
 
-The wording (subjects, times) is in `email_service/email_wording.py`, and the
-HTML is in `email_service/templates/`, rendered by `email_service/html_bodies.py`,
-and `email_service/style_inliner.py` copies the CSS onto each tag, as many email
-apps ignore `<style>`.
-
-### Email format
-
-Every email is multipart: the HTML, and a plain-text copy made from it
-(`message_builder.html_to_text`) for email apps that don't show HTML.
-
-For edited text, the HTML part shows a **side by side Before/After table**,
-with the words taken out marked in red on the left and the words put in marked
-in green on the right.
-
-Page text is untrusted, so the templates escape everything (Jinja
-autoescaping).
-
-Times are shown in `EMAIL_TIME_ZONE` (e.g. `Australia/Perth`), or in the
-computer's own time zone when it is blank, because the client reads them.
-
-Every message carries `Date` and `Message-ID` headers, which Python doesn't
-add itself, and without which spam filters score email badly — a report in the
-junk folder looks exactly like a broken scraper. It also carries
-`Auto-Submitted: auto-generated`, so out-of-office replies don't come back.
-
-### Sending, retries and bounces
-
-`SmtpEmailSender` (`email_service/delivery.py`) sends the emails. Port 465 is
-encrypted from the start, and any other port (e.g. 587) is upgraded with
-STARTTLS. The server's certificate is always checked.
-
-- A temporary failure (a dropped connection, or a busy server's 4xx reply) is
-  retried, up to `EMAIL_RETRY_MAX_ATTEMPTS` (3) tries.
-- An address refused for good, or an email the server rejects (a 5xx reply),
-  isn't retried, as it would fail the same way every time. An address refused
-  only for now (a 4xx reply, e.g. greylisting) is kept for the next run.
-- A scan report that couldn't be sent is kept, and sent with the next run (see
-  "State" below).
-
-Gmail and most other providers accept an email first and only report a missing
-mailbox afterwards, by sending a delivery failure email back to the sending
-account. So when an address is added, `confirm_address_can_receive_email`
-emails it, then watches the sending account's inbox over IMAP for
-`EMAIL_BOUNCE_WAIT_SECONDS` (30). The inbox server is worked out from
-`SMTP_HOST` (e.g. `smtp.gmail.com` → `imap.gmail.com`) unless `IMAP_HOST` is
-set. If the inbox can't be reached, the email is still sent, but a bounce
-can't be seen.
-
-### the scheduler
-
-There is no separate scheduler process: it starts and stops with the app
-(`app/backend/scanning/scheduler.py`, run from the FastAPI lifespan), so scans only happen while
-Inwebstigator is running. Set `AUTOMATIC_SCANS=false` to turn it off.
-
-It checks at 8am and 8pm on the computer's clock (`SCHEDULER_SCAN_TIME`, then
-every `SCHEDULER_MINIMUM_DAYS_BETWEEN_SCANS`), at the same times whenever the app
-was started. It also checks a second after the app starts, so a check missed
-while the computer or the app was off (e.g. that morning's) catches up as soon
-as the app opens. Each run:
-
-1. Scans each website whose own "days between scans" has passed since its last
-   scan, skipping websites on cooldown. The time is counted between the checks
-   the last scan and this run fall in, so a scan that ran late (e.g. at 5pm,
-   after the 8am check was missed) is still followed by one at the next
-   morning's check. `SCHEDULER_SCAN_DUE_TOLERANCE_MINUTES` lets an interval that
-   doesn't line up with the checks be scanned at the nearest one. Each
-   recipient is emailed one report of the changes, and of any scans that failed.
-2. Sends a health check to each recipient still on a website who has not been
-   emailed for their `days_between_health_checks` (7 by default). Being sent a
-   confirmation when added to a website counts as being emailed.
-
-"Run All Scans" on the dashboard scans every website straight away, and the
-scheduled checks carry on at their usual times. A run that raises is logged, and
-the next run happens as normal.
-
-### run the app
+You need [uv](https://docs.astral.sh/uv/getting-started/installation/), which
+installs the right Python (3.13) and every dependency for you.
 
 ```bash
-uv sync                          # first time only
-uv run python inwebstigator.py   # the desktop app, as testers get it
+git clone https://github.com/Jakespitteler/inwebstigator.git
+cd inwebstigator
+uv sync                      # creates .venv with the app and dev tools
+cp .env.example .env         # then fill it in (see Configuration)
 ```
 
-The app answers only on `127.0.0.1` and `localhost`. Every request that changes
-something (POST, PATCH, DELETE) must carry the `X-Inwebstigator-Token` header,
-a new random token each time the app starts, which only the dashboard page is
-given (`app/frontend/api/request_guard.py`). This stops a website open in the
-user's normal browser from starting scans, adding websites or emailing their
-recipients. To call the API by hand, e.g. from `/docs`, start the app with
-`API_TOKEN_REQUIRED=false`.
+The app runs on macOS and Linux for development, but the desktop launcher
+(`inwebstigator.py`) and the installer are Windows only.
 
-The app logs to `%LOCALAPPDATA%\inwebstigator\logs\inwebstigator.log`, as well
-as the terminal, keeping the last few files (`LOG_FILE_MAX_BYTES`,
-`LOG_FILE_BACKUP_COUNT`), so a tester can send it to the team.
+> **macOS:** if the project folder is synced by iCloud (e.g. it's on your
+> Desktop), iCloud can corrupt `.venv`. If imports suddenly fail, run
+> `uv sync --reinstall`.
 
-### build the Windows app
+---
 
-The installer testers are sent is built on Windows in two steps: PyInstaller
-packages the app (`inwebstigator.spec`) into `dist\inwebstigator\`, then
-Inno Setup wraps that folder into one installer
-(`inwebstigator_installer_script.iss`). One script does both:
+## Running
+
+### As the desktop app (Windows)
+
+```bash
+uv run python inwebstigator.py
+```
+
+This starts the web app on a local port (48731 if it's free) and opens it in a
+window. Closing the window hides it to the system tray, where **Open**, **Hide**
+and **Quit** control it. Only one copy can run at a time. `Ctrl+C` in the
+terminal quits it. Pass `--debug` to open the browser developer tools.
+
+### As a web app (any OS)
+
+```bash
+uv run uvicorn app.main:app --reload
+```
+
+Open <http://127.0.0.1:8000> for the dashboard.
+
+Useful while developing:
+
+```bash
+AUTOMATIC_SCANS=false uv run uvicorn app.main:app --reload       # no scheduled scans
+DB_PATH=/tmp/inwebstigator-test.db uv run uvicorn app.main:app     # a separate database
+API_TOKEN_REQUIRED=false uv run uvicorn app.main:app               # call the API by hand
+```
+
+- **A separate database:** use `DB_PATH`, not `DB_NAME`, which is ignored (see
+  [Database](#database)).
+- **Calling the API:** every request that changes something (POST, PATCH,
+  DELETE) needs the `X-Inwebstigator-Token` header, a random token made each
+  time the app starts and only given to the dashboard page. This stops a
+  website open in the user's normal browser from using the app. To try the API
+  from FastAPI's docs at <http://127.0.0.1:8000/docs>, turn the check off with
+  `API_TOKEN_REQUIRED=false`.
+
+**There's no dry-run mode.** Adding a website really emails its recipients, so
+only add your own addresses while testing.
+
+---
+
+## Configuration
+
+Settings live in `app/core/config.py` and can be overridden by environment
+variables or a `.env` file, using the setting's name in capitals (e.g.
+`smtp_host` → `SMTP_HOST`). Variables already set in the environment win over
+`.env`.
+
+`.env` is read from the app's folder, whichever folder it was started from:
+
+| | Where `.env` is read from |
+| --- | --- |
+| Development | The project's root folder. |
+| Installed app | The folder `inwebstigator.exe` is in, where the installer puts it. |
+
+The settings you're most likely to need:
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `EMAIL` / `EMAIL_PASSWORD` | blank | The account emails are sent from. Also the From address. |
+| `SMTP_HOST` / `SMTP_PORT` | blank / `465` | The mail server. Port 465 uses SSL; any other port (e.g. 587) is upgraded with STARTTLS. |
+| `IMAP_HOST` / `IMAP_PORT` | blank / `993` | The same account's inbox, used to spot bounced emails. If blank, it's worked out from `SMTP_HOST` (`smtp.` → `imap.`). |
+| `EMAIL_TIME_ZONE` | blank | The time zone emails show times in, e.g. `Australia/Perth`. Blank uses the computer's own. |
+| `AUTOMATIC_SCANS` | `true` | Run scheduled scans and health check emails. |
+| `DB_PATH` | `<home>/AppData/Local/inwebstigator/inwebstigator.db` | The SQLite database file. |
+| `API_TOKEN_REQUIRED` | `true` | Refuse changes that don't come from the dashboard (see [Running](#running)). |
+| `SERVER_PREFERRED_PORT` | `48731` | The desktop app's port, if free. |
+| `SCHEDULER_SCAN_TIME` | `08:00` | The first scheduled check of the day. |
+| `SCHEDULER_MINIMUM_DAYS_BETWEEN_SCANS` | `0.5` | The shortest allowed scan interval, and the time between scheduled checks (so 8am and 8pm). |
+| `SCHEDULER_DEFAULT_DAYS_BETWEEN_SCANS` | `1` | Default scan interval for new websites. |
+| `SCHEDULER_DEFAULT_DAYS_BETWEEN_HEALTH_CHECKS` | `7` | Days without an email before a recipient gets a health check. |
+| `SCANS_KEPT_PER_WEBSITE` | `7` | How many scans of each website are kept and shown on the Updates tab. |
+| `WEB_CRAWLER_DEFAULT_MAX_PAGES` | `50000` | Websites with more pages are deactivated (critical pages only). |
+| `WEB_CRAWLER_DEFAULT_DELAY` / `WEB_CRAWLER_DEFAULT_CONCURRENT` | `0.5` / `5` | Default crawl speed for new websites. |
+
+See `app/core/config.py` for the rest (crawler retries and limits, cooldowns,
+diff thresholds, log size). Email settings default to blank rather than a
+placeholder, so a half-filled `.env` fails loudly. `.env` is gitignored, so
+never commit real values.
+
+---
+
+## Email
+
+Without email settings the app still works, but adding a website with
+notification emails, or adding an email to a website, fails because the email
+can't be sent. Websites with no notification emails are unaffected.
+
+To send real email with a Gmail account:
+
+1. Turn on 2-Step Verification on the Google account.
+2. Create an **App Password** (Google account → Security → 2-Step Verification
+   → App passwords). Your normal password won't work.
+3. Fill in `.env`:
+
+   ```bash
+   EMAIL=you@gmail.com
+   EMAIL_PASSWORD=abcdefghijklmnop   # the 16-character app password
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=465
+   EMAIL_TIME_ZONE=Australia/Perth
+   ```
+
+4. Start the app and add a website with your own address. You should get a
+   "Website monitoring started" email. Check the spam folder if it doesn't
+   arrive, as a new sending address often lands there at first.
+
+When an address is added, the app emails it and watches the sending account's
+inbox for about 30 seconds for a bounce. An address that bounces isn't added.
+The inbox is found from `SMTP_HOST` (`smtp.gmail.com` → `imap.gmail.com`), so
+set `IMAP_HOST` only if your provider's is named differently. If the inbox
+can't be opened, the email is just sent, without checking for a bounce.
+
+UWA accounts won't work: Microsoft has turned off the basic SMTP login the app
+uses. Use a personal or project Gmail account.
+
+If the emails stop, or the account needs handing over to someone else, see
+[docs/EMAIL.md](docs/EMAIL.md).
+
+---
+
+## Logs
+
+The app logs to the terminal and to
+`<home>/AppData/Local/inwebstigator/logs/inwebstigator.log`
+(`%LOCALAPPDATA%\inwebstigator\logs` on Windows), keeping the last few files
+(`LOG_FILE_MAX_BYTES`, `LOG_FILE_BACKUP_COUNT`). The installed app has no
+console window, so testers can send this file instead.
+
+---
+
+## Testing
+
+```bash
+uv run pytest                  # everything
+uv run pytest -m "not e2e"     # skip the browser tests (much faster)
+uv run pytest tests/e2e        # only the browser tests
+```
+
+| Folder | What's in it |
+| --- | --- |
+| `tests/unit/` | Fast tests of each module, using an in-memory database, fake websites and a fake email sender (`tests/fakes.py`). |
+| `tests/e2e/` | Browser tests: the real dashboard in Chrome or Edge, driven by [Playwright](https://playwright.dev/python/), against the app running in the background with a throwaway database, fake websites and recorded (unsent) emails. |
+
+`conftest.py` at the project root gives the tests a temporary data folder and
+turns automatic scans off, so they never touch the real database or log file.
+
+The browser tests use Google Chrome or Microsoft Edge if installed. Otherwise
+run `uv run playwright install chromium`, or skip them with `-m "not e2e"`.
+They always run after the other tests, and if any test runs for over 5 minutes
+pytest prints where it's stuck.
+
+The browser tests cover the dashboard, but not the Windows app around it (the
+window, tray and installer). Check those by hand before each release, with the
+[release checklist](docs/HANDOVER.md#release-checklist).
+
+Linting, formatting and type checking:
+
+```bash
+uv run ruff check .
+uv run ruff format .
+uvx pyright
+```
+
+### Continuous integration
+
+Two GitHub Actions workflows run on GitHub:
+
+| Workflow | When | What it does |
+| --- | --- | --- |
+| **Checks** (`.github/workflows/checks.yml`) | Every push and pull request | Ruff, formatting, Pyright (strict) and the unit tests. Not the browser tests. |
+| **Build Windows app** (`.github/workflows/build-windows.yml`) | When the build files change, or run by hand | Builds the installer on Windows and checks the packaged app starts. It uses `.env.example`, so its installer can't send email and is only for checking the build. |
+
+---
+
+## Building the Windows app
+
+On Windows, with [uv](https://docs.astral.sh/uv/) and
+[Inno Setup](https://jrsoftware.org/isdl.php) 6.5 or later installed:
 
 ```powershell
 copy .env.example .env    # then fill in the email settings
 powershell -ExecutionPolicy Bypass -File scripts\build_installer.ps1
 ```
 
-It needs [uv](https://docs.astral.sh/uv/) and
-[Inno Setup](https://jrsoftware.org/isdl.php) 6.5 or later, and builds
-`dist\Inwebstigator Installer.exe`. It cannot be built on macOS or Linux, as
-PyInstaller only builds for the system it runs on.
+This builds `dist\Inwebstigator Installer.exe` in two steps: PyInstaller
+packages the app (`inwebstigator.spec`) into `dist\inwebstigator\`, then Inno
+Setup wraps that folder into one installer (`inwebstigator_installer_script.iss`).
+It can't be built on macOS or Linux, as PyInstaller only builds for the system
+it runs on.
 
-- `.env` is put in the installer, next to `inwebstigator.exe`, which is where
-  the installed app reads its settings from. It holds the email account's
-  password, so only send the installer to people who should have it.
-- The installer installs for the person running it (in
-  `%LOCALAPPDATA%\Programs\Inwebstigator`), so it needs no administrator
-  access. It adds a Start menu shortcut, an optional desktop shortcut and a
-  shortcut that starts the app at sign-in (a box in the installer, ticked by
-  default), and asks for the app to be quit first if it is running. Uninstalling also deletes the app's data in
-  `%LOCALAPPDATA%\inwebstigator`.
-- The app is built without a console window, as it runs in the system tray.
-  Its log file (above) records what a console would have shown.
-- Change `MyAppVersion` in the installer script for each version sent out.
-- The "Build Windows app" GitHub Actions workflow runs the same script on
-  GitHub's Windows machines whenever the build files change, and checks the
-  packaged app starts. It uses `.env.example`, so its installer cannot send
-  email and is only for checking the build.
+- **`.env` goes in the installer,** next to `inwebstigator.exe`. It holds the
+  email account's password, so only send the installer to people who should
+  have it.
+- **It installs for the current user** (in `%LOCALAPPDATA%\Programs\Inwebstigator`),
+  so it needs no administrator access. It adds a Start menu shortcut, an
+  optional desktop shortcut and a shortcut that starts the app at sign-in
+  (ticked by default). If the app is running, it asks for it to be quit first.
+- **Uninstalling deletes the app's data** in `%LOCALAPPDATA%\inwebstigator`.
+  Installing a new version over an old one keeps it.
+- **There's no console window,** as the app runs in the system tray. See
+  [Logs](#logs).
+- **Change `MyAppVersion`** in the installer script for each version sent out.
 
-### The dashboard's files
+---
 
-The dashboard is one page, `app/frontend/templates/index.html`, built from
-smaller templates: `updates/` for the Updates tab, `websites/` for the Websites
-tab, plus the header and the delete confirmation dialog. Its styles are in
-`app/frontend/static/css/` and its scripts in `app/frontend/static/js/`, one
-file per part of the page. `index.html` loads them in order, which matters: a
-later stylesheet can override an earlier one (`responsive.css` is last), and
-the scripts share one scope, so each only uses what the scripts before it
-define. A test checks every file in those folders is loaded and found.
+## Project layout
 
-### run tests
-
-```bash
-uv sync          # first time only
-uv run pytest
+```
+inwebstigator.py                 Desktop launcher (Windows): local server, window, system tray
+inwebstigator.spec               PyInstaller build settings
+inwebstigator_installer_script.iss  Inno Setup installer settings
+scripts/build_installer.ps1      Builds the app and its installer
+conftest.py                      Test settings: a temporary data folder, no automatic scans
+app/
+  main.py                        Creates the FastAPI app: logging, database, scheduler, error responses
+  core/                          Settings, errors, logging, file paths, URL handling
+  backend/
+    crawler/                     Fetching pages and crawling a website for its internal pages
+    diff_checker/                Reading a page's text into blocks and comparing two versions
+    scanning/                    Scans: the queue, change detection, failures, reports, scheduling, health checks
+    websites/                    Adding websites, critical pages and emails, and website card titles
+    email_service/               Writing emails (templates/) and sending them
+  db/
+    schema.py                    Database tables (SQLAlchemy)
+    migrations.py                Brings databases made by older versions up to date
+    session.py                   The database engine and sessions
+    repository.py                Generic database operations
+    services/                    Database operations for each table
+  models/                        Request, response and scan result shapes (Pydantic)
+  frontend/
+    api/                         Dashboard page, API routes and the request guard
+    templates/                   Dashboard HTML (Jinja2), split into websites/ and updates/
+    static/                      css/, js/, logos and icon
+tests/                           See Testing
 ```
 
-The tests use a temporary data folder (see `conftest.py`), so they never touch
-the real database or log file, and a fake email sender (`tests/fakes.py`), so
-they never send email.
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how these work together.
 
-### Configuration
+---
 
-Settings come from the environment, so no credentials live in source.
+## Database
 
-```bash
-cp .env.example .env      # then fill it in
-```
+The database is a SQLite file at `<home>/AppData/Local/inwebstigator/inwebstigator.db`
+(`%LOCALAPPDATA%\inwebstigator` on Windows; the same path under your home
+folder on macOS). Delete it to start again from nothing.
 
-`app/core/config.py` reads `.env` for the whole project on import, so there is
-nothing to `source`. It is read from the project's folder, or in the packaged
-app from the folder `inwebstigator.exe` is in, whichever folder the app was
-started from. Anything already exported wins over the file, so you can
-still override a setting for one run
-(`EMAIL_TIME_ZONE=UTC uv run python inwebstigator.py`). Every field of `Config`
-can be set this way, by its name in capitals. `.env` is gitignored — never
-commit real values.
+There's no migration tool. On startup, `prepare_database()` in
+`app/db/migrations.py`:
 
-The addresses and the mail server default to blank rather than to a plausible
-looking placeholder, so a half-filled `.env` fails loudly instead of mailing
-somewhere nobody reads.
+- **Creates missing tables** with `Base.metadata.create_all()`.
+- **Adds missing columns** with `add_missing_columns()`, for columns added to
+  the models since a database was made. New columns must be nullable or have a
+  server default.
+- **Updates indexes:** it drops unique indexes the models no longer have, and
+  adds new ones.
+- **Runs one-off updates,** such as converting older local times to UTC. Each
+  runs once, recorded in SQLite's `user_version`.
 
-### Setting up the sending account
+Anything else (renaming or removing a column, changing a type, rewriting data)
+needs its own one-off update in `app/db/migrations.py`, so people's existing
+databases keep working. Every time is saved in UTC: use `datetime.now(UTC)`,
+as saving a time without a time zone is an error.
 
-There is no dry-run mode: adding a website emails its recipients for real, so
-while testing, only add your own addresses.
+---
 
-To send from a Gmail account:
+## Contributing
 
-1. Turn on 2-Step Verification on the Google account.
-2. Create an **App Password** (Google account → Security → 2-Step
-   Verification → App passwords). It's 16 characters. Your normal Gmail
-   password will not work — Google blocks plain logins from scripts.
-3. Fill in `.env`:
-
-   ```bash
-   EMAIL=you@gmail.com
-   EMAIL_PASSWORD=abcdefghijklmnop     # the app password, spaces optional
-   SMTP_HOST=smtp.gmail.com
-   SMTP_PORT=465
-   EMAIL_TIME_ZONE=Australia/Perth
-   ```
-
-   `EMAIL` doubles as the From address — we send as the account we
-   authenticate as, and Gmail rewrites a mismatched From anyway. `IMAP_HOST`
-   can stay blank for Gmail, as it is worked out from `SMTP_HOST`.
-
-4. Start the app and add a website with your own address as its recipient.
-   You should get a "Website monitoring started" email.
-
-Check the spam folder if nothing arrives — a brand new sending address often
-lands there the first time.
-
-A UWA account won't work for this: Microsoft turned off basic SMTP auth, so
-use a personal Gmail (or a throwaway one) for testing. Whatever the client
-ends up using is a question for them.
-
-### State: what is remembered between runs
-
-Every scan of a website is recorded, rather than overwriting the last scan's
-changes, in two tables (`app/db/schema.py`, read and written by
-`app/db/services/scan_run_service.py`):
-
-| table | what it holds |
-| --- | --- |
-| `scan_runs` | one row per scan of a website: when it ran, how it went (`status`, `message`) and `notified_at`, when its report was emailed |
-| `changes` | one row per thing a scan found: a link, document or internal page added or removed, a block of text added, removed or edited, or a critical page that became unreachable |
-
-Each website keeps its last 7 scans (`SCANS_KEPT_PER_WEBSITE`), which the
-Updates tab shows newest first. Older scans are deleted after each scan, except
-any whose report has not been emailed yet.
-
-Every time is saved in UTC (`UTCDateTime` in `app/db/schema.py`), and code
-makes times with `datetime.now(UTC)`: saving a time without a time zone is an
-error. The dashboard shows times in the computer's own time zone, and emails in
-`EMAIL_TIME_ZONE`. Older versions saved local times, so they are converted to UTC
-once when the app starts (`convert_local_times_to_utc` in `app/db/migrations.py`,
-recorded in SQLite's `user_version`).
-
-**A failed send no longer loses the changes.** A report with `notified_at`
-still empty is waiting to be emailed. Each scheduled run (and "Run All Scans")
-emails every waiting report, one email per recipient, then fills in
-`notified_at` (`app/backend/scanning/scan_reports.py`). If the mail server is
-down, the reports stay waiting and go out with the next run. An address that is
-refused for good, or an email the server rejects (a 5xx reply), is not tried
-again, as it would fail the same way every time. A website with no recipients has its reports marked as
-sent, as there is nobody to send them to.
-
-### Many sites
-
-Each website has its own recipients, critical pages and scan settings
-(`days_between_scans`, request delay and concurrency), and each recipient has
-their own `days_between_health_checks`. A recipient on several websites gets
-one email per run covering all of them, not one per website
-(`app/backend/scanning/notifications.py`).
-
-### TODOs
-
-- **Background scan jobs.** "Run Scan Now" and adding a website keep the
-  request open until the scan finishes, which can take several minutes. They
-  could start a job and let the dashboard check on it instead.
-- **Database migrations.** `app/db/migrations.py` adds missing tables,
-  columns and indexes when the app starts, but can't rename or change a
-  column. Alembic would.
-- **robots.txt.** The crawler doesn't read it yet.
+- Work on a branch per issue, and open a pull request into `main`.
+- Write `Closes #<issue>` in the pull request so the issue closes when it's merged.
+- Before opening it, run `uv run pytest`, `uv run ruff check .`,
+  `uv run ruff format .` and `uvx pyright`. The Checks workflow runs the same
+  checks on every pull request.
+- Add tests with your change: unit tests for logic, browser tests for anything
+  on the dashboard.
+- Open issues for bugs and ideas rather than TODO lists in the code or docs.

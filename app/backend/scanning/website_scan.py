@@ -278,8 +278,8 @@ def _save_scan_result(
     status: ScanStatus = ScanStatus.SUCCESS,
     message: str | None = None,
 ) -> ScanRunRead:
-    """Saves what a scan found, including any new baselines, clears the website's failed attempts, saves its card
-    title and records the scan in the website's history.
+    """Saves what a scan found, including any new baselines, clears the website's failed attempts and any cooldown,
+    saves its card title and records the scan in the website's history.
 
     It is all saved together, so a change never becomes the new baseline without also being recorded.
 
@@ -297,6 +297,7 @@ def _save_scan_result(
         if scan_result:
             website_service.save_scan_result(id=website.id, scan_result=scan_result)
         website_service.reset_failed_attempts(website.id)
+        website_service.end_cooldown(website.id)
         _save_card_title(website_service, website.id)
         scan_run: ScanRunRead = record_scan(session, website, status, message, changes_found_by(scan_result))
     return scan_run
