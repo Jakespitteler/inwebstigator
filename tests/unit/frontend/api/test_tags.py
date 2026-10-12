@@ -1,5 +1,6 @@
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 from bs4 import BeautifulSoup
@@ -164,7 +165,9 @@ def test_tags_can_be_managed_before_any_websites_exist(api_client: TestClient) -
         ("delete", f"/websites/{uuid.uuid4()}/tags/{uuid.uuid4()}", None),
     ],
 )
-def test_tag_writes_require_dashboard_token(api_client: TestClient, method: str, path: str, payload: object) -> None:
+def test_tag_writes_require_dashboard_token(
+    api_client: TestClient, method: str, path: str, payload: dict[str, Any] | None
+) -> None:
     api_client.headers.pop(API_TOKEN_HEADER)
-    response = api_client.request(method, path, **({"json": payload} if payload is not None else {}))
+    response = api_client.request(method, path, json=payload)
     assert response.status_code == 403
