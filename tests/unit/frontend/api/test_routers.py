@@ -890,6 +890,86 @@ def test_dashboard_explains_inactive_websites_only_have_critical_pages_scanned(
         assert _run_scan_button_text(api_client, url) == "Run scan"
 
 
+def _card_notice(api_client: TestClient, url: str, selector: str) -> str | None:
+    """Returns the text of a notice on a website's dashboard card, or None if the card does not have it."""
+    dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
+    delete_button = dashboard.select_one(f'.delete-website-button[data-website-url="{HttpUrl(url)}"]')
+    assert delete_button is not None
+    card = delete_button.find_parent(class_="website-card")
+    assert card is not None
+    notice = card.select_one(selector)
+    return " ".join(notice.get_text().split()) if notice else None
+
+
+def test_a_website_whose_last_scan_ran_into_a_problem_says_so(api_client: TestClient, session: Session) -> None:
+    """Tests a website's card warns when its latest scan ran into a problem, rather than it only showing on the
+    Updates tab, while a website that has recovered, has not been scanned, or was switched off (which its card already
+    explains) does not."""
+    earlier = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
+    later = datetime(2026, 10, 2, 9, 0, tzinfo=UTC)
+    down = _scan("https://down.example.com/", later, status=ScanStatus.CONNECTION_ERROR)
+    down.message = "Website placed on cooldown."
+    session.add_all(
+        [
+            DBWebsite(url="https://down.example.com", scan_runs=[_scan("https://down.example.com/", earlier), down]),
+            DBWebsite(
+                url="https://recovered.example.com",
+                scan_runs=[
+                    _scan("https://recovered.example.com/", earlier, status=ScanStatus.CONNECTION_ERROR),
+                    _scan("https://recovered.example.com/", later),
+                ],
+            ),
+            DBWebsite(url="https://new.example.com"),
+            DBWebsite(
+                url="https://blocked.example.com",
+                active=False,
+                deactivated_reason="rate_limited",
+                scan_runs=[_scan("https://blocked.example.com/", later, status=ScanStatus.TRAFFIC_ERROR)],
+            ),
+        ]
+    )
+    session.flush()
+
+    assert _card_notice(api_client, "https://down.example.com", ".last-scan-problem") == (
+        "Last scan: Could not connect. Website placed on cooldown. See the Updates tab for details."
+    )
+    for url in ["https://recovered.example.com", "https://new.example.com", "https://blocked.example.com"]:
+        assert _card_notice(api_client, url, ".last-scan-problem") is None
+
+
+def test_a_website_with_pages_built_by_javascript_says_their_changes_may_be_missed(
+    api_client: TestClient, session: Session
+) -> None:
+    """Tests a website's card names the critical pages with too little readable text to watch (e.g. youtube.com, which
+    is built by JavaScript), while a website whose pages can be read, or have not been checked yet, does not."""
+    session.add_all(
+        [
+            DBWebsite(
+                url="https://video.example.com",
+                critical_pages=[
+                    DBCriticalPage(url="https://video.example.com/", little_readable_text=True),
+                    DBCriticalPage(url="https://video.example.com/about", little_readable_text=False),
+                ],
+            ),
+            DBWebsite(
+                url="https://readable.example.com",
+                critical_pages=[
+                    DBCriticalPage(url="https://readable.example.com/", little_readable_text=False),
+                    DBCriticalPage(url="https://readable.example.com/fees", little_readable_text=None),
+                ],
+            ),
+        ]
+    )
+    session.flush()
+
+    notice = _card_notice(api_client, "https://video.example.com", ".little-text-notice")
+    assert notice is not None
+    assert notice.startswith("Little text to watch. Inwebstigator can read very little text on video.example.com.")
+    assert "It's probably built with JavaScript" in notice
+    assert "/about" not in notice
+    assert _card_notice(api_client, "https://readable.example.com", ".little-text-notice") is None
+
+
 def test_scan_settings_explain_what_inactive_means(api_client: TestClient, test_website: website_models.WebsiteRead):
     """Tests the "Active" setting explains that an inactive website still has its critical pages checked."""
     dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")

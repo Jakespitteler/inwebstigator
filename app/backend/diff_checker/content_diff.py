@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from app.backend.diff_checker.block_comparison import find_changed_regions, match_text_found_on_both_pages, pair_edits
 from app.backend.diff_checker.models import ContentDiff, DiffSettings, LinkDiff, MatchedText, PageContent
 from app.backend.diff_checker.page_parser import normalise_text
+from app.core.config import config
 from app.core.urls import page_key
 from app.models.content_block_models import ContentBlock
 
@@ -140,6 +141,30 @@ def has_lost_most_content(
     if old_content.text_length < diff_settings.min_content_chars:
         return False
     return new_content.text_length < old_content.text_length * diff_settings.min_content_ratio
+
+
+def has_little_readable_text(
+    content: PageContent,
+    html: str,
+    max_chars: int = config.little_readable_text_max_chars,
+    max_share_of_html: float = config.little_readable_text_max_share_of_html,
+) -> bool:
+    """Checks whether a page has so little readable text in its HTML that it is probably built by JavaScript.
+
+    Pages like youtube.com send a large page of scripts that the browser runs to add the text and links. The app does
+    not run JavaScript, so it sees almost nothing on them, and changes to them (and pages only linked from them) are
+    missed. A small plain page (e.g. example.com) has little text too, but that text is most of its HTML.
+
+    Args:
+        content: The page's text, as read for comparing.
+        html: The page's HTML.
+        max_chars: The most readable text a page can have to count as having little.
+        max_share_of_html: The largest share (0 to 1) of the HTML the readable text can make up to count as little.
+
+    Returns:
+        True if the page has less readable text than `max_chars`, making up less than `max_share_of_html` of its HTML.
+    """
+    return content.text_length < max_chars and content.text_length < len(html) * max_share_of_html
 
 
 def _without_matches(text: str, patterns: Sequence[re.Pattern[str]]) -> str:

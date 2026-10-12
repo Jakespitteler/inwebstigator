@@ -22,6 +22,8 @@ class CriticalPageRead(BaseModel):
 
     consecutive_failures: int = 0
     last_failure_reason: str | None = None
+    # Whether the page is probably built by JavaScript, so its changes may be missed. None until it is next checked.
+    little_readable_text: bool | None = None
 
 
 class CriticalPageUpdate(BaseModel):
@@ -35,6 +37,7 @@ class CriticalPageUpdate(BaseModel):
 
     consecutive_failures: int | None = None
     last_failure_reason: str | None = None
+    little_readable_text: bool | None = None
 
 
 class CriticalPageSettingsUpdate(BaseModel):

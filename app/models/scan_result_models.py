@@ -37,6 +37,8 @@ class CriticalPageScanResult(BaseModel):
         text_body: The page's HTML now, if it needs saving.
         consecutive_failures: How many checks of the page have failed in a row, if it changed.
         last_failure_reason: Why the page's last check failed, if it changed.
+        little_readable_text: Whether the page has so little readable text that it is probably built by JavaScript,
+            if it changed.
         links_added: Links that are new on the page.
         links_removed: Links that are no longer on the page.
         documents_added: Documents that are new on the page.
@@ -55,6 +57,7 @@ class CriticalPageScanResult(BaseModel):
     text_body: str | None = None
     consecutive_failures: int | None = None
     last_failure_reason: str | None = None
+    little_readable_text: bool | None = None
 
     links_added: list[HttpUrl] | None = None
     links_removed: list[HttpUrl] | None = None

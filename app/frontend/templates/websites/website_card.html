@@ -91,6 +91,30 @@
         </p>
     {% endif %}
 
+    <!-- Otherwise a scan that went wrong only shows on the Updates tab. An inactive website already says why above. -->
+    {% set last_scan_problem = last_scan_problems.get(website.url | string) %}
+    {% if website.active and last_scan_problem %}
+        <p class="website-notice website-notice-warning last-scan-problem">
+            <strong>Last scan: {{ last_scan_problem.status_label }}.</strong>
+            {% if last_scan_problem.message %}{{ last_scan_problem.message }}{% endif %}
+            See the Updates tab for details.
+        </p>
+    {% endif %}
+
+    <!-- Inwebstigator doesn't run JavaScript, so it sees almost nothing on pages built with it -->
+    {% set little_text_pages = website.critical_pages | selectattr("little_readable_text") | list %}
+    {% if little_text_pages %}
+        {% set one_page = little_text_pages | length == 1 %}
+        <p class="website-notice website-notice-warning little-text-notice">
+            <strong>Little text to watch.</strong>
+            Inwebstigator can read very little text on
+            {% for page in little_text_pages %}{{ page.url | string | website_name }}{% if not loop.last %}, {% endif %}{% endfor %}.
+            {% if one_page %}It's{% else %}They're{% endif %} probably built with JavaScript, which
+            Inwebstigator can't run, so changes to {% if one_page %}it{% else %}them{% endif %},
+            and pages linked only from {% if one_page %}it{% else %}them{% endif %}, may be missed.
+        </p>
+    {% endif %}
+
     <!-- Nobody would hear about this website's changes, so say so where it cannot be missed -->
     {% if not website.recipients %}
         <p class="no-recipients-notice">

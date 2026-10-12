@@ -349,6 +349,17 @@ Comparing a critical page's saved copy with the new one
 What a check finds is saved as rows in `changes`, and the new HTML replaces
 `text_body` only when something changed.
 
+**Pages built by JavaScript.** The app doesn't run JavaScript, so on pages
+like youtube.com, which send a large page of scripts that add the content in
+the browser, it sees almost no text or links. Each check saves
+`little_readable_text` on the critical page when the page has under
+`LITTLE_READABLE_TEXT_MAX_CHARS` (500) characters of text, making up under
+`LITTLE_READABLE_TEXT_MAX_SHARE_OF_HTML` (5%) of its HTML
+(`has_little_readable_text()` in `diff_checker/content_diff.py`). The share
+keeps a small plain page, like example.com, from counting. The website's card
+then warns that changes may be missed. It isn't a change, so it isn't
+reported or emailed.
+
 ---
 
 ## When websites struggle
@@ -460,6 +471,7 @@ erDiagram
         json ignore_rules
         int consecutive_failures
         string last_failure_reason
+        bool little_readable_text "probably built by JavaScript"
     }
     internal_links {
         string url

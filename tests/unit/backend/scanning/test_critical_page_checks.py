@@ -76,10 +76,55 @@ async def test_check_critical_page_no_changes(
         baseline: CriticalPageScanResult | None = await check_critical_page(client, new_page)
         assert baseline is not None
 
-        synced_page = new_page.model_copy(
-            update={"text_body": baseline.text_body, "links": baseline.links, "documents": baseline.documents}
-        )
+        synced_page = new_page.model_copy(update=baseline.as_critical_page_update().model_dump(exclude_unset=True))
         assert await check_critical_page(client, synced_page) is None
+
+
+# A page like youtube.com: a large page of scripts that the browser runs to add its text and links
+PAGE_BUILT_BY_JAVASCRIPT: str = (
+    "<html><head>" + "<script>var data = {};</script>" * 1000 + "</head><body><p>Loading</p></body></html>"
+)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("html", "little_readable_text"),
+    [(PAGE_BUILT_BY_JAVASCRIPT, True), ("<html><body><p>A small plain page.</p></body></html>", False)],
+)
+async def test_a_pages_baseline_says_whether_it_has_little_readable_text(
+    test_critical_page: CriticalPageRead,
+    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
+    html: str,
+    little_readable_text: bool,
+):
+    """Tests a page's baseline records whether the page is probably built by JavaScript, so the dashboard can warn
+    that its changes may be missed, while a small plain page is not mistaken for one."""
+    async with mock_client_factory(lambda request: httpx2.Response(200, html=html)) as client:
+        baseline: CriticalPageScanResult | None = await check_critical_page(client, test_critical_page, init=True)
+
+    assert baseline is not None
+    assert baseline.little_readable_text is little_readable_text
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(("saved", "saved_again"), [(None, True), (False, True), (True, None)])
+async def test_whether_a_page_has_little_readable_text_is_only_saved_when_it_changes(
+    test_critical_page: CriticalPageRead,
+    mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
+    saved: bool | None,
+    saved_again: bool | None,
+):
+    """Tests a later check saves whether the page has little readable text when that changed, or was never saved
+    (e.g. a page checked before the app looked for it), without reporting it as a change."""
+    stored_page = test_critical_page.model_copy(
+        update={"text_body": PAGE_BUILT_BY_JAVASCRIPT, "links": [], "documents": [], "little_readable_text": saved}
+    )
+
+    async with mock_client_factory(lambda request: httpx2.Response(200, html=PAGE_BUILT_BY_JAVASCRIPT)) as client:
+        page_result: CriticalPageScanResult | None = await check_critical_page(client, stored_page)
+
+    assert (page_result.little_readable_text if page_result else None) is saved_again
+    assert not (page_result and page_result.has_changes)
 
 
 @pytest.mark.anyio
@@ -336,7 +381,7 @@ async def test_ignore_rules_hide_text_that_changes_every_scan(
     async with mock_client_factory(lambda request: httpx2.Response(200, html=new_page)) as client:
         page_result: CriticalPageScanResult | None = await check_critical_page(client, stored_page)
 
-    assert (page_result is not None) is reported
+    assert (page_result is not None and page_result.has_changes) is reported
 
 
 def _page_with_menu(menu_links: str, content_links: str) -> str:

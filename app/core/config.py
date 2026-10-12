@@ -77,6 +77,11 @@ class Config(BaseSettings):
     diff_checker_max_comparisons_per_block: int = 20
     diff_checker_min_content_ratio: float = 0.3
     diff_checker_min_content_chars: int = 200
+    # A page with less readable text than this, making up less than this share of its HTML, is probably built by
+    # JavaScript (which the app does not run), so its changes may be missed. The share keeps a small plain page (e.g.
+    # example.com) from counting.
+    little_readable_text_max_chars: int = 500
+    little_readable_text_max_share_of_html: float = 0.05
 
     email_retry_max_attempts: int = 3
     email_retry_min_wait_seconds: int = 2

@@ -19,6 +19,7 @@ the team know.
     - [Scanning a website now](#scanning-a-website-now)
     - [Critical pages](#critical-pages)
     - [Notification emails](#notification-emails)
+    - [Warnings on a card](#warnings-on-a-card)
     - [Scan settings](#scan-settings)
     - [Deleting a website](#deleting-a-website)
   - [The Updates tab](#the-updates-tab)
@@ -161,6 +162,15 @@ Opening a card lists its critical pages. The website's own address is marked
 A card with no notification emails says so, as nobody will be emailed about
 that website's changes.
 
+### Warnings on a card
+
+A card also warns you when Inwebstigator can't watch a website properly:
+
+| Card says | What it means |
+| --- | --- |
+| **Last scan:** *a problem*, e.g. **Could not connect** | The website's last scan didn't finish. The warning goes once a scan works again. See [If something goes wrong](#if-something-goes-wrong). |
+| **Little text to watch** | Inwebstigator can read almost no text on the pages it names. They're probably built with JavaScript, which Inwebstigator can't run (e.g. youtube.com), so changes to them may be missed. |
+
 ### Scan settings
 
 Click **Scan Settings** on an open card, change anything, then click **Save
@@ -282,6 +292,7 @@ you to send it to them.
 | A scan says **Most pages missing** | Most of the website's pages couldn't be found, which is usually a problem with the website rather than real changes. If it happens 3 scans in a row, the pages are treated as really removed. |
 | The dashboard looks out of date | Click **Refresh** at the top right. |
 | A website's card says **Blocked the crawler** | The website kept blocking Inwebstigator, so it was paused. Contact the team. |
+| A website's card says **Little text to watch** | The website shows its content with JavaScript, which Inwebstigator can't read. If you can, watch a different page or website with the same information. |
 | No emails for over a week | Check Spam/Junk, make sure Inwebstigator is running (see the system tray), and that the website has your email on its card. |
 | An email address won't add | Check it for typos. Inwebstigator only adds addresses that can receive its email. |
 

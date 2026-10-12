@@ -190,6 +190,8 @@ class DBCriticalPage(Base):
 
     consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     last_failure_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Whether the page is probably built by JavaScript, so its changes may be missed. Empty until it is next checked.
+    little_readable_text: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
 
 class DBChange(Base):

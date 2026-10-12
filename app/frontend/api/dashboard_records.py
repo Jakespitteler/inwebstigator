@@ -150,6 +150,13 @@ class WebsiteHistoryRecord:
         """When the most recent scan that found changes or ran into a problem finished, or None if none did."""
         return next((scan.scanned_at for scan in self.scans if scan.has_details), None)
 
+    @property
+    def last_scan_problem(self) -> ScanRecord | None:
+        """The most recent scan if it ran into a problem (e.g. the website could not be reached), for the website's
+        card to warn about, or None if it went normally or the website has not been scanned."""
+        latest_scan: ScanRecord | None = self.scans[0] if self.scans else None
+        return latest_scan if latest_scan and latest_scan.is_problem else None
+
 
 class ChangeRecord(Protocol):
     """Anything on the updates page that knows when its changes were found."""

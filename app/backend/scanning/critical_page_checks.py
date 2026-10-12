@@ -16,6 +16,7 @@ from app.backend.crawler.page_fetcher import fetch_content_from_url
 from app.backend.diff_checker.content_diff import (
     compare_page_content,
     find_link_difference,
+    has_little_readable_text,
     has_lost_most_content,
     without_ignored_text,
 )
@@ -194,7 +195,8 @@ async def check_critical_page(
         init (bool, optional): Re-save the page's current state as its baseline. Defaults to False.
 
     Returns:
-        CriticalPageScanResult | None: The page as it is now where it needs saving (text_body, links, documents),
+        CriticalPageScanResult | None: The page as it is now where it needs saving (text_body, links, documents,
+        and whether it has little readable text),
         and what changed since the last scan (links, documents and text added, removed or edited), or None if nothing
         changed.
 
@@ -208,8 +210,13 @@ async def check_critical_page(
     main_links: PageLinks = await asyncio.to_thread(_links_on_page, page_url, text_body, True)
 
     if init or stored_page.text_body is None:
+        content: PageContent = await asyncio.to_thread(parse_html, text_body)
         return CriticalPageScanResult(
-            url=stored_page.url, links=main_links.links, documents=main_links.documents, text_body=text_body
+            url=stored_page.url,
+            links=main_links.links,
+            documents=main_links.documents,
+            text_body=text_body,
+            little_readable_text=has_little_readable_text(content, text_body),
         )
 
     diff_settings: DiffSettings = DiffSettings.from_config()
@@ -224,6 +231,11 @@ async def check_critical_page(
 
     links_anywhere: PageLinks = await asyncio.to_thread(_links_on_page, page_url, text_body)
     page_result = CriticalPageScanResult(url=stored_page.url)
+
+    # Only saved when it changes, e.g. a page rebuilt with JavaScript, or one checked before this was looked for
+    little_readable_text: bool = has_little_readable_text(new_content, text_body)
+    if little_readable_text != stored_page.little_readable_text:
+        page_result.little_readable_text = little_readable_text
 
     page_result.documents_added, page_result.documents_removed = _find_url_changes(
         previous_urls=stored_page.documents or [],
@@ -253,7 +265,10 @@ async def check_critical_page(
 
     if not page_result.has_changes:
         # Links that moved out of the main content are dropped from the saved page without being reported
-        return page_result if page_result.links is not None or page_result.documents is not None else None
+        needs_saving: bool = any(
+            value is not None for value in (page_result.links, page_result.documents, page_result.little_readable_text)
+        )
+        return page_result if needs_saving else None
     # Only how many of each change are logged, as a redesigned page can have hundreds of blocks of text
     logger.info(f"Changes found on {stored_page.url}: {page_result.change_counts}")
     return page_result

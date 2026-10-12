@@ -30,6 +30,7 @@ from app.db.services.scan_run_service import ScanRunService
 from app.db.services.website_service import WebsiteService
 from app.db.session import db_context
 from app.frontend.api.dashboard_records import (
+    ScanRecord,
     WebsiteHistoryRecord,
     format_timestamp,
     newest_first,
@@ -79,12 +80,17 @@ def get_dashboard(session: SessionDep, request: Request):
         )
         for website in websites
     ]
+    # Each website card warns when its latest scan ran into a problem, which is otherwise only on the Updates tab
+    last_scan_problems: dict[str, ScanRecord] = {
+        str(record.website_url): problem for record in website_records if (problem := record.last_scan_problem)
+    }
 
     return templates.TemplateResponse(
         request=request,
         name="index.html",
         context={
             "website_records": newest_first(record for record in website_records if record.scans),
+            "last_scan_problems": last_scan_problems,
             "scans_kept_per_website": config.scans_kept_per_website,
             "next_check": next_scheduled_check(),
             "websites": websites,

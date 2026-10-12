@@ -1,6 +1,6 @@
 import pytest
 
-from app.backend.diff_checker.content_diff import has_lost_most_content
+from app.backend.diff_checker.content_diff import has_little_readable_text, has_lost_most_content
 from app.backend.diff_checker.models import DiffSettings, PageContent
 from app.core.config import config
 from app.models.content_block_models import ContentBlock, HTMLBlockType
@@ -53,3 +53,23 @@ def test_the_configured_settings_are_used_by_default(monkeypatch: pytest.MonkeyP
     assert has_lost_most_content(page_with_text(1000), page_with_text(499)) is True
     assert has_lost_most_content(page_with_text(1000), page_with_text(500)) is False
     assert has_lost_most_content(page_with_text(99), page_with_text(0)) is False
+
+
+@pytest.mark.parametrize(
+    ("text_length", "html_length", "little"),
+    [
+        (145, 943_000, True),  # youtube.com: a large page of scripts, with almost no text until they run
+        (0, 8_000, True),  # A page that is only a script that loads the app
+        (156, 577, False),  # example.com: a small plain page, whose little text is most of it
+        (1_600, 235_000, False),  # A normal page with plenty of text, even among lots of scripts
+        (499, 10_000, True),
+        (500, 100_000, False),  # Enough text, however much HTML is around it
+        (499, 9_980, False),  # Too much of the HTML is text for it to be a page of scripts
+    ],
+)
+def test_a_page_with_little_text_in_a_lot_of_html_has_little_readable_text(
+    text_length: int, html_length: int, little: bool
+) -> None:
+    """Tests a page is said to have little readable text (so it is probably built by JavaScript) only when it has
+    under 500 characters of text, making up under 5% of its HTML."""
+    assert has_little_readable_text(page_with_text(text_length), "x" * html_length, 500, 0.05) is little
