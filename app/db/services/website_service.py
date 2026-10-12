@@ -245,3 +245,17 @@ class WebsiteService(BaseCRUDService[DBWebsite, WebsiteRead, WebsiteCreate, Webs
         if website.failed_attempts_at_min_speed > 0:
             self.update(id, model_update=WebsiteUpdate(failed_attempts_at_min_speed=0))
             logger.info(f"{website.url} has had its failed attempts reset")
+
+    def end_cooldown(self, id: uuid.UUID) -> None:
+        """Ends a website's cooldown upon a successful scan, as the website is answering again.
+
+        Only "Run Scan Now" and adding a website can scan a website on cooldown, as scheduled scans and "Run All Scans"
+        skip it. Its slower crawl speed is kept, so it is not rate limited again.
+
+        Args:
+            id (uuid.UUID): Unique identifier of the website whose cooldown should end.
+        """
+        website: WebsiteRead = self.get(id)
+        if website.on_cooldown_until is not None:
+            self.update(id, model_update=WebsiteUpdate(on_cooldown_until=None))
+            logger.info(f"{website.url} has had its cooldown ended after a successful scan")

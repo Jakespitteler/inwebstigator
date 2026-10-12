@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+import httpx2
 import pytest
 from pydantic import HttpUrl
 from pytest_mock import MockerFixture
@@ -150,6 +151,28 @@ async def test_manual_scan_of_a_website_that_is_not_monitored_is_refused(
         await scan_website_now(HttpUrl("https://not-monitored.example.com/"), email_sender)
 
     mock_scan_website.assert_not_called()
+
+
+async def test_manual_scan_runs_on_a_website_on_cooldown_and_ends_the_cooldown(
+    session: Session, mocker: MockerFixture, email_sender: FakeEmailSender
+) -> None:
+    """Tests "Run Scan Now" scans a website on cooldown, unlike scheduled scans and "Run All Scans", and that once the
+    scan succeeds the cooldown ends, so scheduled scans stop skipping the website."""
+    website = _add_website(session, "https://example.com", [])
+    WebsiteService(session).set_cooldown(website.id, hours=24)
+    mocker.patch(
+        "app.backend.scanning.manual_scan.new_http_client",
+        side_effect=lambda: httpx2.AsyncClient(
+            transport=httpx2.MockTransport(lambda request: httpx2.Response(200, text="<p>Home page.</p>"))
+        ),
+    )
+    mocker.patch("app.backend.scanning.change_detection.crawl_site", return_value={"https://example.com"})
+
+    await scan_website_now(website.url, email_sender)
+
+    scanned = WebsiteService(session).get(website.id)
+    assert scanned.last_scan_at is not None
+    assert scanned.on_cooldown_until is None
 
 
 async def test_manual_scan_of_a_website_already_being_scanned_is_refused(

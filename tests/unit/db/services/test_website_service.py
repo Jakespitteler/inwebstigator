@@ -489,3 +489,22 @@ def test_reset_failed_attempts_sets_the_count_back_to_zero(session: Session, tes
     service.reset_failed_attempts(test_website.id)
 
     assert service.get(test_website.id).failed_attempts_at_min_speed == 0
+
+
+def test_end_cooldown_clears_the_cooldown(session: Session, test_website: WebsiteRead) -> None:
+    """Tests a successful scan ends a website's cooldown, so scheduled scans stop skipping it."""
+    service = WebsiteService(session)
+    service.set_cooldown(test_website.id, hours=24)
+
+    service.end_cooldown(test_website.id)
+
+    assert service.get(test_website.id).on_cooldown_until is None
+
+
+def test_end_cooldown_leaves_a_website_without_one_unchanged(session: Session, test_website: WebsiteRead) -> None:
+    """Tests ending the cooldown of a website that has none changes nothing."""
+    service = WebsiteService(session)
+
+    service.end_cooldown(test_website.id)
+
+    assert service.get(test_website.id) == test_website
