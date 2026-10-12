@@ -263,7 +263,9 @@ opens.
 
 When a website seems to be struggling (e.g. it's slow, busy or blocking too
 many requests), Inwebstigator gives it a rest before trying again, and reads it
-more slowly next time. This is automatic.
+more slowly next time. This is automatic. Scheduled scans and **Run All Scans**
+skip it while it rests, but **Run scan** checks it straight away, and if that
+works, the rest ends.
 
 ---
 
