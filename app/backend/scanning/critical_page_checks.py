@@ -12,7 +12,7 @@ from httpx2 import AsyncClient, HTTPStatusError, RequestError
 from pydantic import HttpUrl
 
 from app.backend.crawler.links import extract_links_from_html, page_link_base, separate_document_links
-from app.backend.crawler.page_fetcher import fetch_content_from_url
+from app.backend.crawler.page_fetcher import describe_fetch_failure, fetch_content_from_url
 from app.backend.diff_checker.content_diff import (
     compare_page_content,
     find_link_difference,
@@ -279,16 +279,7 @@ def _failed_check_result(stored_page: CriticalPageRead, error: UnreachablePageEr
     elif isinstance(error, TrafficError):
         status_code = error.status_code
 
-    if status_code:
-        reason = f"HTTP {status_code}"
-    elif isinstance(error, StandInPageError):
-        reason = STAND_IN_PAGE_REASON
-    elif isinstance(error, NotAWebPageError):
-        reason = f"The page is now a file ({error.content_type}), not a web page"
-    elif isinstance(error, WebConnectionError):
-        reason = "Connection failed or timed out"
-    else:
-        reason = "Request failed"
+    reason: str = STAND_IN_PAGE_REASON if isinstance(error, StandInPageError) else describe_fetch_failure(error)
 
     failures: int = stored_page.consecutive_failures + 1
     if isinstance(error, StandInPageError) and stored_page.last_failure_reason != STAND_IN_PAGE_REASON:

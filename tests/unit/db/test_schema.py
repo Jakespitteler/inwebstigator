@@ -1,14 +1,17 @@
 import json
 import re
+import uuid
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from pydantic import HttpUrl
+from pytest_mock import MockerFixture
 from sqlalchemy import select, text
 from sqlalchemy.exc import StatementError
 from sqlalchemy.orm import Session
 
-from app.db.schema import DBCriticalPage, DBInternalLink, DBWebsite
+from app.db import repository
+from app.db.schema import DBCriticalPage, DBInternalLink, DBWebsite, new_id
 
 PERTH: timezone = timezone(timedelta(hours=8))
 
@@ -100,3 +103,48 @@ def test_a_website_only_counts_its_own_internal_links(session: Session) -> None:
     session.flush()
 
     assert (website.internal_link_count, other_website.internal_link_count) == (2, 1)
+
+
+# Valid random UUIDs that SQLite would save as numbers: digits and one "e" (infinity), and only digits
+NUMBER_LIKE_IDS: list[uuid.UUID] = [
+    uuid.UUID("05527661-3766-4137-8880-39443795e762"),
+    uuid.UUID("99999999-9999-4999-8999-9999999e9999"),
+    uuid.UUID("12345678-1234-4123-8123-123456789012"),
+]
+
+
+def test_new_ids_are_never_written_like_numbers(mocker: MockerFixture) -> None:
+    """Tests a random UUID written only in digits (or digits and one "e") is drawn again, so SQLite never saves an ID
+    as a number."""
+    usable_id = uuid.UUID("4f1c0a3b-2d5e-4a6f-8b7c-9d0e1f2a3b4c")
+    mocker.patch("app.db.schema.uuid.uuid4", side_effect=[*NUMBER_LIKE_IDS, usable_id])
+
+    assert new_id() == usable_id
+
+
+def test_rows_whose_random_ids_look_like_numbers_are_saved_and_read_back(
+    session: Session, mocker: MockerFixture
+) -> None:
+    """Tests rows still save and read back when the random IDs drawn first look like numbers. SQLite would have saved
+    those IDs as numbers, so a second one clashed with the first (failing a scan's save) and reading one back failed
+    (breaking the dashboard)."""
+    real_uuid4 = uuid.uuid4
+    drawn: list[uuid.UUID] = [*NUMBER_LIKE_IDS, *NUMBER_LIKE_IDS]
+    mocker.patch("app.db.schema.uuid.uuid4", side_effect=lambda: drawn.pop() if drawn else real_uuid4())
+
+    session.add_all([DBWebsite(url="https://example.com"), DBWebsite(url="https://other.example.com")])
+    session.flush()
+    [website, other_website] = session.scalars(select(DBWebsite).order_by(DBWebsite.url)).all()
+    repository.bulk_insert(
+        session,
+        DBInternalLink,
+        [{"url": f"https://example.com/{page}", "website_id": website.id} for page in range(3)],
+    )
+
+    assert drawn == []  # Every number-like ID was drawn, and none was used
+    assert [website.url, other_website.url] == ["https://example.com", "https://other.example.com"]
+    assert website.internal_link_count == 3
+    stored_types = session.execute(
+        text("SELECT DISTINCT typeof(id) FROM websites UNION SELECT typeof(id) FROM internal_links")
+    )
+    assert {row[0] for row in stored_types} == {"text"}

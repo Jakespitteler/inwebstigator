@@ -110,9 +110,21 @@ Edited text is turned into highlighted word-by-word HTML by
 - **Reloading:** after an action (adding, deleting, saving settings, finishing
   a scan) the dashboard usually just reloads. The open tab is kept in the URL
   (`#updates`) and open cards in `sessionStorage`, so a reload doesn't lose
-  your place. The chosen theme and "Don't show again" on the background scan
-  note are kept in `localStorage`, which the desktop window keeps between
-  launches.
+  your place. The chosen theme, "Don't show again" on the background scan
+  note, and when the Updates tab was last opened are kept in `localStorage`,
+  which the desktop window keeps between launches.
+- **New scans:** `static/js/updates-badge.js` counts the scans that found
+  changes or a problem since the Updates tab was last opened (each scan card
+  carries `data-scanned-at` and `data-found-something`), shows the count in a
+  bubble on the tab, and marks those scans "New" once the tab is shown. Only
+  scan times from the app are compared, never the computer's clock. The first
+  time, the scans already there aren't counted.
+- **Scan progress:** `static/js/scan-activity.js` asks `GET /scanner/activity`
+  every 3 seconds while the window is shown, and updates each card ("Scanning
+  now…", "Scan queued…", then "Scan finished") and the **Run All Scans**
+  message, so scans started elsewhere (the scheduler, another window) show
+  without a reload. A finished scan only says to press Refresh, rather than
+  reloading by itself, so nothing being typed is lost.
 
 **Website names** are worked out two ways:
 
@@ -138,6 +150,7 @@ Edited text is turned into highlighted word-by-word HTML by
 | `POST /scanner/run_all` | Scans every website now, whether due or not (**Run All Scans**). 409 if one is already running. |
 | `POST /scanner/cancel_all` | Cancels a running **Run All Scans**: the website being scanned is cancelled and the rest skipped. Websites already scanned keep their results, and their reports are still emailed. |
 | `POST /scanner/cancel` | Cancels a website's queued or running scan. |
+| `GET /scanner/activity` | The website being scanned now, those waiting their turn, and whether **Run All Scans** is running, for the dashboard to show progress. |
 | `/websites`, `/critical_pages`, `/recipients` | Create, read, update and delete, from `create_crud_router()`. Updating a website confirms any added emails first. Deleting one cancels its scan. A website's main page can't be deleted (422). |
 
 FastAPI's own API docs are at `/docs`.
@@ -253,9 +266,10 @@ the scheduler, **Run scan**, **Run All Scans** or adding a website.
 - **`cancel(url)`** cancels that website's scan, whether it's waiting or
   running. The request waiting for it gets `ScanCancelledError` (409), and
   nothing from the cancelled scan is saved.
-- **`queued_urls`** lists the websites waiting or being scanned. The dashboard
-  reads it when it renders, so after a reload a card still shows "Scan queued
-  or running…".
+- **`queued_urls`** lists the websites waiting or being scanned, and
+  **`scanning_url`** is the one being scanned now. The dashboard reads them
+  when it renders and from `GET /scanner/activity`, so a card shows "Scanning
+  now…" or "Scan queued…" whenever the page was loaded.
 
 `run_all_scans` (`backend/scanning/all_websites_scan.py`) tracks the one
 **Run All Scans** that can run at a time, so it can be cancelled and the

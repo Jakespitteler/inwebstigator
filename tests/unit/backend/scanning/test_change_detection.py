@@ -15,7 +15,7 @@ from app.backend.scanning.change_detection import (
     scan_whole_website,
 )
 from app.core.config import config
-from app.core.errors import MostPagesMissingError, TrafficError
+from app.core.errors import MostPagesMissingError, TrafficError, describe_http_status
 from app.models.critical_page_models import CriticalPageRead
 from app.models.internal_link_models import InternalLinkRead
 from app.models.scan_result_models import WebsiteScanResult
@@ -257,7 +257,9 @@ async def test_scan_whole_website_records_a_broken_critical_page(
     assert scan_result.critical_page_results is not None
     assert set(scan_result.critical_page_results) == {working_page.id, broken_page.id}
     assert scan_result.critical_page_results[working_page.id].text_changed
-    assert scan_result.critical_page_results[broken_page.id].last_failure_reason == "HTTP 404"
+    assert scan_result.critical_page_results[broken_page.id].last_failure_reason == (
+        "HTTP 404 Not Found, so the page does not exist or has moved"
+    )
     assert scan_result.baseline_internal_links  # the crawl still ran
 
 
@@ -323,7 +325,7 @@ async def test_failed_critical_page_check_is_counted_and_reported_once(
     assert scan_result.critical_page_results is not None
     page_result = scan_result.critical_page_results[stored_page.id]
     assert page_result.consecutive_failures == failures_after
-    assert page_result.last_failure_reason == f"HTTP {status_code}"
+    assert page_result.last_failure_reason == describe_http_status(status_code)
     assert page_result.text_body is None  # The last good copy is kept
     assert scan_result.has_changes is reported
 

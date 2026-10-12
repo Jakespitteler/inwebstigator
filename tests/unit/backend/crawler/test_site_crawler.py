@@ -4,7 +4,7 @@ from collections.abc import Callable
 import httpx2
 import pytest
 
-from app.backend.crawler.site_crawler import crawl_site, fetch_internal_links_from_url
+from app.backend.crawler.site_crawler import FetchedPage, crawl_site, fetch_internal_links_from_url
 from app.core.errors import TrafficError, WebConnectionError, WebsiteTooLargeError, WebsiteUnavailableError
 from tests.conftest import RequestHandler
 
@@ -22,7 +22,9 @@ async def test_fetch_internal_links_from_url_success(
     """Tests that fetch_internal_links_from_url successfully retrieves content and extracts internal links."""
 
     async with mock_client_factory(website_handler) as client:
-        url, links, status_code = await fetch_internal_links_from_url(client, test_url, asyncio.Semaphore(2))
+        url, links, status_code, failure_reason = await fetch_internal_links_from_url(
+            client, test_url, asyncio.Semaphore(2)
+        )
 
     assert url == test_url
     assert links == [  # The link to external.com is left out
@@ -32,6 +34,7 @@ async def test_fetch_internal_links_from_url_success(
         f"{test_url}page1.html",
     ]
     assert status_code == 200
+    assert failure_reason is None
 
 
 @pytest.mark.anyio
@@ -62,24 +65,32 @@ async def test_fetch_internal_links_from_url_connection_error(
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    ("handler_name", "expected_status_code"),
-    [("server_error_handler", 500), ("request_error_handler", None), ("unexpected_error_handler", None)],
+    ("handler_name", "expected_status_code", "expected_reason"),
+    [
+        ("server_error_handler", 500, "HTTP 500 Internal Server Error, so the website had an error"),
+        ("request_error_handler", None, "The request failed (Protocol Error)"),
+        ("unexpected_error_handler", None, "Unexpected failure"),
+    ],
 )
 async def test_fetch_internal_links_from_url_non_fatal_errors(
     test_url: str,
     mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient],
     handler_name: str,
     expected_status_code: int | None,
+    expected_reason: str,
     request: pytest.FixtureRequest,
 ):
-    """Tests that non-fatal errors handle gracefully, returning empty links."""
+    """Tests that non-fatal errors handle gracefully, returning empty links and why the page was skipped."""
     handler: RequestHandler = request.getfixturevalue(handler_name)
     async with mock_client_factory(handler) as client:
-        url, links, status_code = await fetch_internal_links_from_url(client, test_url, asyncio.Semaphore(2))
+        url, links, status_code, failure_reason = await fetch_internal_links_from_url(
+            client, test_url, asyncio.Semaphore(2)
+        )
 
     assert url == test_url
     assert links == []
     assert status_code == expected_status_code
+    assert failure_reason == expected_reason
 
 
 # ========================
@@ -209,15 +220,41 @@ async def test_crawl_site_raises_when_the_home_page_cannot_be_loaded(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("status_code", [403, 404, 500])
+@pytest.mark.parametrize(
+    ("status_code", "reason"),
+    [
+        (403, "HTTP 403 Forbidden, so the website refused access and may be blocking the scanner"),
+        (404, "HTTP 404 Not Found, so the page does not exist or has moved"),
+        (500, "HTTP 500 Internal Server Error, so the website had an error"),
+    ],
+)
 async def test_crawl_site_raises_when_the_home_page_returns_an_error(
-    test_url: str, mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient], status_code: int
+    test_url: str, mock_client_factory: Callable[[RequestHandler], httpx2.AsyncClient], status_code: int, reason: str
 ):
     """Tests a blocked, missing or broken home page fails the crawl, so a website behind a firewall is not saved with
-    no pages and never really monitored."""
+    no pages and never really monitored, and says why the home page could not be loaded."""
     async with mock_client_factory(lambda request: httpx2.Response(status_code)) as client:
-        with pytest.raises(WebsiteUnavailableError):
+        with pytest.raises(WebsiteUnavailableError) as exc_info:
             await crawl_site(client, test_url)
+
+    assert exc_info.value.reason == reason
+    assert str(exc_info.value).endswith(f"could not be scanned. {reason}.")
+
+
+@pytest.mark.anyio
+async def test_crawl_site_says_when_the_home_page_redirects_to_another_website() -> None:
+    """Tests a home page that redirects to a different website (e.g. it moved) fails the crawl, naming where it went."""
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        if request.url.host == "example.com":
+            return httpx2.Response(301, headers={"Location": "https://new-example.org/"})
+        return httpx2.Response(200, html="<p>Moved here</p>")
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        with pytest.raises(WebsiteUnavailableError) as exc_info:
+            await crawl_site(client, "https://example.com")
+
+    assert exc_info.value.reason == "It redirected to a different website (https://new-example.org/)"
 
 
 @pytest.mark.anyio
@@ -338,11 +375,16 @@ async def test_fetch_internal_links_from_url_skips_a_page_that_redirects_off_the
         return httpx2.Response(200, html='<a href="https://other.com/more">More</a>')
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
-        result: tuple[str, list[str], int | None] = await fetch_internal_links_from_url(
+        result: FetchedPage = await fetch_internal_links_from_url(
             client, "https://example.com/go", asyncio.Semaphore(1), base_url="https://example.com/"
         )
 
-    assert result == ("https://example.com/go", [], None)
+    assert result == (
+        "https://example.com/go",
+        [],
+        None,
+        "It redirected to a different website (https://other.com/landing)",
+    )
 
 
 @pytest.mark.anyio
@@ -353,11 +395,16 @@ async def test_fetch_internal_links_from_url_skips_a_file() -> None:
         return httpx2.Response(200, content=b"%PDF-1.7", headers={"Content-Type": "application/pdf"})
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
-        result: tuple[str, list[str], int | None] = await fetch_internal_links_from_url(
+        result: FetchedPage = await fetch_internal_links_from_url(
             client, "https://example.com/download?id=7", asyncio.Semaphore(1)
         )
 
-    assert result == ("https://example.com/download?id=7", [], None)
+    assert result == (
+        "https://example.com/download?id=7",
+        [],
+        None,
+        "It is a file (application/pdf), not a web page",
+    )
 
 
 @pytest.mark.anyio
@@ -476,6 +523,10 @@ async def test_crawl_site_raises_when_a_batch_meets_the_403_threshold() -> None:
             await crawl_site(client, "https://example.com", max_pages=10, batch_403_threshold=len(page_paths))
 
     assert exc_info.value.status_code == 403
+    assert str(exc_info.value) == (
+        "3 pages of https://example.com/ answered HTTP 403 Forbidden at the same time, "
+        "so the website is probably blocking the scanner."
+    )
 
 
 @pytest.mark.anyio

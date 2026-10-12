@@ -1,5 +1,8 @@
 """The light/dark theme toggle, and the "Run All Scans" button."""
 
+import threading
+import urllib.parse
+import urllib.request
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
@@ -164,3 +167,70 @@ def test_run_all_scans_skips_websites_on_cooldown(open_dashboard: Callable[..., 
     requested = app_server.websites.requested_urls
     assert any(url.startswith("https://ready.example.com") for url in requested)
     assert not any(url.startswith("https://resting.example.com") for url in requested)
+
+
+def _post_in_the_background(url: str, form: dict[str, str] | None = None) -> threading.Thread:
+    """Asks the app to do something from outside the dashboard, as the scheduler or another window would, without
+    waiting for it to finish."""
+    data: bytes | None = urllib.parse.urlencode(form).encode() if form else None
+    request = urllib.request.Request(url, data=data, method="POST", headers=API_HEADERS)
+    thread = threading.Thread(target=lambda: urllib.request.urlopen(request, timeout=120).read())
+    thread.start()
+    return thread
+
+
+def _add_websites_to_scan_slowly(app_server: RunningApp) -> None:
+    """Adds two websites whose pages take long enough to load for the dashboard's checks to see each scan."""
+    for url in ("https://first.example.com", "https://second.example.com"):
+        app_server.add_website(url)
+        app_server.websites.set_page(url, _page_html("Welcome."))
+    app_server.websites.delay_seconds = 3
+
+
+def test_an_open_dashboard_follows_scans_started_elsewhere_without_a_reload(
+    open_dashboard: Callable[..., Page], app_server: RunningApp
+) -> None:
+    """Tests a dashboard left open shows which website is being scanned now and which is waiting its turn, for scans
+    it did not start (e.g. scheduled scans), then that they have finished, without reloading."""
+    _add_websites_to_scan_slowly(app_server)
+    page = open_dashboard()
+    page.evaluate("window.notReloaded = true")  # Lost if the page reloads
+    messages = page.locator(".website-card .run-scan-message")
+
+    scans = [
+        _post_in_the_background(f"{app_server.url}scanner/run", {"url": url})
+        for url in ("https://first.example.com", "https://second.example.com")
+    ]
+
+    expect(messages.filter(has_text="Scanning now")).to_have_count(1, timeout=15_000)
+    expect(messages.filter(has_text="Scan queued")).to_have_count(1)
+    expect(page.locator(".website-card .cancel-scan-button:visible")).to_have_count(2)
+
+    expect(messages.filter(has_text="Scan finished")).to_have_count(2, timeout=60_000)
+    expect(page.locator(".website-card .cancel-scan-button:visible")).to_have_count(0)
+    assert page.evaluate("window.notReloaded") is True
+    for scan in scans:
+        scan.join(timeout=30)
+
+
+def test_an_open_dashboard_follows_run_all_scans_started_elsewhere(
+    open_dashboard: Callable[..., Page], app_server: RunningApp
+) -> None:
+    """Tests a dashboard left open shows a "Run All Scans" it did not start (e.g. from another window), naming the
+    website it is scanning now, then says when it has finished, without reloading."""
+    _add_websites_to_scan_slowly(app_server)
+    page = open_dashboard()
+    page.evaluate("window.notReloaded = true")
+    run_all_message = page.locator("#run-all-scans-message")
+
+    run_all = _post_in_the_background(f"{app_server.url}scanner/run_all")
+
+    expect(run_all_message).to_contain_text("Now scanning", timeout=15_000)
+    expect(page.locator("#cancel-all-scans-button")).to_be_visible()
+    expect(page.locator("#run-all-scans-button")).to_be_disabled()
+
+    expect(run_all_message).to_contain_text("Run All Scans finished", timeout=60_000)
+    expect(page.locator("#cancel-all-scans-button")).to_be_hidden()
+    expect(page.locator("#run-all-scans-button")).to_be_enabled()
+    assert page.evaluate("window.notReloaded") is True
+    run_all.join(timeout=30)

@@ -330,7 +330,7 @@ def test_dashboard_shows_next_scheduled_check(api_client: TestClient, mocker: Mo
         "app.frontend.api.routers.next_scheduled_check", return_value=datetime(2026, 10, 5, 21, 30).astimezone()
     )
 
-    assert _next_check_text(api_client) == "Next scheduled check: 05 Oct 2026, 21:30"
+    assert _next_check_text(api_client) == "Showing the last 7 scans · Next scan scheduled for 05 Oct 2026, 21:30"
 
 
 def test_dashboard_hides_next_check_when_scans_are_not_scheduled(api_client: TestClient, mocker: MockerFixture) -> None:
@@ -435,7 +435,8 @@ def test_updates_show_only_the_latest_scans_and_which_are_waiting_to_be_emailed(
     assert updates_panel is not None
     scans = [" ".join(scan.get_text().split()) for scan in updates_panel.select(".scan-change-record")]
 
-    assert "Last 2 scans of each website" in updates_panel.get_text()
+    assert "Scan History" in updates_panel.get_text()
+
     assert len(scans) == 2
     assert "https://example.com/emailed" in scans[0] and "Email not sent yet" not in scans[0]
     assert "Could not connect" in scans[1] and "Website placed on cooldown." in scans[1]
@@ -890,6 +891,84 @@ def test_dashboard_explains_inactive_websites_only_have_critical_pages_scanned(
         assert _run_scan_button_text(api_client, url) == "Run scan"
 
 
+def _card_notices(api_client: TestClient, url: str) -> list[str]:
+    """Returns every notice on a website's dashboard card, e.g. why it was deactivated or why its last scan failed."""
+    dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
+    button = dashboard.select_one(f'.run-scan-button[data-website-url="{HttpUrl(url)}"]')
+    assert button is not None
+    card = button.find_parent(class_="website-card")
+    assert card is not None
+    return [" ".join(notice.get_text().split()) for notice in card.select(".website-notice")]
+
+
+def test_dashboard_card_says_why_the_latest_scan_did_not_go_normally(api_client: TestClient, session: Session) -> None:
+    """Tests a website whose latest scan was rate limited says so on its card, with what was done about it, while a
+    website whose problem was followed by a normal scan shows nothing."""
+    rate_limited_message = "https://limited.example.com/ kept answering HTTP 429 Too Many Requests. Slowed down."
+    session.add_all(
+        [
+            DBWebsite(
+                url="https://limited.example.com",
+                scan_runs=[
+                    DBScanRun(scanned_at=datetime(2026, 10, 1, 9, 0).astimezone(), status=ScanStatus.SUCCESS),
+                    DBScanRun(
+                        scanned_at=datetime(2026, 10, 2, 9, 0).astimezone(),
+                        status=ScanStatus.TRAFFIC_ERROR,
+                        message=rate_limited_message,
+                    ),
+                ],
+            ),
+            DBWebsite(
+                url="https://recovered.example.com",
+                scan_runs=[
+                    DBScanRun(
+                        scanned_at=datetime(2026, 10, 1, 9, 0).astimezone(),
+                        status=ScanStatus.CONNECTION_ERROR,
+                        message="Could not be reached.",
+                    ),
+                    DBScanRun(scanned_at=datetime(2026, 10, 2, 9, 0).astimezone(), status=ScanStatus.SUCCESS),
+                ],
+            ),
+        ]
+    )
+    session.flush()
+
+    assert _card_notices(api_client, "https://limited.example.com") == [
+        f"Last scan: Rate limited. {rate_limited_message}"
+    ]
+    assert _card_notices(api_client, "https://recovered.example.com") == []
+
+
+def test_dashboard_card_says_until_when_a_website_is_paused(api_client: TestClient, session: Session) -> None:
+    """Tests a website on cooldown says on its card until when scheduled scans skip it, and one whose cooldown has
+    ended says nothing."""
+    paused_until = datetime(2099, 1, 2, 3, 4, tzinfo=UTC)
+    session.add_all(
+        [
+            DBWebsite(url="https://paused.example.com", on_cooldown_until=paused_until),
+            DBWebsite(url="https://resumed.example.com", on_cooldown_until=datetime(2020, 1, 1, tzinfo=UTC)),
+        ]
+    )
+    session.flush()
+
+    [paused_notice] = _card_notices(api_client, "https://paused.example.com")
+    assert paused_notice.startswith(f"Paused until {routers.format_timestamp(paused_until)}.")
+    assert "Scheduled scans and Run All Scans skip it" in paused_notice
+    assert _card_notices(api_client, "https://resumed.example.com") == []
+
+
+def test_dashboard_explains_a_website_deactivated_for_rate_limiting(api_client: TestClient, session: Session) -> None:
+    """Tests a website deactivated because it kept rate limiting the crawler says so on its card."""
+    session.add(DBWebsite(url="https://strict.example.com", active=False, deactivated_reason="rate_limited"))
+    session.flush()
+
+    notice = _website_notice(api_client, "https://strict.example.com")
+
+    assert notice is not None
+    assert notice.startswith("Blocked the crawler.")
+    assert "Only its critical pages are checked" in notice
+
+
 def test_scan_settings_explain_what_inactive_means(api_client: TestClient, test_website: website_models.WebsiteRead):
     """Tests the "Active" setting explains that an inactive website still has its critical pages checked."""
     dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
@@ -976,6 +1055,13 @@ async def test_another_website_can_be_added_while_one_is_being_scanned(
         first_url, second_url = scan_queue.queued_urls  # In the order they were added
         assert {website.url for website in session.scalars(select(DBWebsite))} == {first_url, second_url}
 
+        # The dashboard can see which website is being scanned and which is waiting its turn
+        assert (await client.get("/scanner/activity")).json() == {
+            "scanning_url": first_url,
+            "waiting_urls": [second_url],
+            "run_all_in_progress": False,
+        }
+
         # Cancelling the waiting website leaves the one being scanned alone
         assert (await client.post("/scanner/cancel", data={"url": second_url})).json() is True
         async with asyncio.timeout(5):
@@ -988,6 +1074,37 @@ async def test_another_website_can_be_added_while_one_is_being_scanned(
 
     assert session.scalars(select(DBWebsite)).all() == []
     assert scan_queue.queued_urls == []
+    assert scan_queue.scanning_url is None
+
+
+def test_scan_activity_is_empty_when_nothing_is_being_scanned(api_client: TestClient) -> None:
+    """Tests the dashboard is told nothing is being scanned or waiting when no scan is running."""
+    response = api_client.get("/scanner/activity")
+
+    assert response.status_code == 200
+    assert response.json() == {"scanning_url": None, "waiting_urls": [], "run_all_in_progress": False}
+
+
+def test_the_dashboard_shows_which_website_is_being_scanned_and_which_are_waiting(
+    api_client: TestClient, session: Session, mocker: MockerFixture
+) -> None:
+    """Tests a dashboard opened while scans are running says which website is being scanned now and which are waiting
+    their turn, rather than the same "queued or running" for both."""
+    session.add_all([DBWebsite(url=f"https://{name}.example.com") for name in ["scanning", "waiting", "idle"]])
+    session.flush()
+    mocker.patch.object(ScanQueue, "queued_urls", ["https://scanning.example.com/", "https://waiting.example.com/"])
+    mocker.patch.object(ScanQueue, "scanning_url", "https://scanning.example.com/")
+
+    dashboard = BeautifulSoup(api_client.get("/").text, "html.parser")
+
+    messages = {
+        str(card.get("data-website-name")): " ".join(message.get_text().split())
+        for card in dashboard.select(".website-card")
+        if (message := card.select_one(".run-scan-message")) is not None
+    }
+    assert messages["Example Scanning"] == "Scanning now..."
+    assert messages["Example Waiting"].startswith("Scan queued.")
+    assert messages["Example Idle"] == ""
 
 
 def test_adding_an_email_to_a_website_counts_as_emailing_it(

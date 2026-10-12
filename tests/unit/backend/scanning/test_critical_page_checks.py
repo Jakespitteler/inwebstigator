@@ -271,9 +271,9 @@ def _serve_a_pdf(request: httpx2.Request) -> httpx2.Response:
 @pytest.mark.parametrize(
     ("handler", "failure_reason"),
     [
-        (_refuse_connection, "Connection failed or timed out"),
-        (_drop_connection, "Request failed"),
-        (_serve_a_pdf, "The page is now a file (application/pdf), not a web page"),
+        (_refuse_connection, "The website refused the connection"),
+        (_drop_connection, "The request failed (Connection reset by peer)"),
+        (_serve_a_pdf, "It is a file (application/pdf), not a web page"),
     ],
     ids=["could-not-connect", "connection-dropped", "now-a-file"],
 )

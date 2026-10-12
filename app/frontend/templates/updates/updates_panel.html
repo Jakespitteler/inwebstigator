@@ -4,11 +4,11 @@
     aria-labelledby="updates-tab" tabindex="0" hidden>
 <div class="section-heading">
 
-    <h2 class="section-title">Last {{ scans_kept_per_website }} scans of each website</h2>
+    <h2 class="section-title">Scan History</h2>
 
     {% if next_check %}
         <p class="week-range">
-            Next scheduled check: {{ next_check | format_timestamp }}
+            Showing the last {{ scans_kept_per_website }} scans · Next scan scheduled for {{ next_check | format_timestamp }}
         </p>
     {% endif %}
 

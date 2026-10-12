@@ -1,6 +1,7 @@
 {# Asks before deleting anything (see static/js/confirm-dialog.js). #}
 
-<!-- Confirmation for deleting things. Cancel is the default unless the required confirmation text has been entered. -->
+<!-- Confirmation for deleting things. Cancel is the default, so Escape never deletes, and Enter only
+     deletes once the confirmation text is typed. -->
 <dialog
     id="confirm-dialog"
     class="confirm-dialog"

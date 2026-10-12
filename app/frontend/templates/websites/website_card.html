@@ -69,11 +69,11 @@
         </div>
     </div>
 
-    <!-- A scan queued before the page loaded keeps showing as in progress -->
+    <!-- A scan queued before the page loaded keeps showing as in progress. scan-activity.js keeps it up to date. -->
     <p
         class="run-scan-message{% if (website.url | string) in queued_website_urls %} is-busy{% endif %}"
         aria-live="polite"
-    >{% if (website.url | string) in queued_website_urls %}Scan queued or running...{% endif %}</p>
+    >{% if (website.url | string) == scanning_url %}Scanning now...{% elif (website.url | string) in queued_website_urls %}Scan queued. It runs once the scan in progress has finished...{% endif %}</p>
 
     <!-- Inactive websites are still scanned, but only their critical pages -->
     {% if not website.active %}
@@ -91,6 +91,28 @@
             {% endif %}
             Only its critical pages are checked for changes. New and removed pages on
             the rest of the website are not looked for.
+        </p>
+    {% endif %}
+
+    <!-- Why the latest scan didn't go normally (e.g. the website rate limited it), until a scan goes normally again,
+         and until when scheduled scans and Run All Scans skip it (its cooldown). Too large is left to the notice above. -->
+    {% set latest_scan = latest_scans.get(website.url | string) %}
+    {% set paused = website.on_cooldown_until and website.on_cooldown_until > now %}
+    {% if latest_scan and latest_scan.is_problem and latest_scan.status != "too_large" %}
+        <p class="website-notice website-notice-warning latest-scan-problem">
+            <strong>Last scan: {{ latest_scan.status_label }}.</strong>
+            {{ latest_scan.message or "" }}
+            {% if paused %}
+                <strong class="cooldown-notice">
+                    Paused until {{ website.on_cooldown_until | format_timestamp }}.
+                </strong>
+            {% endif %}
+        </p>
+    {% elif paused %}
+        <p class="website-notice cooldown-notice">
+            <strong>Paused until {{ website.on_cooldown_until | format_timestamp }}.</strong>
+            Scheduled scans and Run All Scans skip it until then, as it couldn't be scanned
+            normally. Run scan still scans it straight away.
         </p>
     {% endif %}
 

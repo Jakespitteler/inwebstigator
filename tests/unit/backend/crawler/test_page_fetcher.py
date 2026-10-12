@@ -6,13 +6,15 @@ import pytest
 from tenacity import RetryCallState, Retrying
 
 from app.backend.crawler.page_fetcher import (
+    describe_connection_failure,
+    describe_fetch_failure,
     fetch_content_from_url,
     new_http_client,
     retry_after_seconds,
     wait_for_server,
 )
 from app.core.config import config
-from app.core.errors import NotAWebPageError, TrafficError, WebConnectionError
+from app.core.errors import NotAWebPageError, TrafficError, WebConnectionError, describe_http_status
 from tests.conftest import RequestHandler
 
 
@@ -227,10 +229,73 @@ async def test_connection_failures_and_timeouts_are_retried_then_raise(network_e
         raise network_error
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
-        with pytest.raises(WebConnectionError):
+        with pytest.raises(WebConnectionError) as exc_info:
             await fetch_content_from_url(client, "https://example.com/")
 
     assert len(requests) == config.fetch_site_retry_max_attempts
+    assert exc_info.value.reason == describe_connection_failure(network_error)  # pyright: ignore[reportArgumentType]
+
+
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [
+        (
+            httpx2.ReadTimeout("timed out"),
+            f"The website took too long to answer, {config.fetch_site_retry_max_attempts} times in a row",
+        ),
+        (
+            httpx2.ConnectError("[Errno 11001] getaddrinfo failed"),
+            "The website's address could not be found, so check the URL is correct and the computer is online",
+        ),
+        (
+            httpx2.ConnectError("[Errno -2] Name or service not known"),
+            "The website's address could not be found, so check the URL is correct and the computer is online",
+        ),
+        (
+            httpx2.ConnectError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate has expired"),
+            "The website's security certificate could not be verified "
+            "([SSL: CERTIFICATE_VERIFY_FAILED] certificate has expired)",
+        ),
+        (httpx2.ConnectError("[Errno 111] Connection refused"), "The website refused the connection"),
+        (
+            httpx2.ConnectError("Network is unreachable"),
+            "The connection to the website failed (Network is unreachable)",
+        ),
+        (httpx2.ConnectError(""), "The connection to the website failed"),
+    ],
+    ids=["timeout", "address-not-found-windows", "address-not-found", "bad-certificate", "refused", "other", "blank"],
+)
+def test_a_connection_failure_says_why_in_words_the_user_can_act_on(
+    error: httpx2.TimeoutException | httpx2.ConnectError, reason: str
+) -> None:
+    """Tests each common way of failing to reach a website is described plainly, e.g. a mistyped address."""
+    assert describe_connection_failure(error) == reason
+
+
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [
+        (TrafficError("https://example.com/", 429), describe_http_status(429)),
+        (
+            WebConnectionError("https://example.com/", "The website refused the connection"),
+            "The website refused the connection",
+        ),
+        (
+            NotAWebPageError("https://example.com/a.pdf", "application/pdf"),
+            "It is a file (application/pdf), not a web page",
+        ),
+        (
+            httpx2.TooManyRedirects("Exceeded maximum allowed redirects."),
+            "The request failed (Exceeded maximum allowed redirects.)",
+        ),
+        (httpx2.RemoteProtocolError(""), "The request failed (RemoteProtocolError)"),
+        (RuntimeError("Something odd"), "Something odd"),
+    ],
+    ids=["rate-limited", "unreachable", "a-file", "too-many-redirects", "protocol-error", "anything-else"],
+)
+def test_a_page_that_cannot_be_loaded_says_why(error: BaseException, reason: str) -> None:
+    """Tests whichever error loading a page raised, the reason given says what went wrong."""
+    assert describe_fetch_failure(error) == reason
 
 
 @pytest.mark.anyio

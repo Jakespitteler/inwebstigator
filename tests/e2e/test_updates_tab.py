@@ -252,6 +252,78 @@ def test_an_open_update_card_stays_open_after_a_reload(
 
 
 # ======================================
+# Counting new scans on the Updates tab
+# ======================================
+
+
+def _add_scan(app_server: RunningApp, scanned_at: datetime, found_something: bool = True) -> None:
+    """Saves a scan of the website, which found a new link if `found_something`, otherwise nothing."""
+    with app_server.session() as session:
+        website = session.scalars(select(DBWebsite).where(DBWebsite.url == WEBSITE_URL)).one()
+        changes = (
+            [DBChange(position=0, kind=ChangeKind.LINK_ADDED, page_url=WEBSITE_URL, url=f"{WEBSITE_URL}/new")]
+            if found_something
+            else []
+        )
+        website.scan_runs.append(DBScanRun(scanned_at=scanned_at, status=ScanStatus.SUCCESS, changes=changes))
+        session.commit()
+
+
+def test_the_updates_tab_counts_new_scans_until_it_is_opened(
+    open_dashboard: Callable[..., Page], app_server: RunningApp
+) -> None:
+    """Tests the Updates tab shows a bubble counting the scans that found something since it was last opened (not
+    those already there the first time, or those that found nothing), and that opening it marks them "New" and clears
+    the bubble, which stays cleared after a reload."""
+    app_server.add_website(WEBSITE_URL)
+    _add_scan(app_server, datetime.now(UTC) - timedelta(days=1))
+    page = open_dashboard()
+    badge, updates_tab = page.locator("#updates-badge"), page.locator("#updates-tab")
+    expect(badge).to_be_hidden()  # What was there the first time isn't new
+
+    _add_scan(app_server, datetime.now(UTC) - timedelta(hours=2))
+    _add_scan(app_server, datetime.now(UTC) - timedelta(hours=1))
+    _add_scan(app_server, datetime.now(UTC) - timedelta(minutes=30), found_something=False)
+    page.reload()
+
+    expect(badge).to_be_visible()
+    expect(badge).to_have_text("2")
+    expect(updates_tab).to_have_attribute("aria-label", "Updates, 2 new")
+
+    updates_tab.click()
+    expect(badge).to_be_hidden()
+    website_record = page.locator(".website-change-record")
+    expect(website_record.locator(":scope > .change-record-header .new-label")).to_be_visible()
+    _open(website_record)
+    expect(page.locator(".scan-change-record .new-label:visible")).to_have_count(2)
+
+    page.reload()
+    expect(badge).to_be_hidden()
+    expect(page.locator(".new-label:visible")).to_have_count(0)
+
+
+def test_opening_the_dashboard_on_the_updates_tab_clears_the_count(
+    open_dashboard: Callable[..., Page], app_server: RunningApp
+) -> None:
+    """Tests the new scans count as seen when the dashboard opens straight onto the Updates tab, e.g. after a reload
+    while it was showing."""
+    app_server.add_website(WEBSITE_URL)
+    page = open_dashboard()
+    _add_scan(app_server, datetime.now(UTC) - timedelta(hours=1))
+    page.reload()
+    expect(page.locator("#updates-badge")).to_have_text("1")
+
+    page.goto(f"{app_server.url}about")
+    page.goto(f"{app_server.url}#updates")  # A new page load, not a jump within the dashboard
+
+    expect(page.locator("#updates-badge")).to_be_hidden()
+    expect(page.locator(".website-change-record > .change-record-header .new-label")).to_be_visible()
+    page.goto(f"{app_server.url}about")
+    page.goto(app_server.url)
+    expect(page.locator("#updates-badge")).to_be_hidden()
+
+
+# ======================================
 # Moving between tabs with the keyboard
 # ======================================
 

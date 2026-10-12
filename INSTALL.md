@@ -107,7 +107,7 @@ The message says what went wrong. Click **Edit and Try Again** to fix it.
 
 | Message | What to do |
 | --- | --- |
-| "*address* could not be loaded" | Check the address is right, and that the page opens in your web browser. |
+| "*address* could not be loaded", then why | Check the address is right, and that the page opens in your web browser. **HTTP 404 Not Found** or "the website's address could not be found" usually means the address is wrong. **HTTP 403 Forbidden** means the website is blocking Inwebstigator. |
 | "*website* is already being monitored" | It's already on your list, perhaps written slightly differently (e.g. with or without `www.`). |
 | "We can't send an email to *address*" | The address couldn't receive Inwebstigator's email. Check it for typos. |
 
@@ -134,8 +134,11 @@ open card also shows how many pages Inwebstigator found on the whole website
   It stops the website being scanned and skips the rest. Websites already
   scanned keep their results, and their changes are still emailed.
 
-Scans run one at a time. If you start several, they wait their turn
-("Scan queued or running…").
+Scans run one at a time. If you start several, they wait their turn. Each
+card shows how its scan is going without you refreshing, including scheduled
+scans and **Run All Scans**: **Scanning now…**, **Scan queued…** while it
+waits, then **Scan finished** once it's done. Click **Refresh** to see what a
+finished scan found.
 
 While a scan runs, a note reminds you that closing the window won't stop it.
 The **×** hides it until the next scan, and **Don't show again** hides it for
@@ -186,7 +189,8 @@ Its critical pages are still checked either way.
 ### Deleting a website
 
 Click **Delete website** on an open card. To make sure it isn't deleted by
-mistake, you need to type **CONFIRM** before the **Delete** button works.
+mistake, you need to type **CONFIRM** before the **Delete** button works
+(or press **Enter** once it's typed).
 Deleting a website also deletes everything saved about it, including its
 history.
 
@@ -197,6 +201,11 @@ history.
 This shows the last 7 scans of each website, with the most recent changes
 first. **Next scheduled check** (at the top) shows when Inwebstigator next
 looks for websites that are due a scan.
+
+A red number on the **Updates** tab counts the scans that found changes or a
+problem since you last opened it. When you open the tab, those scans (and
+their websites) are marked **New**, and the number goes away. Press
+**Refresh** after a scan finishes to update the number.
 
 Each website has a card summarising its scans. Open it to see each scan, then
 open a scan to see what it found:
@@ -280,7 +289,7 @@ you to send it to them.
 | --- | --- |
 | Inwebstigator shows an error or closes when opened | Contact the team and send them the log file. It's most likely an email setting on our side. |
 | "Inwebstigator is already running" | It's open in the system tray. Click the tray icon to show it. |
-| A scan says **Could not connect** or **Rate limited** | The website was down, or asked Inwebstigator to slow down. It's tried again later automatically. |
+| A scan says **Could not connect** or **Rate limited** | The website was down, or asked Inwebstigator to slow down. The website's card says why (e.g. what the website answered) and until when its scheduled scans are paused. A website that asks Inwebstigator to slow down is scanned more slowly from then on. It's tried again later automatically. |
 | A scan says **Most pages missing** | Most of the website's pages couldn't be found, which is usually a problem with the website rather than real changes. If it happens 3 scans in a row, the pages are treated as really removed. |
 | The dashboard looks out of date | Click **Refresh** at the top right. |
 | A website's card says **Blocked the crawler** | The website kept blocking Inwebstigator, so it was paused. Contact the team. |

@@ -80,13 +80,20 @@ def test_handle_traffic_error_throttles_when_not_at_min_speed(session: Session, 
 
     result_message = handle_traffic_error(service, website=website)
 
-    assert result_message == "Website throttled and placed on cooldown."
-
     fetched_website = service.get(id=website.id)
     assert fetched_website.recommended_delay > website.recommended_delay
     assert fetched_website.recommended_concurrent < website.recommended_concurrent
     assert fetched_website.on_cooldown_until is not None
     assert fetched_website.on_cooldown_until > datetime.now(UTC)
+    # Says how much it was slowed down, and for how long it is paused
+    assert result_message == (
+        "To go easier on the website, its scans have been slowed down to "
+        f"{fetched_website.recommended_delay:g} seconds between requests, "
+        f"{fetched_website.recommended_concurrent} at a time "
+        f"(was {website.recommended_delay:g} seconds between requests, {website.recommended_concurrent} at a time). "
+        f"Scheduled scans and Run All Scans will skip it for the next {config.website_cooldown_hours_after_throttle} "
+        "hours (Run scan still scans it straight away)."
+    )
 
 
 def test_handle_traffic_error_increments_attempts_at_min_speed(session: Session, test_website: WebsiteRead) -> None:
@@ -111,7 +118,10 @@ def test_handle_traffic_error_increments_attempts_at_min_speed(session: Session,
 
     result_message = handle_traffic_error(service, website=website)
 
-    assert result_message == "Website placed on cooldown."
+    assert "already as slow as they go" in result_message
+    assert f"skip it for the next {config.website_cooldown_hours_after_throttle} hours" in result_message
+    max_failures = config.web_crawler_max_failed_attempts_at_min_speed
+    assert f"If it rate limits {max_failures} more scans in a row, it will be deactivated." in result_message
 
     fetched_website = service.get(id=website.id)
     assert fetched_website.failed_attempts_at_min_speed == 1
@@ -142,7 +152,8 @@ def test_handle_traffic_error_deactivates_website_at_max_failures(session: Sessi
 
     result_message = handle_traffic_error(service, website=website)
 
-    assert f"Failed {max_failures} times. Deactivating: {website.url}" in result_message
+    assert f"rate limited {max_failures + 1} scans in a row at that speed" in result_message
+    assert "so it has been deactivated" in result_message
 
     fetched_website = service.get(id=website.id)
     assert fetched_website.active is False
@@ -184,7 +195,9 @@ def test_handle_connection_error(session: Session, test_website: WebsiteRead) ->
 
     result_message = handle_connection_error(service, website_id=test_website.id)
 
-    assert result_message == "Website placed on cooldown."
+    assert result_message == (
+        "Scheduled scans and Run All Scans will skip it for the next 2 hours (Run scan still scans it straight away)."
+    )
 
     fetched_website = service.get(id=test_website.id)
     assert fetched_website.on_cooldown_until is not None

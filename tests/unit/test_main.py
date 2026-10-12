@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
 
 from app.core.config import config
-from app.core.errors import IntegrityError, WebConnectionError
+from app.core.errors import IntegrityError, TrafficError, WebConnectionError
 from app.core.logging_setup import WEB_SERVER_LOGGER, setup_logging
 from app.main import app
 from app.models.website_models import WebsiteRead
@@ -113,6 +113,35 @@ def test_a_website_that_cannot_be_reached_is_a_502(
 
     assert response.status_code == 502, response.text
     assert str(test_website.url) in response.json()["detail"]
+
+
+def test_a_website_that_rate_limits_a_scan_is_a_502_saying_so(
+    api_client: TestClient, test_website: WebsiteRead, mocker: MockerFixture
+) -> None:
+    """Tests a website that kept rate limiting a scan fails with a 502 whose message says what it answered, rather
+    than a server error the dashboard can only call "Unable to complete scan"."""
+    error = TrafficError(f"{test_website.url}news", 429)
+    mocker.patch("app.frontend.api.routers.scan_website_now", side_effect=error)
+
+    response = api_client.post("/scanner/run", data={"url": str(test_website.url)})
+
+    assert response.status_code == 502, response.text
+    assert response.json()["detail"] == str(error)
+
+
+def test_an_unexpected_error_is_a_500_saying_what_went_wrong(
+    api_client: TestClient, test_website: WebsiteRead, mocker: MockerFixture
+) -> None:
+    """Tests an error nothing else handles still tells the dashboard what went wrong and where the log file is."""
+    mocker.patch("app.frontend.api.routers.scan_website_now", side_effect=RuntimeError("database is locked"))
+
+    with TestClient(app, raise_server_exceptions=False, headers=dict(api_client.headers)) as client:
+        response = client.post("/scanner/run", data={"url": str(test_website.url)})
+
+    assert response.status_code == 500, response.text
+    assert response.json()["detail"] == (
+        f"Something went wrong (RuntimeError: database is locked). The details are in the log file, {config.log_path}"
+    )
 
 
 def test_a_critical_page_on_another_website_is_a_422(api_client: TestClient, test_website: WebsiteRead) -> None:

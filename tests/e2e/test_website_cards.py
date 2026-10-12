@@ -105,6 +105,24 @@ def test_run_scan_finds_a_change_and_refreshes_the_dashboard(
     assert "$120" in website.critical_pages[0].text_body
 
 
+def test_a_scan_that_cannot_load_the_website_says_why_on_its_card(
+    open_dashboard: Callable[..., Page], app_server: RunningApp
+) -> None:
+    """Tests a scan whose home page can't be loaded is shown on the website's card after the dashboard reloads,
+    saying what the website answered and until when its scheduled scans are paused."""
+    app_server.add_website(WEBSITE_URL)  # Its home page isn't set, so it answers 404
+    page = open_dashboard()
+
+    with page.expect_navigation():
+        _card(page).locator(".run-scan-button").click()
+
+    card = _card(page)
+    problem = card.locator(".latest-scan-problem")
+    expect(problem).to_contain_text("Last scan: Could not connect.")
+    expect(problem).to_contain_text("HTTP 404 Not Found, so the page does not exist or has moved")
+    expect(card.locator(".cooldown-notice")).to_contain_text("Paused until")
+
+
 def test_cancelling_a_scan_from_its_card(open_dashboard: Callable[..., Page], app_server: RunningApp) -> None:
     """Tests a running scan can be cancelled from the website's card, which then lets it be run again."""
     app_server.add_website(WEBSITE_URL)
@@ -116,7 +134,8 @@ def test_cancelling_a_scan_from_its_card(open_dashboard: Callable[..., Page], ap
     app_server.websites.delay_seconds = 0.5  # Slow the scan down enough to cancel it
     run_button.click()
     expect(run_button).to_be_disabled()
-    expect(card.locator(".run-scan-message")).to_contain_text("Scan queued")
+    # The dashboard's own check may already show it running
+    expect(card.locator(".run-scan-message")).to_contain_text(re.compile("Scan queued|Scanning now"))
 
     _wait_for_scan_to_start(WEBSITE_URL)
     cancel_button.click()
@@ -310,6 +329,28 @@ def test_deleting_a_website_needs_confirm_typed(open_dashboard: Callable[..., Pa
     expect(delete_button).to_be_enabled()
     with page.expect_navigation():
         delete_button.click()
+
+    expect(page.locator(".website-card")).to_have_count(0)
+    assert app_server.saved_websites() == []
+
+
+def test_pressing_enter_deletes_a_website_once_confirm_is_typed(
+    open_dashboard: Callable[..., Page], app_server: RunningApp
+) -> None:
+    """Tests pressing Enter in the confirmation box deletes the website once CONFIRM is typed, while Enter with the
+    wrong text keeps the dialog open and says the text does not match, rather than cancelling."""
+    app_server.add_website(WEBSITE_URL)
+    page = open_dashboard()
+    confirmation_box = page.locator("#confirm-dialog-input")
+
+    _open_card(page).locator(".delete-website-button").click()
+    confirmation_box.press("Enter")
+    expect(page.locator("#confirm-dialog")).to_be_visible()
+    expect(page.locator("#confirm-dialog-error")).to_be_visible()
+
+    confirmation_box.fill("CONFIRM")
+    with page.expect_navigation():
+        confirmation_box.press("Enter")
 
     expect(page.locator(".website-card")).to_have_count(0)
     assert app_server.saved_websites() == []
