@@ -244,3 +244,17 @@ class ScanRunRead(BaseModel):
             group_page_changes(page_url, [change for change in self.changes if change.page_url == page_url])
             for page_url in page_urls
         ]
+
+
+class ScanActivity(BaseModel):
+    """Which scans are running now, so the dashboard can keep each website's card up to date without being reloaded.
+
+    Attributes:
+        scanning_url: The website being scanned now, or None if no scan is running.
+        waiting_urls: The websites waiting their turn, in the order they will be scanned.
+        run_all_in_progress: Whether the dashboard's "Run All Scans" is running.
+    """
+
+    scanning_url: str | None = None
+    waiting_urls: list[str] = Field(default_factory=list[str])
+    run_all_in_progress: bool = False

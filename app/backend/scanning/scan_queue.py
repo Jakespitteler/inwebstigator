@@ -26,11 +26,17 @@ class ScanQueue:
     def __init__(self) -> None:
         self._lock: asyncio.Lock = asyncio.Lock()
         self._scans: dict[str, asyncio.Task[object]] = {}
+        self._scanning_url: str | None = None
 
     @property
     def queued_urls(self) -> list[str]:
         """The URLs of the websites waiting their turn or being scanned, in the order they were requested."""
         return list(self._scans)
+
+    @property
+    def scanning_url(self) -> str | None:
+        """The URL of the website being scanned now, or None if no scan is running. The rest are waiting their turn."""
+        return self._scanning_url
 
     async def run[T](self, url: str, scan: Callable[[], Awaitable[T]]) -> T:
         """Runs a website's scan once the scans requested before it have finished.
@@ -49,7 +55,7 @@ class ScanQueue:
         if url in self._scans:
             raise ScanAlreadyQueuedError(url)
 
-        scan_task: asyncio.Task[T] = asyncio.create_task(self._run_in_turn(scan))
+        scan_task: asyncio.Task[T] = asyncio.create_task(self._run_in_turn(url, scan))
         self._scans[url] = scan_task
         try:
             return await scan_task
@@ -74,17 +80,22 @@ class ScanQueue:
         scan_task: asyncio.Task[object] | None = self._scans.get(url)
         return scan_task is not None and scan_task.cancel()
 
-    async def _run_in_turn[T](self, scan: Callable[[], Awaitable[T]]) -> T:
+    async def _run_in_turn[T](self, url: str, scan: Callable[[], Awaitable[T]]) -> T:
         """Waits for the scans requested before this one to finish, then runs it.
 
         Args:
+            url: The URL of the website being scanned, recorded as being scanned while the scan runs.
             scan: Starts the scan.
 
         Returns:
             Whatever the scan returns.
         """
         async with self._lock:
-            return await scan()
+            self._scanning_url = url
+            try:
+                return await scan()
+            finally:
+                self._scanning_url = None
 
 
 scan_queue: ScanQueue = ScanQueue()
