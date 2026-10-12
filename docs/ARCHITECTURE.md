@@ -110,9 +110,15 @@ Edited text is turned into highlighted word-by-word HTML by
 - **Reloading:** after an action (adding, deleting, saving settings, finishing
   a scan) the dashboard usually just reloads. The open tab is kept in the URL
   (`#updates`) and open cards in `sessionStorage`, so a reload doesn't lose
-  your place. The chosen theme and "Don't show again" on the background scan
-  note are kept in `localStorage`, which the desktop window keeps between
-  launches.
+  your place. The chosen theme, "Don't show again" on the background scan
+  note, and when the Updates tab was last opened are kept in `localStorage`,
+  which the desktop window keeps between launches.
+- **New scans:** `static/js/updates-badge.js` counts the scans that found
+  changes or a problem since the Updates tab was last opened (each scan card
+  carries `data-scanned-at` and `data-found-something`), shows the count in a
+  bubble on the tab, and marks those scans "New" once the tab is shown. Only
+  scan times from the app are compared, never the computer's clock. The first
+  time, the scans already there aren't counted.
 - **Scan progress:** `static/js/scan-activity.js` asks `GET /scanner/activity`
   every 3 seconds while the window is shown, and updates each card ("Scanning
   now…", "Scan queued…", then "Scan finished") and the **Run All Scans**
