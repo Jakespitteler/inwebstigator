@@ -229,7 +229,7 @@ def test_a_website_that_cannot_be_loaded_is_not_added(
 
     progress = page.locator("#add-website-progress-list .scan-progress")
     expect(progress.locator(".add-website-progress-status")).to_have_text(
-        f"{WEBSITE_URL} could not be loaded. Check it exists and the URL is correct."
+        f"{WEBSITE_URL} could not be loaded. HTTP 404 Not Found, so the page does not exist or has moved."
     )
     expect(progress.locator(".add-website-progress-detail")).to_have_text("example.com was not added.")
 

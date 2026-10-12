@@ -91,6 +91,28 @@
         </p>
     {% endif %}
 
+    <!-- Why the latest scan didn't go normally (e.g. the website rate limited it), until a scan goes normally again,
+         and until when scheduled scans and Run All Scans skip it (its cooldown). Too large is left to the notice above. -->
+    {% set latest_scan = latest_scans.get(website.url | string) %}
+    {% set paused = website.on_cooldown_until and website.on_cooldown_until > now %}
+    {% if latest_scan and latest_scan.is_problem and latest_scan.status != "too_large" %}
+        <p class="website-notice website-notice-warning latest-scan-problem">
+            <strong>Last scan: {{ latest_scan.status_label }}.</strong>
+            {{ latest_scan.message or "" }}
+            {% if paused %}
+                <strong class="cooldown-notice">
+                    Paused until {{ website.on_cooldown_until | format_timestamp }}.
+                </strong>
+            {% endif %}
+        </p>
+    {% elif paused %}
+        <p class="website-notice cooldown-notice">
+            <strong>Paused until {{ website.on_cooldown_until | format_timestamp }}.</strong>
+            Scheduled scans and Run All Scans skip it until then, as it couldn't be scanned
+            normally. Run scan still scans it straight away.
+        </p>
+    {% endif %}
+
     <!-- Nobody would hear about this website's changes, so say so where it cannot be missed -->
     {% if not website.recipients %}
         <p class="no-recipients-notice">

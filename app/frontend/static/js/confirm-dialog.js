@@ -2,7 +2,7 @@
 // The dashboard's scripts share one scope, so they are loaded in order (see templates/index.html).
 
 // Ask before deleting anything, with Cancel as the default.
-// Resolves true only when the Delete button itself is clicked.
+// Resolves true only when Delete is clicked, or Enter is pressed once the confirmation text is typed.
 const confirmDialog = document.getElementById("confirm-dialog");
 const confirmDialogInput = document.getElementById("confirm-dialog-input");
 const confirmDialogButton = document.getElementById("confirm-dialog-confirm");
@@ -33,20 +33,29 @@ function confirmDeletion({ title, message, confirmLabel = "Delete", typeToConfir
     });
 }
 
+function confirmationTextMatches() {
+    return confirmDialogInput.value.trim() === confirmDialogExpected.textContent;
+}
+
 confirmDialogInput.addEventListener("input", () => {
-    const enteredText = confirmDialogInput.value.trim();
-    const matches =
-        enteredText === confirmDialogExpected.textContent;
+    const matches = confirmationTextMatches();
 
     confirmDialogButton.disabled = !matches;
     confirmDialogError.hidden =
-        enteredText === "" || matches;
+        confirmDialogInput.value.trim() === "" || matches;
 });
 
+// Enter in the box deletes once the text matches, like clicking Delete. Otherwise it would
+// press the first button, Cancel, so a typo keeps the dialog open and says why instead.
 confirmDialogInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && !confirmDialogButton.disabled) {
-        event.preventDefault();
+    if (event.key !== "Enter" || event.isComposing) {
+        return;
+    }
+    event.preventDefault();
+    if (confirmationTextMatches()) {
         confirmDialog.close("confirm");
+    } else {
+        confirmDialogError.hidden = false;
     }
 });
 

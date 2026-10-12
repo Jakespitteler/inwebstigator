@@ -2,7 +2,7 @@ from collections.abc import Sequence
 
 from httpx2 import AsyncClient, HTTPError
 
-from app.backend.crawler.page_fetcher import fetch_content_from_url
+from app.backend.crawler.page_fetcher import describe_fetch_failure, fetch_content_from_url
 from app.core.errors import InvalidPageError, NotAWebPageError, PageNotLoadedError, WebCrawlerError
 
 
@@ -15,7 +15,7 @@ async def check_pages_exist(client: AsyncClient, urls: Sequence[str]) -> None:
 
     Raises:
         InvalidPageError: If a page is a file (e.g. a PDF) rather than a web page, so it cannot be watched.
-        PageNotLoadedError: If a page could not be loaded.
+        PageNotLoadedError: If a page could not be loaded, saying why.
     """
     for url in urls:
         try:
@@ -25,4 +25,4 @@ async def check_pages_exist(client: AsyncClient, urls: Sequence[str]) -> None:
                 f"{url} is a file ({error.content_type}) rather than a web page, so it cannot be watched."
             ) from error
         except (WebCrawlerError, HTTPError) as error:
-            raise PageNotLoadedError(url) from error
+            raise PageNotLoadedError(url, describe_fetch_failure(error)) from error

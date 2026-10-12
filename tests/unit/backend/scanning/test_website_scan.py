@@ -277,12 +277,13 @@ async def test_scan_website_without_changes_has_no_report(
 async def test_scan_website_traffic_error_handling(
     session: Session, populated_website: WebsiteRead, mocker: MockerFixture
 ):
-    """Tests that TrafficError triggers cooldown handling and records the scan as rate limited, saying what was done."""
+    """Tests that TrafficError triggers cooldown handling and records the scan as rate limited, saying why (the
+    website's answer) and what was done."""
     mocker.patch("app.backend.scanning.website_scan.db_context", side_effect=lambda: nullcontext(session))
     mock_client = mocker.AsyncMock(spec=httpx2.AsyncClient)
     mocker.patch(
         "app.backend.scanning.website_scan.scan_whole_website",
-        side_effect=CrawlFailedError(TrafficError(url=str(populated_website.url), status_code=429), None),
+        side_effect=CrawlFailedError(TrafficError(url=f"{populated_website.url}news", status_code=429), None),
     )
     mock_handle_traffic = mocker.patch(
         "app.backend.scanning.website_scan.handle_traffic_error", return_value="Cooldown applied"
@@ -294,7 +295,10 @@ async def test_scan_website_traffic_error_handling(
     mock_handle_traffic.assert_called_once_with(ANY, populated_website)
     mock_reset_failed_attempts.assert_not_called()
     assert scan_run.status is ScanStatus.TRAFFIC_ERROR
-    assert scan_run.message == "Cooldown applied"
+    assert scan_run.message == (
+        f"{populated_website.url}news kept answering HTTP 429 Too Many Requests, so the website is limiting how "
+        "often it can be loaded. Cooldown applied"
+    )
     assert scan_run.is_awaiting_email
 
 
@@ -310,7 +314,7 @@ async def test_scan_website_traffic_error_re_raised_with_params(
         side_effect=CrawlFailedError(TrafficError(url=str(populated_website.url), status_code=429), None),
     )
 
-    with pytest.raises(TrafficError, match="Scan aborted, try increasing delay or reducing concurrent"):
+    with pytest.raises(TrafficError, match="HTTP 429 Too Many Requests.*The scan was stopped. Try a longer delay"):
         await scan_website(
             client=mock_client,
             website=populated_website,
@@ -323,12 +327,15 @@ async def test_scan_website_traffic_error_re_raised_with_params(
 async def test_scan_website_connection_error_handling(
     session: Session, populated_website: WebsiteRead, mocker: MockerFixture
 ):
-    """Tests that WebConnectionError handles unreachable site state and records the scan as a connection failure."""
+    """Tests that WebConnectionError handles unreachable site state and records the scan as a connection failure,
+    saying why the website could not be reached and what was done."""
     mocker.patch("app.backend.scanning.website_scan.db_context", side_effect=lambda: nullcontext(session))
     mock_client = mocker.AsyncMock(spec=httpx2.AsyncClient)
     mocker.patch(
         "app.backend.scanning.website_scan.scan_whole_website",
-        side_effect=CrawlFailedError(WebConnectionError("Connection timed out"), None),
+        side_effect=CrawlFailedError(
+            WebConnectionError(str(populated_website.url), "The website took too long to answer"), None
+        ),
     )
     mock_handle_conn = mocker.patch(
         "app.backend.scanning.website_scan.handle_connection_error", return_value="Site unreachable"
@@ -340,6 +347,9 @@ async def test_scan_website_connection_error_handling(
     mock_handle_conn.assert_called_once_with(ANY, populated_website.id)
     mock_reset_failed_attempts.assert_not_called()
     assert scan_run.status is ScanStatus.CONNECTION_ERROR
+    assert scan_run.message == (
+        f"{populated_website.url} could not be reached. The website took too long to answer. Site unreachable"
+    )
     assert "Site unreachable" in _report(scan_run)
 
 

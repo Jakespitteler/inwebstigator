@@ -184,7 +184,11 @@ async def test_scan_all_websites_continues_after_a_website_fails(
 
     assert mock_scan_website.call_count == 3
     [failed_scan] = mock_record_scan.call_args_list
-    assert failed_scan.args[1:] == (broken, ScanStatus.SCAN_ERROR, SCAN_FAILED_MESSAGE)
+    assert failed_scan.args[1:] == (
+        broken,
+        ScanStatus.SCAN_ERROR,
+        f"{SCAN_FAILED_MESSAGE} The error was RuntimeError: Unexpected scan failure",
+    )
     mock_send_reports.assert_called_once()
     assert result is not None
     assert result.index("https://first.com/new") < result.index("Scan Failure Report") < result.index("last.com/new")

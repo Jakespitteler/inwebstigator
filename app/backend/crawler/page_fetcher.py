@@ -1,11 +1,11 @@
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 
-from httpx2 import AsyncClient, ConnectError, HTTPStatusError, Response, TimeoutException
+from httpx2 import AsyncClient, ConnectError, HTTPError, HTTPStatusError, Response, TimeoutException
 from tenacity import RetryCallState, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.core.config import config
-from app.core.errors import NotAWebPageError, TrafficError, WebConnectionError
+from app.core.errors import NotAWebPageError, TrafficError, WebConnectionError, describe_http_status
 
 WEB_PAGE_CONTENT_TYPES: tuple[str, ...] = ("text/html", "application/xhtml+xml", "text/plain")
 TRAFFIC_STATUS_CODES: frozenset[int] = frozenset({429, 502, 503, 504})
@@ -72,6 +72,50 @@ def wait_for_server(retry_state: RetryCallState) -> float:
     return backoff
 
 
+def describe_connection_failure(error: TimeoutException | ConnectError) -> str:
+    """Says why a website could not be reached, in words the user can act on.
+
+    Args:
+        error: The timeout or connection failure.
+
+    Returns:
+        The reason, e.g. "The website's address could not be found".
+    """
+    if isinstance(error, TimeoutException):
+        return f"The website took too long to answer, {config.fetch_site_retry_max_attempts} times in a row"
+    detail: str = str(error)
+    lowered: str = detail.lower()
+    if any(text in lowered for text in ("getaddrinfo", "name or service not known", "nodename nor servname")):
+        return "The website's address could not be found, so check the URL is correct and the computer is online"
+    if "certificate" in lowered:
+        return f"The website's security certificate could not be verified ({detail})"
+    if "refused" in lowered:
+        return "The website refused the connection"
+    return f"The connection to the website failed ({detail})" if detail else "The connection to the website failed"
+
+
+def describe_fetch_failure(error: BaseException) -> str:
+    """Says why a page could not be loaded, for whichever error loading it raised.
+
+    Args:
+        error: The error raised by `fetch_content_from_url`, or by the HTTP client.
+
+    Returns:
+        The reason, e.g. "HTTP 404 Not Found, so the page does not exist or has moved".
+    """
+    if isinstance(error, HTTPStatusError):
+        return describe_http_status(error.response.status_code)
+    if isinstance(error, TrafficError):
+        return describe_http_status(error.status_code)
+    if isinstance(error, WebConnectionError) and error.reason:
+        return error.reason
+    if isinstance(error, NotAWebPageError):
+        return f"It is a file ({error.content_type}), not a web page"
+    if isinstance(error, HTTPError):
+        return f"The request failed ({error})" if str(error) else f"The request failed ({type(error).__name__})"
+    return str(error) or type(error).__name__
+
+
 def _is_web_page(response: Response) -> bool:
     """Checks whether a response is a web page, rather than a file such as a PDF or an image.
 
@@ -122,7 +166,7 @@ async def fetch_content_from_url(client: AsyncClient, url: str) -> tuple[str, st
             raise TrafficError(url, e.response.status_code, retry_after_seconds=retry_after_seconds(e.response)) from e
         raise
     except (TimeoutException, ConnectError) as e:
-        raise WebConnectionError(url) from e
+        raise WebConnectionError(url, describe_connection_failure(e)) from e
     if not _is_web_page(response):
         raise NotAWebPageError(url, response.headers.get("Content-Type", ""))
     return response.text, str(response.url)

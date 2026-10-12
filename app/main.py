@@ -18,6 +18,7 @@ from app.core.errors import (
     ReportNotEmailedError,
     ScanAlreadyQueuedError,
     ScanCancelledError,
+    TrafficError,
     UndeliverableEmailError,
     WebConnectionError,
     WebsiteAlreadyMonitoredError,
@@ -68,9 +69,10 @@ app.mount(
 ERROR_STATUS_CODES: dict[type[Exception], int] = {
     NotFoundError: status.HTTP_404_NOT_FOUND,
     IntegrityError: status.HTTP_400_BAD_REQUEST,
-    # A website could not be reached, or a scan finished but its report could not be emailed (so the user is not
-    # told the scan itself failed)
+    # A website could not be reached or kept rate limiting the scan, or a scan finished but its report could not be
+    # emailed (so the user is not told the scan itself failed)
     WebConnectionError: status.HTTP_502_BAD_GATEWAY,
+    TrafficError: status.HTTP_502_BAD_GATEWAY,
     ReportNotEmailedError: status.HTTP_502_BAD_GATEWAY,
     # A website or critical page that is already watched, or a scan that is already queued or was cancelled
     WebsiteAlreadyMonitoredError: status.HTTP_409_CONFLICT,
@@ -121,6 +123,26 @@ async def undeliverable_email_handler(request: Request, exc: UndeliverableEmailE
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         content={"detail": f"We can't send an email to {exc.address}. Check the address is correct."},
+    )
+
+
+@app.exception_handler(Exception)
+async def unexpected_error_handler(request: Request, exc: Exception):
+    """
+    Handles any other error by returning a 500 status whose message says what went wrong, so the dashboard can show
+    it rather than a vague failure. The error is still logged, with its traceback, after this is sent.
+
+    Args:
+        request: The incoming request.
+        exc: The unexpected exception.
+
+    Returns:
+        A JSONResponse with a 500 status.
+    """
+    detail: str = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": f"Something went wrong ({detail}). The details are in the log file, {config.log_path}"},
     )
 
 
