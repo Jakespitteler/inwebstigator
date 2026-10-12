@@ -313,3 +313,25 @@ def test_deleting_a_website_needs_confirm_typed(open_dashboard: Callable[..., Pa
 
     expect(page.locator(".website-card")).to_have_count(0)
     assert app_server.saved_websites() == []
+
+
+def test_pressing_enter_deletes_a_website_once_confirm_is_typed(
+    open_dashboard: Callable[..., Page], app_server: RunningApp
+) -> None:
+    """Tests pressing Enter in the confirmation box deletes the website once CONFIRM is typed, while Enter with the
+    wrong text keeps the dialog open and says the text does not match, rather than cancelling."""
+    app_server.add_website(WEBSITE_URL)
+    page = open_dashboard()
+    confirmation_box = page.locator("#confirm-dialog-input")
+
+    _open_card(page).locator(".delete-website-button").click()
+    confirmation_box.press("Enter")
+    expect(page.locator("#confirm-dialog")).to_be_visible()
+    expect(page.locator("#confirm-dialog-error")).to_be_visible()
+
+    confirmation_box.fill("CONFIRM")
+    with page.expect_navigation():
+        confirmation_box.press("Enter")
+
+    expect(page.locator(".website-card")).to_have_count(0)
+    assert app_server.saved_websites() == []
