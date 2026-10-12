@@ -1,11 +1,16 @@
-// Tag management and combined tag/search filtering. Card nodes stay in place so forms and scans keep working.
+// Tag management and filtering in both tabs. Card nodes stay in place so forms and scans keep working.
 // Uses failureReason and confirmDeletion from the scripts loaded before this one.
 (() => {
     const container = document.getElementById("monitored-website-list");
     if (!container) return;
 
     const cards = Array.from(container.querySelectorAll(".website-card"));
+    const updateCards = Array.from(document.querySelectorAll("#scan-history .website-change-record"));
+    const cardsByUrl = new Map(cards.map(card => [card.dataset.websiteUrl, card]));
     const filters = document.getElementById("website-tag-filters");
+    const updateFilters = document.getElementById("updates-tag-filters");
+    const updateCount = document.getElementById("updates-result-count");
+    const noMatchingUpdates = document.getElementById("no-matching-updates");
     const search = document.getElementById("website-search");
     const count = document.getElementById("website-result-count");
     const noMatches = document.getElementById("no-matching-websites");
@@ -24,7 +29,9 @@
     const tags = new Map(JSON.parse(document.getElementById("website-tag-data").textContent)
         .map(tag => [tag.id, tag]));
     const storageKey = "inwebstigator-website-filters";
+    const updatesStorageKey = "inwebstigator-updates-tag";
     let selectedTag = "";
+    let selectedUpdateTag = "";
     let activeCard = null;
     let editingTag = null;
     let busy = false;
@@ -35,6 +42,10 @@
         if (tags.has(saved.tag)) selectedTag = saved.tag;
         if (typeof saved.search === "string") search.value = saved.search;
     } catch { /* Search and tags still work when storage is unavailable. */ }
+    try {
+        const saved = sessionStorage.getItem(updatesStorageKey);
+        if (tags.has(saved)) selectedUpdateTag = saved;
+    } catch { /* Remembering the Updates filter is optional. */ }
 
     const sortedTags = () => [...tags.values()].sort((a, b) => a.name.localeCompare(b.name));
     const cardTags = card => JSON.parse(card.dataset.tagIds);
@@ -87,8 +98,26 @@
         catch { /* Remembering filters is optional. */ }
     }
 
-    function renderFilters() {
-        filters.replaceChildren();
+    function filterUpdates() {
+        if (selectedUpdateTag && !tags.has(selectedUpdateTag)) selectedUpdateTag = "";
+        let visible = 0;
+        updateCards.forEach(card => {
+            card.hidden = Boolean(selectedUpdateTag && !cardTags(card).includes(selectedUpdateTag));
+            if (!card.hidden) visible++;
+        });
+        updateFilters.querySelectorAll(".tag-filter").forEach(button => {
+            const selected = button.dataset.tagId === selectedUpdateTag;
+            button.classList.toggle("active", selected);
+            button.setAttribute("aria-pressed", String(selected));
+        });
+        updateCount.textContent = `${visible} of ${updateCards.length} ${updateCards.length === 1 ? "website" : "websites"}`;
+        noMatchingUpdates.hidden = visible > 0 || updateCards.length === 0;
+        try { sessionStorage.setItem(updatesStorageKey, selectedUpdateTag); }
+        catch { /* Remembering filters is optional. */ }
+    }
+
+    function renderFilters(target) {
+        target.replaceChildren();
         [{ id: "", name: "All" }, ...sortedTags()].forEach(tag => {
             const button = document.createElement("button");
             button.type = "button";
@@ -96,9 +125,9 @@
             button.dataset.tagId = tag.id;
             button.textContent = tag.name;
             button.title = tag.name;
-            filters.append(button);
+            target.append(button);
         });
-        filters.append(manageButton);
+        if (target === filters) target.append(manageButton);
     }
 
     function renderCardTags(card) {
@@ -189,11 +218,17 @@
     }
 
     function render() {
-        renderFilters();
+        renderFilters(filters);
+        renderFilters(updateFilters);
         renderNewWebsiteTags();
         cards.forEach(renderCardTags);
+        updateCards.forEach(card => {
+            const websiteCard = cardsByUrl.get(card.dataset.websiteUrl);
+            if (websiteCard) card.dataset.tagIds = websiteCard.dataset.tagIds;
+        });
         if (dialog.open) renderDialog();
         filterWebsites();
+        filterUpdates();
     }
 
     function resetEditor() {
@@ -246,6 +281,12 @@
         filterWebsites();
     });
     search.addEventListener("input", filterWebsites);
+    updateFilters.addEventListener("click", event => {
+        const button = event.target.closest(".tag-filter");
+        if (!button) return;
+        selectedUpdateTag = button.dataset.tagId;
+        filterUpdates();
+    });
     manageButton.addEventListener("click", () => openDialog(null, manageButton));
     newWebsiteManageButton.addEventListener("click", () => openDialog(null, newWebsiteManageButton));
     closeButton.addEventListener("click", () => dialog.close());
@@ -360,4 +401,5 @@
     });
 
     filterWebsites();
+    filterUpdates();
 })();

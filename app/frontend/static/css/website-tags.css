@@ -1,5 +1,5 @@
 /* Compact tags and search, using the dashboard's existing theme tokens. */
-.websites-title-and-tags, .tag-filter-controls, .tag-filters, .website-tag-row,
+.websites-title-and-tags, .updates-title-and-tags, .tag-filter-controls, .tag-filters, .website-tag-row,
 .website-tag-chips, .website-search-row, .tag-dialog-heading, .tag-dialog-row,
 .tag-dialog-actions, .tag-name-row, .website-summary-info {
     display: flex;
@@ -7,8 +7,8 @@
     gap: 8px;
 }
 
-.websites-title-and-tags { flex: 1 1 420px; flex-wrap: wrap; gap: 12px; min-width: 0; }
-.websites-title-and-tags .section-title { flex-shrink: 0; white-space: nowrap; }
+.websites-title-and-tags, .updates-title-and-tags { flex: 1 1 420px; flex-wrap: wrap; gap: 12px; min-width: 0; }
+.websites-title-and-tags .section-title, .updates-title-and-tags .section-title { flex-shrink: 0; white-space: nowrap; }
 .tag-filter-controls { flex: 1 1 230px; flex-wrap: wrap; min-width: 0; }
 .tag-filters { flex-wrap: wrap; gap: 6px; }
 .tag-filter, .website-tag {
@@ -96,11 +96,13 @@
     outline: none;
 }
 .website-search-field:focus-within { border-color: var(--focus-border); box-shadow: 0 0 0 3px var(--focus-ring); }
-#website-result-count, #tag-message, .no-matching-websites { font-size: 13px; color: var(--text-secondary); }
+#website-result-count, #updates-result-count, #tag-message, .no-matching-websites { font-size: 13px; color: var(--text-secondary); }
+#updates-result-count { margin: 0 0 12px; }
 #tag-message:empty { display: none; }
 #tag-message { margin: 0 0 14px; color: var(--success-text); }
 #tag-message.is-error, #tag-form-message.is-error { color: var(--danger-text); }
 #monitored-website-list .website-card[hidden] { display: none; }
+#scan-history .website-change-record[hidden] { display: none; }
 .no-matching-websites { padding: 14px 0; }
 .tag-dialog { width: min(420px, calc(100vw - 32px)); }
 .tag-dialog-heading { justify-content: space-between; }

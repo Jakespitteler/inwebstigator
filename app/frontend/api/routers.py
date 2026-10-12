@@ -101,6 +101,7 @@ def get_dashboard(session: SessionDep, request: Request):
             "tags": tags,
             "tag_data": [tag.model_dump(mode="json") for tag in tags],
             "website_tag_ids": website_tag_ids,
+            "website_tag_ids_by_url": {str(website.url): website_tag_ids.get(website.id, []) for website in websites},
             "website_names": website_names,
             "saved_recipient_emails": RecipientService(session).get_email_addresses(),
             "default_delay": config.web_crawler_default_delay,

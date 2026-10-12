@@ -7,6 +7,8 @@
     data-collapsible
     data-card-key="website-update:{{ website_record.website_url }}"
     data-card-name="{{ website_names[website_record.website_url | string] }}"
+    data-website-url="{{ website_record.website_url }}"
+    data-tag-ids="{{ website_tag_ids_by_url.get(website_record.website_url | string, []) | tojson | forceescape }}"
 >
 
     <div class="change-record-header card-header">
