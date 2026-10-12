@@ -1,0 +1,9 @@
+<div class="tag-filter-controls">
+    <div id="website-tag-filters" class="tag-filters" role="group" aria-label="Filter websites by tag">
+        <button type="button" class="tag-filter active" data-tag-id="" aria-pressed="true">All</button>
+        {% for tag in tags %}
+        <button type="button" class="tag-filter" data-tag-id="{{ tag.id }}" aria-pressed="false" title="{{ tag.name }}">{{ tag.name }}</button>
+        {% endfor %}
+        <button type="button" id="manage-tags-button" class="tag-add-button" aria-label="Manage tags" title="Create or manage tags">+</button>
+    </div>
+</div>

@@ -1,0 +1,19 @@
+<dialog id="tag-dialog" class="confirm-dialog tag-dialog" aria-labelledby="tag-dialog-title">
+    <div class="tag-dialog-heading">
+        <h2 id="tag-dialog-title">Tags</h2>
+        <button type="button" id="close-tag-dialog" class="tag-add-button" aria-label="Close tags">&times;</button>
+    </div>
+    <p id="tag-dialog-description">Create, rename or delete tags.</p>
+    <div id="tag-dialog-list" class="tag-dialog-list"></div>
+    <p id="tag-dialog-empty" class="tag-dialog-empty" hidden>No tags yet. Create your first tag below.</p>
+    <form id="tag-form">
+        <label for="tag-name" id="tag-name-label">New tag</label>
+        <div class="tag-name-row">
+            <input id="tag-name" name="name" maxlength="60" required autocomplete="off"
+                placeholder="e.g. News or Shopping" aria-describedby="tag-form-message">
+            <button type="submit" id="save-tag-button" class="tag-save-button">Add</button>
+            <button type="button" id="cancel-tag-edit" class="tag-text-button" hidden>Cancel</button>
+        </div>
+        <p id="tag-form-message" role="status" aria-live="polite"></p>
+    </form>
+</dialog>

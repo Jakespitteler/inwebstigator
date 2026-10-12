@@ -40,6 +40,7 @@ COLUMNS_SAVED_IN_LOCAL_TIME: dict[str, tuple[str, ...]] = {
 UTC_TIMES_VERSION: int = 1
 # The database version from which a website switched off for rate limiting the crawler has that reason saved
 RATE_LIMITED_REASON_VERSION: int = 2
+WEBSITE_TAGS_VERSION: int = 3
 
 
 def _missing_columns(connection: Connection, table: Table) -> list[Column[Any]]:
@@ -249,6 +250,31 @@ def record_why_rate_limited_websites_were_switched_off(engine: Engine, max_faile
         connection.exec_driver_sql(f"PRAGMA user_version = {RATE_LIMITED_REASON_VERSION}")
 
 
+def convert_categories_to_tags(engine: Engine) -> None:
+    """Carry existing category names and website assignments into tags once.
+
+    The old tables are kept for recovery. The version prevents removed tags being brought back on a later startup.
+    """
+    with engine.begin() as connection:
+        if _database_version(connection) >= WEBSITE_TAGS_VERSION:
+            return
+        inspector = inspect(connection)
+        if inspector.has_table("website_categories"):
+            connection.exec_driver_sql(
+                "INSERT OR IGNORE INTO website_tags (id, name, name_key, created_at, updated_at) "
+                "SELECT id, name, name_key, created_at, updated_at FROM website_categories"
+            )
+            if inspector.has_table("website_category_membership"):
+                connection.exec_driver_sql(
+                    "INSERT OR IGNORE INTO website_tag_association (website_id, tag_id) "
+                    "SELECT membership.website_id, tag.id FROM website_category_membership AS membership "
+                    "JOIN website_categories AS category ON category.id = membership.category_id "
+                    "JOIN website_tags AS tag ON tag.name_key = category.name_key "
+                    "JOIN websites AS website ON website.id = membership.website_id"
+                )
+        connection.exec_driver_sql(f"PRAGMA user_version = {WEBSITE_TAGS_VERSION}")
+
+
 def _create_database_folder(engine: Engine) -> None:
     """Creates the folder the database file is kept in, as SQLite only creates the file itself.
 
@@ -276,3 +302,4 @@ def prepare_database(engine: Engine) -> None:
     add_missing_indexes(engine, Base.metadata)
     convert_local_times_to_utc(engine, COLUMNS_SAVED_IN_LOCAL_TIME)
     record_why_rate_limited_websites_were_switched_off(engine, config.web_crawler_max_failed_attempts_at_min_speed)
+    convert_categories_to_tags(engine)

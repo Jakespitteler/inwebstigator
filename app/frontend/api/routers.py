@@ -27,6 +27,7 @@ from app.db.services.critical_page_service import CriticalPageService
 from app.db.services.crud_protocol import CRUDOperation
 from app.db.services.recipient_service import RecipientService
 from app.db.services.scan_run_service import ScanRunService
+from app.db.services.tag_service import TagService
 from app.db.services.website_service import WebsiteService
 from app.db.session import db_context
 from app.frontend.api.dashboard_records import (
@@ -65,6 +66,11 @@ templates.env.filters["scan_time"] = scan_time  # pyright: ignore[reportUnknownM
 @ROOT_ROUTER.get("/")
 def get_dashboard(session: SessionDep, request: Request):
     websites: Sequence[WebsiteRead] = WebsiteService(session).get_all(limit=None)
+    tag_service = TagService(session)
+    tags = tag_service.get_all()
+    website_tag_ids = {
+        website_id: [str(tag_id) for tag_id in tag_ids] for website_id, tag_ids in tag_service.memberships().items()
+    }
     # Each scan saves its website's card title. One not saved yet (e.g. before the website's first scan since the
     # app was updated) is read from the saved home page until then.
     website_names: dict[str, str] = {
@@ -88,6 +94,9 @@ def get_dashboard(session: SessionDep, request: Request):
             "scans_kept_per_website": config.scans_kept_per_website,
             "next_check": next_scheduled_check(),
             "websites": websites,
+            "tags": tags,
+            "tag_data": [tag.model_dump(mode="json") for tag in tags],
+            "website_tag_ids": website_tag_ids,
             "website_names": website_names,
             "saved_recipient_emails": RecipientService(session).get_email_addresses(),
             "default_delay": config.web_crawler_default_delay,

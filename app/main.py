@@ -18,6 +18,7 @@ from app.core.errors import (
     ReportNotEmailedError,
     ScanAlreadyQueuedError,
     ScanCancelledError,
+    TagAlreadyExistsError,
     UndeliverableEmailError,
     WebConnectionError,
     WebsiteAlreadyMonitoredError,
@@ -28,6 +29,7 @@ from app.db.migrations import prepare_database
 from app.db.session import engine
 from app.frontend.api import routers
 from app.frontend.api.request_guard import only_accept_requests_from_the_dashboard
+from app.frontend.api.tags import TAG_ROUTER
 
 APP_NAME: str = config.app_name
 
@@ -66,6 +68,7 @@ app.mount(
 
 # The status each of the app's errors is answered with. The error's own message is what the dashboard shows.
 ERROR_STATUS_CODES: dict[type[Exception], int] = {
+    TagAlreadyExistsError: status.HTTP_409_CONFLICT,
     NotFoundError: status.HTTP_404_NOT_FOUND,
     IntegrityError: status.HTTP_400_BAD_REQUEST,
     # A website could not be reached, or a scan finished but its report could not be emailed (so the user is not
@@ -130,3 +133,4 @@ app.include_router(routers.SCANNER_ROUTER)
 app.include_router(routers.RECIPIENT_ROUTER)
 app.include_router(routers.WEBSITE_ROUTER)
 app.include_router(routers.CRITICAL_PAGE_ROUTER)
+app.include_router(TAG_ROUTER)
