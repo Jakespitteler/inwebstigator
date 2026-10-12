@@ -134,8 +134,11 @@ open card also shows how many pages Inwebstigator found on the whole website
   It stops the website being scanned and skips the rest. Websites already
   scanned keep their results, and their changes are still emailed.
 
-Scans run one at a time. If you start several, they wait their turn
-("Scan queued or running…").
+Scans run one at a time. If you start several, they wait their turn. Each
+card shows how its scan is going without you refreshing, including scheduled
+scans and **Run All Scans**: **Scanning now…**, **Scan queued…** while it
+waits, then **Scan finished** once it's done. Click **Refresh** to see what a
+finished scan found.
 
 While a scan runs, a note reminds you that closing the window won't stop it.
 The **×** hides it until the next scan, and **Don't show again** hides it for

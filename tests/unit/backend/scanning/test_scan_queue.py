@@ -164,3 +164,50 @@ async def test_a_website_can_be_scanned_again_once_its_scan_has_finished() -> No
     assert await scan_queue.run("https://example.com/", scan) == 1
     assert await scan_queue.run("https://example.com/", scan) == 2
     assert scans_run == [1, 2]
+
+
+@pytest.mark.anyio
+async def test_the_queue_says_which_website_is_being_scanned_now() -> None:
+    """Tests the queue names the website being scanned now, not one still waiting its turn, and names none once every
+    scan has finished, so the dashboard can show which website is being scanned."""
+    scan_queue = ScanQueue()
+    urls = ["https://first.com/", "https://second.com/"]
+    started = {url: asyncio.Event() for url in urls}
+    finish_scan = {url: asyncio.Event() for url in urls}
+
+    async def scan(url: str) -> None:
+        started[url].set()
+        await finish_scan[url].wait()
+
+    scans = [asyncio.create_task(scan_queue.run(url, partial(scan, url))) for url in urls]
+    await started["https://first.com/"].wait()
+    assert scan_queue.scanning_url == "https://first.com/"
+    assert scan_queue.queued_urls == urls
+
+    finish_scan["https://first.com/"].set()
+    await started["https://second.com/"].wait()
+    assert scan_queue.scanning_url == "https://second.com/"
+
+    finish_scan["https://second.com/"].set()
+    await asyncio.gather(*scans)
+    assert scan_queue.scanning_url is None
+
+
+@pytest.mark.anyio
+async def test_a_cancelled_scan_is_no_longer_the_one_being_scanned() -> None:
+    """Tests a scan cancelled part way through stops being named as the website being scanned."""
+    scan_queue = ScanQueue()
+    started = asyncio.Event()
+
+    async def scan() -> None:
+        started.set()
+        await asyncio.Event().wait()  # Runs until it is cancelled
+
+    running = asyncio.create_task(scan_queue.run("https://cancelled.com/", scan))
+    await started.wait()
+    assert scan_queue.scanning_url == "https://cancelled.com/"
+
+    scan_queue.cancel("https://cancelled.com/")
+    with pytest.raises(ScanCancelledError):
+        await running
+    assert scan_queue.scanning_url is None
