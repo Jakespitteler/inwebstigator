@@ -283,6 +283,7 @@ you to send it to them.
 | The dashboard looks out of date | Click **Refresh** at the top right. |
 | A website's card says **Blocked the crawler** | The website kept blocking Inwebstigator, so it was paused. Contact the team. |
 | No emails for over a week | Check Spam/Junk, make sure Inwebstigator is running (see the system tray), and that the website has your email on its card. |
+| Scans say **Email not sent yet**, or **Run scan** says its report "could not be emailed" | Inwebstigator can't send email at the moment. Nothing is lost: the emails are sent once it's fixed. If it lasts more than a day, contact the team and send them the log file. |
 | An email address won't add | Check it for typos. Inwebstigator only adds addresses that can receive its email. |
 
 For anything else, send the team a screenshot of what you're seeing and the

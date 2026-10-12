@@ -15,6 +15,8 @@ with scheduled scans while it runs. Everything is stored in a local SQLite datab
 | This README | Developers: setting up, running, testing and building. |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the pieces fit together. |
 | [docs/HANDOVER.md](docs/HANDOVER.md) | A team taking the project over: status, decisions, known issues and next steps. |
+| [docs/EMAIL.md](docs/EMAIL.md) | Whoever looks after the app: fixing the emails if they stop, and handing over the email account. |
+| [docs/PROJECT_REPORT.md](docs/PROJECT_REPORT.md) | The project report: what was built, how it was tested, and the trade-offs and ethical choices made. |
 
 **Contents:** [Setting up](#setting-up) · [Running](#running) ·
 [Configuration](#configuration) · [Email](#email) · [Logs](#logs) ·
@@ -163,6 +165,9 @@ can't be opened, the email is just sent, without checking for a bounce.
 UWA accounts won't work: Microsoft has turned off the basic SMTP login the app
 uses. Use a personal or project Gmail account.
 
+If the emails stop, or the account needs handing over to someone else, see
+[docs/EMAIL.md](docs/EMAIL.md).
+
 ---
 
 ## Logs
@@ -187,7 +192,6 @@ uv run pytest tests/e2e        # only the browser tests
 | --- | --- |
 | `tests/unit/` | Fast tests of each module, using an in-memory database, fake websites and a fake email sender (`tests/fakes.py`). |
 | `tests/e2e/` | Browser tests: the real dashboard in Chrome or Edge, driven by [Playwright](https://playwright.dev/python/), against the app running in the background with a throwaway database, fake websites and recorded (unsent) emails. |
-| `tests/integration/` | Manual scripts for crawling real websites. Not run by `pytest`. |
 
 `conftest.py` at the project root gives the tests a temporary data folder and
 turns automatic scans off, so they never touch the real database or log file.

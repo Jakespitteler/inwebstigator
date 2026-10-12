@@ -34,8 +34,10 @@ Inwebstigator works, and has been given to the client.
   build, and a [checklist](#release-checklist) for checking the installed app
   by hand before each release.
 - **It's documented in:** [INSTALL.md](../INSTALL.md) (users),
-  the [README](../README.md) (developers) and
-  [ARCHITECTURE.md](ARCHITECTURE.md) (how it works).
+  the [README](../README.md) (developers),
+  [ARCHITECTURE.md](ARCHITECTURE.md) (how it works),
+  [EMAIL.md](EMAIL.md) (the email account) and
+  [PROJECT_REPORT.md](PROJECT_REPORT.md) (what was built and why).
 
 The client contact is **Jay Jay** (written "JJ" in some old issues and notes).
 Most of the dashboard's behaviour (collapsible cards, safer deletion,
@@ -103,7 +105,7 @@ the unit coordinator and the client who owns the code.
 | What | Where | Notes |
 | --- | --- | --- |
 | Code | Your new repository | The [original](https://github.com/Jakespitteler/inwebstigator) is public, so you can always look back at its issues and pull requests. It was once called `Digital-Horizon-Scan-Project`, and that address still redirects. |
-| Sending email account | A Gmail account with an App Password | Make one for your team (see the README's [Email](../README.md#email)). The original team's account isn't handed over. UWA accounts don't work. |
+| Sending email account | A Gmail account with an App Password | Either take over the original account or make your own: [EMAIL.md](EMAIL.md#handing-the-account-over) covers both, and what to do if the emails stop. UWA accounts don't work. |
 | `.env` | Your machine, and inside each installer | Never committed. `.env.example` lists the email settings; see the README's [Configuration](../README.md#configuration) for the rest. |
 | The client's data | `%LOCALAPPDATA%\inwebstigator` on the client's computer | Their websites, scan history and logs. Nothing is stored anywhere else. Installing your version over theirs keeps it; uninstalling deletes it. |
 
