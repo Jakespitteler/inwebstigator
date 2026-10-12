@@ -49,6 +49,7 @@ class WebsiteCreate(BaseModel):
     url: NewHttpUrl
     critical_pages: list[str] = Field(default_factory=list[str], examples=[[""]])
     recipient_emails: list[EmailStr] = Field(default_factory=list[EmailStr], examples=[[""]])
+    tag_ids: list[uuid.UUID] = Field(default_factory=list[uuid.UUID])
     recommended_delay: float = DEFAULT_DELAY
     # Fewer than one request at a time would leave every scan waiting forever
     recommended_concurrent: int = Field(default=DEFAULT_CONCURRENT, ge=MIN_CONCURRENT)

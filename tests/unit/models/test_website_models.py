@@ -1,5 +1,6 @@
 """Tests of the website models: what is accepted when a website is added or its settings are changed."""
 
+import uuid
 from typing import Any
 
 import pytest
@@ -7,6 +8,21 @@ from pydantic import HttpUrl, ValidationError
 
 from app.core.config import config
 from app.models.website_models import WebsiteCreate, WebsiteSettingsUpdate, WebsiteUpdate
+
+
+def test_website_tags_are_optional_and_uuid_strings_are_accepted() -> None:
+    """Tests websites can omit tags, leave them empty, or select existing tag identifiers."""
+    tag_id = uuid.uuid4()
+    assert WebsiteCreate.model_validate({"url": "example.com"}).tag_ids == []
+    assert WebsiteCreate.model_validate({"url": "example.com", "tag_ids": []}).tag_ids == []
+    assert WebsiteCreate.model_validate({"url": "example.com", "tag_ids": [str(tag_id)]}).tag_ids == [tag_id]
+
+
+@pytest.mark.parametrize("tag_ids", [["not-a-tag-id"], [None], None, "News"])
+def test_invalid_tag_identifiers_are_refused(tag_ids: object) -> None:
+    """Tests tag names and malformed selections are refused before adding a website."""
+    with pytest.raises(ValidationError):
+        WebsiteCreate.model_validate({"url": "example.com", "tag_ids": tag_ids})
 
 
 @pytest.mark.parametrize(

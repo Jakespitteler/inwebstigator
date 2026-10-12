@@ -11,6 +11,8 @@
     const noMatches = document.getElementById("no-matching-websites");
     const message = document.getElementById("tag-message");
     const manageButton = document.getElementById("manage-tags-button");
+    const newWebsiteTags = document.getElementById("new-website-tag-options");
+    const newWebsiteManageButton = document.getElementById("new-website-manage-tags");
     const dialog = document.getElementById("tag-dialog");
     const list = document.getElementById("tag-dialog-list");
     const form = document.getElementById("tag-form");
@@ -46,6 +48,7 @@
     function setBusy(value) {
         busy = value;
         manageButton.disabled = value;
+        newWebsiteManageButton.disabled = value;
         dialog.querySelectorAll("button, input").forEach(control => { control.disabled = value; });
         container.querySelectorAll(".website-tag-row button").forEach(control => { control.disabled = value; });
     }
@@ -120,6 +123,29 @@
         });
     }
 
+    function renderNewWebsiteTags() {
+        const selected = new Set(Array.from(newWebsiteTags.querySelectorAll("input:checked"))
+            .map(input => input.value));
+        newWebsiteTags.replaceChildren();
+        sortedTags().forEach(tag => {
+            const label = document.createElement("label");
+            label.className = "new-website-tag-choice website-tag";
+            label.title = tag.name;
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.name = "tag_ids";
+            checkbox.value = tag.id;
+            checkbox.checked = selected.has(tag.id);
+            const name = document.createElement("span");
+            name.className = "website-tag-name";
+            name.textContent = tag.name;
+            label.append(checkbox, name);
+            newWebsiteTags.append(label);
+        });
+        document.getElementById("new-website-tags-empty").hidden = tags.size > 0;
+        if (currentGuideStep === guideSteps.length) renderGuideReview();
+    }
+
     function actionButton(label, action, tag) {
         const button = document.createElement("button");
         button.type = "button";
@@ -164,6 +190,7 @@
 
     function render() {
         renderFilters();
+        renderNewWebsiteTags();
         cards.forEach(renderCardTags);
         if (dialog.open) renderDialog();
         filterWebsites();
@@ -220,6 +247,7 @@
     });
     search.addEventListener("input", filterWebsites);
     manageButton.addEventListener("click", () => openDialog(null, manageButton));
+    newWebsiteManageButton.addEventListener("click", () => openDialog(null, newWebsiteManageButton));
     closeButton.addEventListener("click", () => dialog.close());
     dialog.addEventListener("cancel", event => { if (busy) event.preventDefault(); });
     dialog.addEventListener("close", () => {

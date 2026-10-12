@@ -49,6 +49,14 @@
 .website-summary-info p { white-space: nowrap; }
 .website-tag-row { flex-wrap: wrap; gap: 6px; }
 .website-tags-label { font-size: 12.5px; color: var(--text-secondary); }
+.new-website-tags { min-width: 0; margin-left: 0; margin-right: 0; padding: 0; border: 0; }
+.new-website-tags legend { margin-bottom: 6px; padding: 0; font-size: 12.5px; font-weight: 500; color: var(--text-secondary); }
+.new-website-tags legend span { font-weight: 400; color: var(--text-tertiary); }
+.new-website-tag-picker, .new-website-tag-options { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.new-website-tags .new-website-tag-choice { display: inline-flex; align-items: center; gap: 6px; margin: 0; padding: 5px 9px; cursor: pointer; }
+.new-website-tag-choice input { margin: 0; accent-color: var(--accent); }
+.new-website-tag-choice:has(input:checked) { background: var(--accent-light); border-color: var(--accent); color: var(--text-primary); }
+#new-website-tags-empty { margin-top: 6px; }
 .website-tag-chips { display: contents; }
 .website-tag { display: inline-flex; align-items: center; padding: 1px 4px 1px 9px; gap: 3px; }
 .website-tag-name { max-width: 145px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -144,7 +152,7 @@
     outline-offset: 2px;
 }
 .tag-dialog button:disabled, .tag-dialog input:disabled, .website-tag-row button:disabled,
-#manage-tags-button:disabled { opacity: .5; cursor: wait; }
+#manage-tags-button:disabled, #new-website-manage-tags:disabled { opacity: .5; cursor: wait; }
 
 @media (max-width: 560px) {
     .tag-filter { max-width: 140px; }

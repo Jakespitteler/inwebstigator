@@ -2,10 +2,14 @@
 
 import time
 from collections.abc import Callable
+from pathlib import Path
 
+import pytest
 from playwright.sync_api import Locator, Page, expect
 
 from app.backend.scanning.scan_queue import scan_queue
+from app.db.services.tag_service import TagService
+from app.models.tag_models import TagName
 from tests.e2e.conftest import RunningApp
 
 # As the app saves it, with the "/" a website's address always gets
@@ -39,6 +43,20 @@ def _review(page: Page) -> dict[str, str]:
 def _serve_example_website(app_server: RunningApp) -> None:
     app_server.websites.set_page(WEBSITE_URL, WEBSITE_HTML)
     app_server.websites.set_page(FEES_URL, FEES_HTML)
+
+
+def _save_tags(app_server: RunningApp, *names: str) -> None:
+    with app_server.session() as session:
+        service = TagService(session)
+        for name in names:
+            service.save(TagName(name=name))
+        session.commit()
+
+
+def _saved_tags(app_server: RunningApp) -> list[str]:
+    [website] = app_server.saved_websites()
+    with app_server.session() as session:
+        return [tag.name for tag in TagService(session).get_for_website(website.id)]
 
 
 # ======================================
@@ -146,6 +164,7 @@ def test_review_lists_everything_entered_including_extra_fields(open_dashboard: 
     assert _review(page) == {
         "Website": WEBSITE_URL,
         "Critical pages": f"{FEES_URL}, https://example.com/dates",
+        "Tags": "None",
         "Notification emails": "first@example.com, second@example.com",
         "Days between scans": "3",
         "Request delay": "0.5 seconds",
@@ -154,14 +173,61 @@ def test_review_lists_everything_entered_including_extra_fields(open_dashboard: 
 
 
 def test_review_says_none_for_optional_fields_left_empty(open_dashboard: Callable[..., Page]) -> None:
-    """Tests the review step shows "None" for critical pages and emails that weren't given."""
+    """Tests the review step shows "None" for critical pages, tags and emails that weren't given."""
     page = open_dashboard()
     page.locator("#website-url").fill(WEBSITE_URL)
     page.locator('.guide-dot[data-step="4"]').click()
 
     review = _review(page)
     assert review["Critical pages"] == "None"
+    assert review["Tags"] == "None"
     assert review["Notification emails"] == "None"
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_first_tag_can_be_created_and_selected_in_the_wizard(
+    open_dashboard: Callable[..., Page], theme: str, tmp_path: Path
+) -> None:
+    """The wizard can create its first tag without losing input, and remains compact on a phone."""
+    page = open_dashboard()
+    page.set_viewport_size({"width": 390, "height": 900})
+    page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+    page.locator("#website-url").fill(WEBSITE_URL)
+    expect(page.locator("#new-website-tags-empty")).to_be_visible()
+
+    page.get_by_role("button", name="Create or manage tags", exact=True).click()
+    field = page.get_by_label("New tag", exact=True)
+    expect(field).to_be_enabled()
+    field.fill("Research and official announcements")
+    page.locator("#save-tag-button").click()
+    expect(page.locator("#tag-form-message")).to_contain_text("created.")
+    page.get_by_role("button", name="Close tags", exact=True).click()
+
+    _expect_on_step(page, 1)
+    expect(page.locator("#website-url")).to_have_value(WEBSITE_URL)
+    expect(page.locator("#new-website-tags-empty")).to_be_hidden()
+    choice = page.locator("#new-website-tag-options").get_by_role(
+        "checkbox", name="Research and official announcements", exact=True
+    )
+    expect(choice).not_to_be_checked()
+    assert not choice.evaluate("input => input.required")
+    choice.check()
+    page.get_by_role("button", name="Create or manage tags", exact=True).click()
+    expect(field).to_be_enabled()
+    field.fill("News")
+    page.locator("#save-tag-button").click()
+    expect(page.locator("#tag-form-message")).to_contain_text("News created.")
+    page.get_by_role("button", name="Close tags", exact=True).click()
+    expect(choice).to_be_checked()
+    expect(
+        page.locator("#new-website-tag-options").get_by_role("checkbox", name="News", exact=True)
+    ).not_to_be_checked()
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.evaluate("window.scrollTo({top: 0, behavior: 'instant'})")
+    page.screenshot(path=str(tmp_path / f"add-website-tags-{theme}-390.png"), full_page=True)
+
+    page.locator('.guide-dot[data-step="4"]').click()
+    assert _review(page)["Tags"] == "Research and official announcements"
 
 
 # ======================================
@@ -198,9 +264,37 @@ def test_adding_a_website_saves_it_and_shows_its_card(
     assert website.days_between_scans == 2
     assert {page.url for page in website.critical_pages} == {WEBSITE_URL, FEES_URL}
     assert [recipient.email for recipient in website.recipients] == ["team@example.com"]
+    assert _saved_tags(app_server) == []
     assert [(email.to, email.subject) for email in app_server.sent_emails.emails] == [
         ("team@example.com", "Website monitoring started")
     ]
+
+
+def test_existing_tags_can_be_selected_and_saved_with_a_new_website(
+    open_dashboard: Callable[..., Page], app_server: RunningApp
+) -> None:
+    """Multiple optional tags are reviewed, saved with the first scan, and restored after reloading."""
+    _serve_example_website(app_server)
+    _save_tags(app_server, "News", "Research")
+    page = open_dashboard()
+    options = page.locator("#new-website-tag-options")
+    expect(options.get_by_role("checkbox")).to_have_count(2)
+    page.locator("#website-url").fill(WEBSITE_URL)
+    for name in ("News", "Research"):
+        choice = options.get_by_role("checkbox", name=name, exact=True)
+        assert not choice.evaluate("input => input.required")
+        choice.check()
+    page.locator('.guide-dot[data-step="4"]').click()
+    assert _review(page)["Tags"] == "News, Research"
+
+    page.locator("#guide-submit").click()
+    card = page.locator(".website-card")
+    expect(card).to_have_count(1)
+    expect(card.locator(".website-tag-name")).to_have_text(["News", "Research"])
+    assert _saved_tags(app_server) == ["News", "Research"]
+    assert app_server.sent_emails.emails == []
+    page.reload()
+    expect(card.locator(".website-tag-name")).to_have_text(["News", "Research"])
 
 
 def test_a_website_typed_without_https_is_added(open_dashboard: Callable[..., Page], app_server: RunningApp) -> None:
@@ -221,9 +315,11 @@ def test_a_website_that_cannot_be_loaded_is_not_added(
 ) -> None:
     """Tests a website that can't be loaded shows why on its progress line, "Edit and Try Again" brings the wizard
     back with everything still filled in, and nothing is saved."""
+    _save_tags(app_server, "News", "Research")
     page = open_dashboard()  # No fake page for the website, so it returns a 404
 
     page.locator("#website-url").fill(WEBSITE_URL)
+    page.locator("#new-website-tag-options").get_by_role("checkbox", name="Research", exact=True).check()
     page.locator('.guide-dot[data-step="4"]').click()
     page.locator("#guide-submit").click()
 
@@ -239,7 +335,18 @@ def test_a_website_that_cannot_be_loaded_is_not_added(
     _expect_on_step(page, 4)
     expect(page.locator("#website-url")).to_have_value(WEBSITE_URL)
     expect(page.locator("#guide-submit")).to_be_enabled()
+    assert _review(page)["Tags"] == "Research"
     assert app_server.saved_websites() == []
+
+    page.locator('.guide-dot[data-step="1"]').click()
+    options = page.locator("#new-website-tag-options")
+    expect(options.get_by_role("checkbox", name="Research", exact=True)).to_be_checked()
+    expect(options.get_by_role("checkbox", name="News", exact=True)).not_to_be_checked()
+    _serve_example_website(app_server)
+    page.locator('.guide-dot[data-step="4"]').click()
+    page.locator("#guide-submit").click()
+    expect(page.locator(".website-card")).to_have_count(1)
+    assert _saved_tags(app_server) == ["Research"]
 
 
 def test_cancelling_the_first_scan_does_not_add_the_website(

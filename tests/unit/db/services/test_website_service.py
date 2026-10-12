@@ -8,13 +8,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
-from app.db.schema import DBRecipient
+from app.db.schema import DBCriticalPage, DBRecipient, DBWebsite, website_tag_association
 from app.db.services.critical_page_service import CriticalPageService
 from app.db.services.internal_link_service import InternalLinkService
+from app.db.services.tag_service import TagService
 from app.db.services.website_service import WebsiteService
 from app.models.critical_page_models import CriticalPageCreate, CriticalPageRead
 from app.models.internal_link_models import InternalLinkCreate, InternalLinkRead
 from app.models.scan_result_models import CriticalPageScanResult, WebsiteScanResult
+from app.models.tag_models import TagName
 from app.models.website_models import DeactivationReason, WebsiteCreate, WebsiteRead, WebsiteUpdate
 
 
@@ -101,6 +103,52 @@ def test_create_website(session: Session) -> None:
     assert fetched_website.url == website_details.url
     assert [page.url for page in created_website.critical_pages] == [website_details.url]
     assert [page.url for page in fetched_website.critical_pages] == [website_details.url]
+    assert TagService(session).get_for_website(created_website.id) == []
+
+
+def test_create_website_assigns_optional_tags_once_each(session: Session) -> None:
+    """Tests selected tags are saved with the website without changing its main page or recipients."""
+    tag_service = TagService(session)
+    news = tag_service.save(TagName(name="News"))
+    study = tag_service.save(TagName(name="Study"))
+    website = WebsiteService(session).create(
+        WebsiteCreate(
+            url=HttpUrl("https://example.com"),
+            recipient_emails=["jj@example.com"],
+            tag_ids=[news.id, study.id, news.id],
+        )
+    )
+    session.expire_all()
+
+    assert tag_service.get_for_website(website.id) == [news, study]
+    assert [page.url for page in website.critical_pages] == [website.url]
+    assert [recipient.email for recipient in website.recipients] == ["jj@example.com"]
+
+
+@pytest.mark.parametrize("deleted", [False, True], ids=["unknown-tag", "deleted-tag"])
+def test_create_website_with_a_missing_tag_adds_nothing(session: Session, deleted: bool) -> None:
+    """Tests a stale selection is refused before inserting a website, its pages or its recipients."""
+    tag_service = TagService(session)
+    news = tag_service.save(TagName(name="News"))
+    missing_id = uuid.uuid4()
+    if deleted:
+        removed = tag_service.save(TagName(name="Removed"))
+        missing_id = removed.id
+        tag_service.delete(removed.id)
+
+    with pytest.raises(NotFoundError):
+        WebsiteService(session).create(
+            WebsiteCreate(
+                url=HttpUrl("https://example.com"),
+                recipient_emails=["jj@example.com"],
+                tag_ids=[news.id, missing_id],
+            )
+        )
+
+    for table in (DBWebsite, DBCriticalPage, DBRecipient):
+        assert session.scalars(select(table)).all() == []
+    assert session.execute(select(website_tag_association)).all() == []
+    assert tag_service.get_all() == [news]
 
 
 def test_create_website_with_links_and_critical_pages(session: Session) -> None:
