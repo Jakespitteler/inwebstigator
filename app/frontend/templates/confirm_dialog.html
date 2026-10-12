@@ -1,6 +1,6 @@
 {# Asks before deleting anything (see static/js/confirm-dialog.js). #}
 
-<!-- Confirmation for deleting things. Cancel is the default, so Enter or Escape never deletes. -->
+<!-- Confirmation for deleting things. Cancel is the default unless the required confirmation text has been entered. -->
 <dialog
     id="confirm-dialog"
     class="confirm-dialog"
@@ -34,7 +34,7 @@
         </div>
 
         <div class="confirm-dialog-actions">
-            <!-- First submit button, so pressing Enter cancels -->
+            <!-- First submit button, so pressing Enter defaults to Cancel -->
             <button type="submit" value="cancel" id="confirm-dialog-cancel" class="confirm-dialog-cancel">
                 Cancel
             </button>
