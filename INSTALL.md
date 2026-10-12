@@ -198,6 +198,11 @@ This shows the last 7 scans of each website, with the most recent changes
 first. **Next scheduled check** (at the top) shows when Inwebstigator next
 looks for websites that are due a scan.
 
+A red number on the **Updates** tab counts the scans that found changes or a
+problem since you last opened it. When you open the tab, those scans (and
+their websites) are marked **New**, and the number goes away. Press
+**Refresh** after a scan finishes to update the number.
+
 Each website has a card summarising its scans. Open it to see each scan, then
 open a scan to see what it found:
 

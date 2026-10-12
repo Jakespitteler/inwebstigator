@@ -226,6 +226,27 @@
         inset 0 1px 0 rgba(255, 255, 255, 0.40);
 }
 
+/* A red bubble on the Updates tab counting the scans that found something since it was last opened */
+.tab-badge {
+    display: inline-block;
+    min-width: 20px;
+    margin-left: 8px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    background: var(--danger-solid);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 18px;
+    letter-spacing: 0;
+    text-align: center;
+    vertical-align: 1px;
+}
+
+.tab-badge[hidden] {
+    display: none;
+}
+
 .tab-content[hidden] {
     display: none;
 }

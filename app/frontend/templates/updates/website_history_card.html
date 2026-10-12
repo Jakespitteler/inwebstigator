@@ -26,6 +26,8 @@
                 <time class="change-time" datetime="{{ website_record.last_scanned_at.isoformat() }}">
                     Last scanned {{ website_record.last_scanned_at | format_timestamp }}
                 </time>
+                <!-- Shown when one of its scans is new, as its scans are hidden until it is opened -->
+                <span class="new-label" hidden>New</span>
                 {% set scan_count = website_record.scans | length %}
                 {% set scans_with_details = website_record.scans_with_details %}
                 {% if scans_with_details %}

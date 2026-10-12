@@ -163,6 +163,14 @@
     border-color: var(--danger-border);
 }
 
+/* A scan that found something since the Updates tab was last opened, and the website it belongs to */
+.change-summary span.new-label {
+    color: #fff;
+    background: var(--danger-solid);
+    border-color: var(--danger-solid);
+    font-weight: 600;
+}
+
 .change-summary span.scan-awaiting-email {
     color: var(--link);
     background: var(--accent-light);
