@@ -2,7 +2,7 @@
 // The dashboard's scripts share one scope, so they are loaded in order (see templates/index.html).
 
 // Ask before deleting anything, with Cancel as the default.
-// Resolves true only when the Delete button itself is clicked.
+// Resolves true only when the Delete button itself is clicked, or Enter is pressed after typing the text asked for.
 const confirmDialog = document.getElementById("confirm-dialog");
 const confirmDialogInput = document.getElementById("confirm-dialog-input");
 const confirmDialogButton = document.getElementById("confirm-dialog-confirm");
@@ -41,6 +41,20 @@ confirmDialogInput.addEventListener("input", () => {
     confirmDialogButton.disabled = !matches;
     confirmDialogError.hidden =
         enteredText === "" || matches;
+});
+
+// Typing the text is the confirmation, so Enter in its box deletes once the text matches, rather than pressing the
+// first button (Cancel). Until it matches, Enter only says so. Enter anywhere else in the dialog still cancels.
+confirmDialogInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.isComposing) {
+        return;
+    }
+    event.preventDefault();
+    if (confirmDialogButton.disabled) {
+        confirmDialogError.hidden = false;
+    } else {
+        confirmDialog.close("confirm");
+    }
 });
 
 // A click on the backdrop lands on the dialog element itself

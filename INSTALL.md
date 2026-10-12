@@ -187,7 +187,7 @@ Its critical pages are still checked either way.
 
 Click **Delete website** on an open card. To make sure it isn't deleted by
 mistake, you need to type **CONFIRM** before the **Delete** button works.
-Deleting a website also deletes everything saved about it, including its
+Then click **Delete**, or press **Enter**. Deleting a website also deletes everything saved about it, including its
 history.
 
 ---
