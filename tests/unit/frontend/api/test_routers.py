@@ -330,7 +330,7 @@ def test_dashboard_shows_next_scheduled_check(api_client: TestClient, mocker: Mo
         "app.frontend.api.routers.next_scheduled_check", return_value=datetime(2026, 10, 5, 21, 30).astimezone()
     )
 
-    assert _next_check_text(api_client) == "Next scheduled check: 05 Oct 2026, 21:30"
+    assert _next_check_text(api_client) == "Showing the last 7 scans · Next scan scheduled for 05 Oct 2026, 21:30"
 
 
 def test_dashboard_hides_next_check_when_scans_are_not_scheduled(api_client: TestClient, mocker: MockerFixture) -> None:
@@ -435,7 +435,8 @@ def test_updates_show_only_the_latest_scans_and_which_are_waiting_to_be_emailed(
     assert updates_panel is not None
     scans = [" ".join(scan.get_text().split()) for scan in updates_panel.select(".scan-change-record")]
 
-    assert "Last 2 scans of each website" in updates_panel.get_text()
+    assert "Scan History" in updates_panel.get_text()
+
     assert len(scans) == 2
     assert "https://example.com/emailed" in scans[0] and "Email not sent yet" not in scans[0]
     assert "Could not connect" in scans[1] and "Website placed on cooldown." in scans[1]
